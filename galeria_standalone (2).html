@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Galeria Holding — Prospecção</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#030712;color:#fff;padding:16px;min-height:100vh}
+a{text-decoration:none}
+input,select,button,textarea{font-family:inherit}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:#111827}
+::-webkit-scrollbar-thumb{background:#374151;border-radius:2px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useMemo} = React;
+
+const DM={"GLOBO PLAY":"globo.com","AMBEV":"ambev.com.br","MERCADO LIVRE":"mercadolivre.com.br","CLARO":"claro.com.br","AMAZON":"amazon.com.br","MAGAZINE LUIZA":"magazineluiza.com.br","SHOPEE":"shopee.com.br","TIM BRASIL":"tim.com.br","GLOBO":"globo.com","BRADESCO":"bradesco.com.br","SANTANDER":"santander.com.br","COCA COLA":"cocacola.com.br","NU PAGAMENTOS":"nubank.com.br","CAIXA":"caixa.gov.br","BURGER KING":"burgerking.com.br","SAMSUNG":"samsung.com.br","PETROBRAS":"petrobras.com.br","UOL":"uol.com.br","LOJAS RENNER":"lojasrenner.com.br","GENERAL MOTORS":"gm.com.br","VOLKSWAGEN":"vw.com.br","NESTLE":"nestle.com.br","SICREDI":"sicredi.com.br","CARREFOUR":"carrefour.com.br","L OREAL BRASIL":"loreal.com.br","ASSAI ATACADISTA":"assai.com.br","IFOOD":"ifood.com.br","JBS":"jbs.com.br","NETFLIX":"netflix.com","LATAM AIRLINES":"latam.com","DECOLAR":"decolar.com","ELECTROLUX":"electrolux.com.br","WHIRLPOOL":"whirlpool.com.br","UBER DO BRASIL":"uber.com","HYUNDAI":"hyundai.com.br","MERCADO PAGO":"mercadopago.com.br","APPLE BRASIL":"apple.com","TIKTOK":"tiktok.com","AIRBNB":"airbnb.com","STONE PAGAMENTOS":"stone.com.br","MONDELEZ":"mondelez.com","PEPSICO":"pepsico.com.br","CIELO":"cielo.com.br","AZUL LINHAS AEREAS":"voeazul.com.br","PICPAY":"picpay.com","BOOKING":"booking.com","SERASA EXPERIAN":"serasa.com.br","LEROY MERLIN":"leroymerlin.com.br","VALE":"vale.com","BTG PACTUAL":"btgpactual.com","RAIA DROGASIL":"rd.com.br","HAPVIDA":"hapvida.com.br","SHEIN":"shein.com","GERDAU":"gerdau.com","MRV ENGENHARIA":"mrv.com.br","FIAT":"fiat.com.br","RENAULT DO BRASIL":"renault.com.br","XP INVESTIMENTOS":"xpi.com.br","FACEBOOK BRASIL":"meta.com","VISA DO BRASIL":"visa.com.br","FORD":"ford.com.br","NISSAN DO BRASIL":"nissan.com.br","DIAGEO":"diageo.com","MOVIDA":"movida.com.br","AJINOMOTO":"ajinomoto.com.br","NOVO NORDISK":"novonordisk.com","DAFITI":"dafiti.com.br","SHELL":"shell.com.br","LENOVO":"lenovo.com","ADOBE SYSTEMS":"adobe.com","KABUM":"kabum.com.br","MOTOROLA":"motorola.com.br","BCO INTER":"inter.co","SPOTIFY":"spotify.com","TOYOTA":"toyota.com.br","LOJAS RIACHUELO":"riachuelo.com.br","LOCALIZA":"localiza.com","MASTERCARD":"mastercard.com","GOOGLE":"google.com.br","PORTO SEGURO":"portoseguro.com.br","NIKE DO BRASIL":"nike.com.br","DELL":"dell.com","PERNOD RICARD":"pernod-ricard.com","ABBOTT LAB":"abbott.com","HONDA AUTOMOVEIS":"honda.com.br","EUROFARMA":"eurofarma.com.br","LG ELETRONICS":"lg.com.br","MARISA":"marisa.com.br","BAYER":"bayer.com.br","MULTIPLAN":"multiplan.com.br","SEPHORA":"sephora.com.br","KIMBERLY CLARK":"kimberly-clark.com","OI":"oi.com.br","CAMIL ALIMENTOS":"camil.com.br","SUBWAY":"subway.com.br","JAGUAR LAND ROVER":"jaguarlandrover.com","HOTELARIA ACCOR":"accor.com","ANHANGUERA":"anhanguera.com","ADIDAS":"adidas.com.br","KALUNGA":"kalunga.com.br","AREZZO":"arezzoco.com.br","REDE D OR":"rededorsaoLuiz.com.br","COSAN":"cosan.com.br","GRENDENE":"grendene.com.br","EMIRATES":"emirates.com","OLX":"olx.com.br","TRAMONTINA":"tramontina.com.br","INDRIVE":"indrive.com","INTELBRAS":"intelbras.com.br","DECATHLON":"decathlon.com.br","CINEMARK":"cinemark.com.br","LINDT":"lindt.com","PROCTER GAMBLE":"pg.com","BRF BRASIL FOODS":"brf-br.com","COLGATE PALMOLIVE":"colgate.com.br","GLAXOSMITHKLINE":"gsk.com","BYD DO BRASIL":"byd.com.br","O BOTICARIO":"boticario.com.br","ULTRAFARMA":"ultrafarma.com.br","CACAU SHOW":"cacaushow.com.br","CVC":"cvc.com.br","HYPERA":"hypera.com.br","STELLANTIS":"stellantis.com","WARNER BROS":"warnerbros.com","BET365":"bet365.com","ATACADAO":"atacadao.com.br","SICOOB":"sicoob.com.br","FERRERO":"ferrero.com","YDUQS":"yduqs.com.br","MADEIRAMADEIRA":"madeiramadeira.com.br","RED BULL":"redbull.com","FAST SHOP":"fastshop.com.br","TOKIO MARINE":"tokiomarine.com.br","CIMED":"cimed.com.br","GRUPO MADERO":"madero.com.br","MOBLY":"mobly.com.br","CREFISA":"crefisa.com.br","PARAMOUNT PICTURES":"paramount.com","PEUGEOT CITROEN":"peugeot.com.br","AMIL":"amil.com.br","QUINTO ANDAR":"quintoandar.com","VIVARA":"vivara.com.br","REDE BANDEIRANTES":"band.com.br","NOMAD FINTECH":"nomadglobal.com","FOGO DE CHAO":"fogodechao.com","OUTBACK":"outback.com.br","TOK STOK":"tokstok.com.br","COTY BRASIL":"coty.com","SONY MUSIC":"sonymusic.com.br","VIGOR":"vigor.com.br","WEBMOTORS":"webmotors.com.br","MAXMILHAS":"maxmilhas.com.br","STIHL":"stihl.com.br","ESPM":"espm.br","MATTEL":"mattel.com","ENGIE":"engie.com.br"};
+function getDomain(n){for(const k of Object.keys(DM)){if(n.includes(k))return DM[k];}return null;}
+
+const RAW=[[1,"GLOBO PLAY",0],[2,"AMBEV",0],[3,"MERCADO LIVRE",0],[5,"EMS FARMACEUTICA",0],[6,"GENOMMA",0],[8,"ITAU",1],[9,"CLARO",0],[10,"AMAZON",0],[12,"RECKITT BENCKISER",0],[13,"TELEFONICA",1],[14,"MAGAZINE LUIZA",0],[15,"KAIZEN GAMING",0],[16,"WALT DISNEY",0],[18,"SKY BRASIL",0],[19,"UNIMED SEGURADORA",0],[20,"REDE RECORD",0],[21,"BCO DO BRASIL",0],[22,"SHOPEE",0],[23,"TIM BRASIL",0],[24,"MC DONALD",1],[25,"GLOBO",0],[26,"PROCTER GAMBLE",0],[27,"BRADESCO",0],[28,"HAVAN",0],[30,"BRF BRASIL FOODS",0],[32,"GRUPO CASAS BAHIA",0],[34,"COLGATE PALMOLIVE",0],[35,"SANTANDER",0],[36,"COCA COLA",0],[38,"GLAXOSMITHKLINE",0],[39,"NU PAGAMENTOS",0],[40,"HBO BRASIL",0],[43,"BYD DO BRASIL",0],[44,"SEARA",1],[45,"CAIXA",0],[46,"CASAS GUANABARA",0],[47,"BURGER KING",0],[48,"O BOTICARIO",0],[49,"NATURA",1],[50,"ULTRAFARMA",0],[55,"SAMSUNG",0],[56,"PETROBRAS",0],[59,"UOL",0],[60,"SBT",0],[63,"LOJAS RENNER",0],[64,"GENERAL MOTORS",0],[67,"VOLKSWAGEN",0],[70,"CACAU SHOW",0],[71,"CVC",0],[72,"NESTLE",0],[73,"HYPERA",0],[74,"SICREDI",0],[76,"STELLANTIS",0],[77,"WARNER BROS",0],[79,"CARREFOUR",0],[80,"L OREAL BRASIL",0],[82,"ASSAI ATACADISTA",0],[83,"IFOOD",0],[86,"JBS",0],[87,"C6 BANK",1],[89,"NETFLIX",0],[91,"LATAM AIRLINES",0],[94,"DECOLAR",0],[95,"BET365",0],[97,"ELECTROLUX",0],[98,"ATACADAO",0],[101,"WHIRLPOOL",0],[104,"SICOOB",0],[105,"UBER DO BRASIL",0],[106,"HYUNDAI",0],[107,"MERCADO PAGO",0],[109,"APPLE BRASIL",0],[110,"GOL LINHAS AEREAS",0],[112,"TIKTOK",0],[113,"DISCOVERY NETWORKS",0],[115,"AIRBNB",0],[116,"FERRERO",0],[120,"STONE PAGAMENTOS",0],[124,"MONDELEZ",0],[126,"99 TECNOLOGIA",0],[129,"NIVEA",0],[130,"AURORA ALIMENTICIOS",0],[134,"AMERICANAS",0],[135,"PEPSICO",0],[136,"BCO PAN",0],[139,"SEBRAE",0],[140,"CIELO",0],[141,"AZUL LINHAS AEREAS",0],[142,"YDUQS",0],[144,"MADEIRAMADEIRA",0],[145,"PICPAY",0],[146,"BOOKING",0],[148,"SERASA EXPERIAN",0],[149,"LEROY MERLIN",0],[150,"RED BULL",0],[154,"CRUZEIRO DO SUL",0],[160,"VALE",0],[161,"BTG PACTUAL",0],[162,"FAST SHOP",0],[164,"RAIA DROGASIL",0],[165,"HAPVIDA",0],[166,"TOKIO MARINE",0],[169,"CIMED",0],[172,"MIDEA",1],[178,"SHEIN",0],[181,"GRUPO MADERO",0],[186,"GERDAU",0],[187,"MOBLY",0],[188,"ITALAC",1],[189,"MRV ENGENHARIA",0],[192,"FIAT",0],[194,"ALPARGATAS",1],[197,"RENAULT DO BRASIL",0],[199,"CREFISA",0],[200,"XP INVESTIMENTOS",0],[211,"GRUPO PAO DE ACUCAR",0],[212,"PARAMOUNT PICTURES",0],[215,"FACEBOOK BRASIL",0],[217,"VISA DO BRASIL",0],[218,"BETFAIR",1],[224,"PEUGEOT CITROEN",0],[226,"AMIL",0],[230,"QUINTO ANDAR",0],[234,"FORD",0],[235,"NISSAN DO BRASIL",0],[237,"DIAGEO",0],[238,"MOVIDA",0],[241,"GRUPO SBF",0],[244,"AJINOMOTO",0],[247,"VIVARA",0],[253,"NOVO NORDISK",0],[255,"DAFITI",0],[261,"SHELL",0],[266,"REDE BANDEIRANTES",0],[268,"LENOVO",0],[272,"ADOBE SYSTEMS",0],[279,"KABUM",0],[281,"MOTOROLA",0],[282,"NOMAD FINTECH",0],[284,"BCO INTER",0],[290,"FOGO DE CHAO",0],[296,"SPOTIFY",0],[303,"TOYOTA",0],[305,"SMART FIT",1],[313,"LOJAS RIACHUELO",0],[315,"LOCALIZA",0],[321,"OUTBACK",0],[323,"MASTERCARD",0],[325,"GOOGLE",0],[331,"PORTO SEGURO",0],[338,"NIKE DO BRASIL",0],[340,"BELEZA NA WEB",0],[347,"DROGARIA SAO PAULO",0],[356,"DELL",0],[357,"PERNOD RICARD",0],[360,"ESPM",0],[366,"ABBOTT LAB",0],[369,"MATTEL",0],[374,"ENGIE",0],[382,"HONDA AUTOMOVEIS",0],[386,"EUROFARMA",0],[389,"ACHE LABORATORIOS",1],[390,"TOK STOK",0],[394,"LG ELETRONICS",0],[397,"CAFE 3 CORACOES",1],[400,"SUZANO",1],[404,"MARISA",0],[407,"COTY BRASIL",0],[422,"BAYER",0],[429,"MULTIPLAN",0],[439,"SEPHORA",0],[444,"KIMBERLY CLARK",0],[446,"OI",0],[454,"CAMIL ALIMENTOS",0],[455,"SONY MUSIC",0],[458,"UNIASSELVI",0],[468,"VIGOR",0],[474,"WEBMOTORS",0],[488,"SUBWAY",0],[495,"JAGUAR LAND ROVER",0],[502,"MAXMILHAS",0],[510,"HOTELARIA ACCOR",0],[513,"ANHANGUERA",0],[528,"STIHL",0],[547,"ADIDAS",0],[550,"KALUNGA",0],[553,"AREZZO",0],[561,"REDE D OR",0],[580,"COSAN",0],[589,"GRENDENE",0],[597,"EMIRATES",0],[605,"OLX",0],[607,"TRAMONTINA",0],[613,"INDRIVE",0],[624,"INTELBRAS",0],[647,"HOSPITAL ALBERT EINSTEIN",1],[651,"DECATHLON",0],[653,"CINEMARK",0],[665,"LINDT",0],[674,"TOTVS",1]];
+
+function getAg(r){if(r<=30)return"Galeria";if(r<=80)return"404";if(r<=150)return"Mila";return"Caramelo";}
+function getTier(r){if(r<=50)return"Tier A";if(r<=200)return"Tier B";return"Tier C";}
+function getTrig(r){if(r<=50)return"A - Porta Aberta";if(r<=200)return"B - Porta Entreaberta";return"C - Nurturing";}
+const LEADS=RAW.map(x=>({rank:x[0],nome:x[1],cli:x[2]===1,ag:getAg(x[0]),tier:getTier(x[0]),trig:getTrig(x[0])}));
+const PROSP=LEADS.filter(d=>!d.cli);
+const NEWS=LEADS.filter(d=>d.cli);
+const agC={"Galeria":"#fb923c","404":"#60a5fa","Mila":"#a78bfa","Caramelo":"#2dd4bf"};
+const tBg={"Tier A":"rgba(154,52,18,.5)","Tier B":"rgba(30,58,138,.5)","Tier C":"rgba(55,65,81,.8)"};
+const tCr={"Tier A":"#fdba74","Tier B":"#93c5fd","Tier C":"#9ca3af"};
+const HUNTER_KEY="21466c7f183f70470dbd90ed0a7fd1c1d675d125";
+const LUSHA_KEY="e0f6b54f-d280-49ff-a68f-69ad9536c384";
+
+const inp={width:"100%",background:"#1f2937",border:"1px solid #374151",borderRadius:8,padding:"9px 12px",color:"#fff",fontSize:13,outline:"none",boxSizing:"border-box"};
+const dinp={width:"100%",background:"#0f172a",border:"1px solid #334155",borderRadius:7,padding:"7px 10px",color:"#fff",fontSize:12,outline:"none",boxSizing:"border-box"};
+function abS(t){const b={display:"inline-flex",alignItems:"center",padding:"6px 10px",borderRadius:7,border:"1px solid",fontSize:11,fontWeight:600,cursor:"pointer",textDecoration:"none",background:"transparent",color:"inherit"};const m={em:{color:"#60a5fa",borderColor:"rgba(96,165,250,0.3)"},wp:{color:"#4ade80",borderColor:"rgba(74,222,128,0.3)"},li:{color:"#38bdf8",borderColor:"rgba(56,189,248,0.3)"},ed:{color:"#94a3b8",borderColor:"#334155",background:"#1e293b"},rm:{color:"#f87171",borderColor:"rgba(248,113,113,0.2)",marginLeft:"auto"},pd:{color:"#a78bfa",borderColor:"rgba(167,139,250,0.3)"},ai:{color:"#fbbf24",borderColor:"rgba(251,191,36,0.3)"}};return{...b,...(m[t]||{})};}
+
+async function hunterSearch(domain){try{const r=await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${HUNTER_KEY}&limit=10`);const d=await r.json();return(d.data&&d.data.emails)||[];}catch{return[];}}
+async function hunterVerify(email){try{const r=await fetch(`https://api.hunter.io/v2/email-verifier?email=${email}&api_key=${HUNTER_KEY}`);const d=await r.json();return d.data||null;}catch{return null;}}
+async function lushaSearch(fn,ln,company){try{const r=await fetch(`https://api.lusha.com/v2/person?firstName=${encodeURIComponent(fn)}&lastName=${encodeURIComponent(ln)}&company=${encodeURIComponent(company)}`,{headers:{"api_key":LUSHA_KEY}});const d=await r.json();const p=(d.data&&d.data.phoneNumbers)||[];return p.length>0?p[0].internationalNumber||p[0].localNumber||"":" ";}catch{return "";}}
+async function pipedriveSearch(email,key){try{const r=await fetch(`https://api.pipedrive.com/v1/persons/search?term=${encodeURIComponent(email)}&api_token=${key}`);const d=await r.json();return d.data&&d.data.items&&d.data.items.length>0?d.data.items[0].item:null;}catch{return null;}}
+async function pipedriveCreate(contact,empresa,key){try{const r=await fetch(`https://api.pipedrive.com/v1/persons?api_token=${key}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:contact.nome,email:[{value:contact.email,primary:true}],phone:[{value:contact.tel||"",primary:true}],org_name:empresa,job_title:contact.cargo||""})});const d=await r.json();return d.data||null;}catch{return null;}}
+
+async function gerarEmail(nome,empresa,agencia,trigger,cargo){
+  const posicionamentos={"Galeria":"Somos o parceiro de operação em escala para os maiores anunciantes do Brasil — capacidade operacional + inteligência estratégica. Nossos clientes reduzem em média 30% o custo por entrega mantendo consistência criativa.","404":"Somos um hub de inovação em comunicação sem vínculo com veículos de mídia — o que recomendamos é o que faz sentido pro seu negócio, sem agenda escondida. Criatividade + design + tecnologia para construir comunidades em torno da marca.","Mila":"Somos uma case factory — trabalhamos com 8 contas selecionadas, todas com histórias que o mercado inteiro comenta. Para marcas que querem excelência criativa sem a burocracia de uma grande operação.","Caramelo":"Criamos ativos de entretenimento, música e cultura — algo que a marca possui, não aluga. O oposto da mídia paga: fazemos as pessoas virem até a marca."};
+  const prompt=`Você é Pedro, Head of Growth da Galeria Holding, escrevendo um email de prospecção de alto nível.
+
+DESTINATÁRIO: ${nome} | Empresa: ${empresa} | Cargo: ${cargo||"Diretor(a) de Marketing"}
+AGÊNCIA: ${agencia} | POSICIONAMENTO: ${posicionamentos[agencia]||posicionamentos["Galeria"]}
+TRIGGER: ${trigger}
+
+INSTRUÇÕES:
+1. Assunto: curto, intrigante, personalizado. Max 8 palavras.
+2. Abertura: algo específico sobre ${empresa} ou o trigger. 1-2 frases.
+3. Corpo: conecta a dor/oportunidade da ${empresa} com o que a ${agencia} faz. 2-3 frases concretas.
+4. Prova: 1 frase com resultado relevante.
+5. CTA: simples, sem pressão, convite para 20 minutos.
+6. Assinatura: Pedro | Head of Growth, Galeria Holding
+
+TOM: Direto, humano, sem corporativês. Parágrafos curtos com linha em branco entre eles.
+Retorne APENAS JSON: {"assunto":"...","corpo":"..."}`;
+
+  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:800,messages:[{role:"user",content:prompt}]})});
+  const d=await r.json();
+  const txt=d.content&&d.content[0]&&d.content[0].text||"{}";
+  return JSON.parse(txt.replace(/```json|```/g,"").trim());
+}
+
+function EmailModal({contact,empresa,agencia,trigger,onClose}){
+  const [email,setEmail]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [copied,setCopied]=useState("");
+  const [regen,setRegen]=useState(false);
+  const gerar=()=>{setRegen(true);gerarEmail(contact.nome,empresa,agencia,trigger,contact.cargo).then(setEmail).catch(()=>setEmail({assunto:"Erro — verifique conexao.",corpo:""})).finally(()=>{setLoading(false);setRegen(false);});};
+  React.useEffect(()=>{gerar();},[]);
+  const cp=(txt,k)=>{navigator.clipboard.writeText(txt);setCopied(k);setTimeout(()=>setCopied(""),2500);};
+  const openOutlook=()=>window.open(`https://outlook.office.com/mail/deeplink/compose?to=${contact.email}&subject=${encodeURIComponent(email.assunto)}&body=${encodeURIComponent(email.corpo)}`,"_blank");
+  const openGmail=()=>window.open(`https://mail.google.com/mail/?view=cm&to=${contact.email}&su=${encodeURIComponent(email.assunto)}&body=${encodeURIComponent(email.corpo)}`,"_blank");
+  return(
+    <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.85)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+      <div style={{background:"#0f172a",borderRadius:20,width:"100%",maxWidth:580,border:"1px solid #1e293b",maxHeight:"95vh",overflowY:"auto"}}>
+        <div style={{padding:"20px 24px 16px",borderBottom:"1px solid #1e293b"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div><div style={{fontWeight:700,fontSize:16}}>Email gerado por IA</div><div style={{fontSize:12,color:"#64748b",marginTop:3}}>{contact.nome} — {empresa}</div></div>
+            <button onClick={onClose} style={{background:"none",border:"none",color:"#475569",cursor:"pointer",fontSize:22}}>x</button>
+          </div>
+        </div>
+        {loading?<div style={{textAlign:"center",padding:48,color:"#475569"}}>Gerando email personalizado com IA...</div>:(
+          <div style={{padding:"20px 24px"}}>
+            <div style={{marginBottom:16}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <div style={{fontSize:11,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>Assunto</div>
+                <button onClick={()=>cp(email.assunto,"assunto")} style={{fontSize:10,padding:"3px 8px",borderRadius:6,border:"none",background:copied==="assunto"?"#16a34a":"#1e293b",color:copied==="assunto"?"#fff":"#64748b",cursor:"pointer"}}>{copied==="assunto"?"Copiado!":"Copiar"}</button>
+              </div>
+              <input style={{...inp,fontWeight:600,fontSize:14}} value={email.assunto} onChange={e=>setEmail(em=>({...em,assunto:e.target.value}))}/>
+            </div>
+            <div style={{marginBottom:20}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                <div style={{fontSize:11,fontWeight:600,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>Corpo</div>
+                <div style={{fontSize:10,color:"#374151"}}>{(email.corpo||"").split(" ").length} palavras</div>
+              </div>
+              <textarea style={{...dinp,width:"100%",minHeight:220,resize:"vertical",fontSize:13,lineHeight:1.8}} value={email.corpo} onChange={e=>setEmail(em=>({...em,corpo:e.target.value}))}/>
+            </div>
+            <div style={{background:"#fff",borderRadius:12,padding:20,marginBottom:20,color:"#1f2937"}}>
+              <div style={{fontSize:10,color:"#9ca3af",marginBottom:8}}>PREVIEW</div>
+              <div style={{fontSize:13,fontWeight:700,marginBottom:8,fontFamily:"Calibri,Arial,sans-serif"}}>{email.assunto}</div>
+              <div style={{borderBottom:"1px solid #e5e7eb",marginBottom:12}}></div>
+              <div style={{fontSize:13,color:"#374151",lineHeight:1.8,fontFamily:"Calibri,Arial,sans-serif",whiteSpace:"pre-wrap"}}>{email.corpo}</div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              <button onClick={openOutlook} style={{padding:"11px 0",borderRadius:10,border:"none",background:"#0078d4",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>Abrir no Outlook</button>
+              <button onClick={openGmail} style={{padding:"11px 0",borderRadius:10,border:"none",background:"#ea4335",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}}>Abrir no Gmail</button>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              <button onClick={()=>cp(email.corpo,"corpo")} style={{padding:"10px 0",borderRadius:10,border:"1px solid #334155",background:copied==="corpo"?"#16a34a":"#1e293b",color:copied==="corpo"?"#fff":"#94a3b8",fontSize:12,cursor:"pointer",fontWeight:600}}>{copied==="corpo"?"Copiado!":"Copiar corpo"}</button>
+              <button onClick={()=>cp("Assunto: "+email.assunto+"\n\n"+email.corpo,"tudo")} style={{padding:"10px 0",borderRadius:10,border:"1px solid #334155",background:copied==="tudo"?"#16a34a":"#1e293b",color:copied==="tudo"?"#fff":"#94a3b8",fontSize:12,cursor:"pointer",fontWeight:600}}>{copied==="tudo"?"Copiado!":"Copiar tudo"}</button>
+            </div>
+            <button onClick={gerar} disabled={regen} style={{width:"100%",padding:"10px 0",borderRadius:10,border:"1px dashed #334155",background:"transparent",color:regen?"#374151":"#64748b",fontSize:12,cursor:"pointer"}}>{regen?"Gerando...":"Gerar versao diferente"}</button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DecCard({dc,r,i,empresa,agencia,trigger,isEditing,onToggleEdit,onUpdate,onRemove,pdKey}){
+  const [pdStatus,setPdStatus]=useState(null);
+  const [pdLoading,setPdLoading]=useState(false);
+  const [showEmail,setShowEmail]=useState(false);
+  const [verifying,setVerifying]=useState(false);
+  const verifyEmail=async()=>{if(!dc.email)return;setVerifying(true);const v=await hunterVerify(dc.email);if(v)onUpdate("emailStatus",v.result);setVerifying(false);};
+  const syncPD=async()=>{if(!pdKey||!dc.email)return;setPdLoading(true);const ex=await pipedriveSearch(dc.email,pdKey);if(ex){setPdStatus("exists");}else{const cr=await pipedriveCreate(dc,empresa,pdKey);setPdStatus(cr?"ok":"error");}setPdLoading(false);};
+  const stColors={"ok":"#4ade80","invalid":"#f87171","risky":"#fbbf24","unknown":"#6b7280","exists":"#a78bfa"};
+  return(
+    <>
+      {showEmail&&<EmailModal contact={dc} empresa={empresa} agencia={agencia} trigger={trigger} onClose={()=>setShowEmail(false)}/>}
+      <div style={{background:"#1e293b",borderRadius:10,padding:12,marginBottom:8,border:"1px solid #334155"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+          <div>
+            <div style={{fontSize:13,fontWeight:600,color:"#e2e8f0"}}>{dc.nome||"Nome nao informado"}</div>
+            <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{dc.cargo||"Cargo nao informado"}</div>
+          </div>
+          <button style={abS("ed")} onClick={onToggleEdit}>{isEditing?"Fechar":"Editar"}</button>
+        </div>
+        {isEditing&&(
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            {[["nome","Nome"],["cargo","Cargo"],["email","Email"],["tel","WhatsApp"],["li","linkedin.com/in/..."]].map(([f,pl],fi)=>(
+              <input key={f} style={{...dinp,...(fi===4?{gridColumn:"1/-1"}:{})}} placeholder={pl} value={dc[f]||""} onChange={e=>onUpdate(f,e.target.value)}/>
+            ))}
+          </div>
+        )}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:6,alignItems:"center"}}>
+          {dc.email?<a style={abS("em")} href={"mailto:"+dc.email}>Email{dc.emailStatus&&<span style={{fontSize:9,padding:"1px 5px",borderRadius:10,background:stColors[dc.emailStatus]||"#374151",color:"#fff",marginLeft:4}}>{dc.emailStatus}</span>}</a>:<span style={{...abS("em"),opacity:.3}}>Email</span>}
+          {dc.tel?<a style={abS("wp")} href={"https://wa.me/"+dc.tel.replace(/\D/g,"")}>WhatsApp</a>:<span style={{...abS("wp"),opacity:.3}}>WhatsApp</span>}
+          {dc.li?<a style={abS("li")} href={dc.li.startsWith("http")?dc.li:"https://"+dc.li} target="_blank">LinkedIn</a>:<span style={{...abS("li"),opacity:.3}}>LinkedIn</span>}
+          {dc.email&&<button style={abS("ai")} onClick={()=>setShowEmail(true)}>Gerar Email IA</button>}
+          {dc.email&&!dc.emailStatus&&<button style={{...abS("ed"),fontSize:10}} onClick={verifyEmail} disabled={verifying}>{verifying?"...":"Validar"}</button>}
+          {pdKey&&dc.email&&<button style={{...abS("pd"),fontSize:10}} onClick={syncPD} disabled={pdLoading}>{pdLoading?"...":pdStatus==="exists"?"Ja no Pipe":pdStatus==="ok"?"Criado!":"Pipedrive"}</button>}
+          <button style={abS("rm")} onClick={onRemove}>Remover</button>
+        </div>
+      </div>
+    </>
+  );
+}
+
+function App(){
+  const [aba,setAba]=useState("p");
+  const [busca,setBusca]=useState("");
+  const [agFil,setAgFil]=useState("Todas");
+  const [tierFil,setTierFil]=useState("Todos");
+  const [sel,setSel]=useState({});
+  const [exp,setExp]=useState({});
+  const [expd,setExpd]=useState({});
+  const [decs,setDecs]=useState({});
+  const [exported,setExported]=useState(false);
+  const [enriching,setEnriching]=useState({});
+  const [pdKey,setPdKey]=useState("");
+  const [showSettings,setShowSettings]=useState(false);
+  const [enrichLog,setEnrichLog]=useState({});
+
+  const base=aba==="p"?PROSP:NEWS;
+  const lista=useMemo(()=>base.filter(d=>{
+    if(aba==="p"&&agFil!=="Todas"&&d.ag!==agFil)return false;
+    if(aba==="p"&&tierFil!=="Todos"&&d.tier!==tierFil)return false;
+    if(busca&&!d.nome.includes(busca.toUpperCase()))return false;
+    return true;
+  }),[base,agFil,tierFil,busca]);
+
+  const nSel=Object.values(sel).filter(Boolean).length;
+  const nDec=Object.keys(decs).filter(k=>decs[k]&&decs[k].length>0).length;
+  const nA=PROSP.filter(d=>d.tier==="Tier A").length;
+
+  const togSel=r=>setSel(s=>({...s,[r]:!s[r]}));
+  const selAll=()=>{const ns={};lista.forEach(d=>{ns[d.rank]=true;});setSel(ns);};
+  const selNone=()=>setSel({});
+  const togExp=r=>{setExp(e=>({...e,[r]:!e[r]}));setDecs(dd=>dd[r]?dd:{...dd,[r]:[]});};
+  const togEd=k=>setExpd(e=>({...e,[k]:!e[k]}));
+  const addDec=r=>{setDecs(dd=>({...dd,[r]:[...(dd[r]||[]),{nome:"",cargo:"",email:"",tel:"",li:""}]}));setExp(e=>({...e,[r]:true}));};
+  const updDec=(r,i,f,v)=>setDecs(dd=>{const a=[...(dd[r]||[])];a[i]={...a[i],[f]:v};return{...dd,[r]:a};});
+  const rmDec=(r,i)=>setDecs(dd=>{const a=[...(dd[r]||[])];a.splice(i,1);return{...dd,[r]:a};});
+
+  const enrich=async(r,nome)=>{
+    const domain=getDomain(nome);
+    setExp(e=>({...e,[r]:true}));
+    if(!domain){setEnrichLog(l=>({...l,[r]:{status:"Dominio nao mapeado. Use + Adicionar.",cors:false}}));return;}
+    setEnriching(e=>({...e,[r]:true}));
+    setEnrichLog(l=>({...l,[r]:{status:"Buscando decisores de marketing..."}}));
+    try{
+      const emails=await hunterSearch(domain);
+      const mkKw=["cmo","chief marketing","marketing","brand","comunicacao","media","midia","vp market","diretor de market","gerente de market","head de market"];
+      const filtered=emails.filter(e=>mkKw.some(k=>(e.position||"").toLowerCase().includes(k)));
+      const src=filtered.length>0?filtered:emails.slice(0,5);
+      setEnrichLog(l=>({...l,[r]:{status:`${src.length} contatos encontrados. Buscando telefones no Lusha...`}}));
+      const novos=await Promise.all(src.slice(0,6).map(async e=>{
+        const fn=(e.first_name||"").trim(),ln=(e.last_name||"").trim();
+        const tel=fn&&ln?await lushaSearch(fn,ln,nome):"";
+        return{nome:(fn+" "+ln).trim(),cargo:e.position||"",email:e.value||"",tel,li:e.linkedin||"",emailStatus:e.verification&&e.verification.result||null};
+      }));
+      setDecs(dd=>{const ex=dd[r]||[];const m=[...ex];novos.forEach(n=>{if(!m.some(x=>x.email===n.email))m.push(n);});return{...dd,[r]:m};});
+      setEnrichLog(l=>({...l,[r]:{status:`Concluido! ${novos.length} decisores adicionados.`,ok:true}}));
+    }catch(e){
+      setEnrichLog(l=>({...l,[r]:{status:"CORS bloqueou — use os links abaixo:",cors:true,domain,nome}}));
+    }
+    setEnriching(e=>({...e,[r]:false}));
+  };
+
+  const exportar=()=>{
+    const para=nSel>0?lista.filter(d=>sel[d.rank]):lista;
+    const q=v=>String(v||"").replace(/,/g," ");
+    const rows=["ranking,empresa,agencia,tier,trigger,decisor_nome,decisor_cargo,email,telefone,linkedin"];
+    para.forEach(d=>{const dd=decs[d.rank]||[];if(!dd.length)rows.push([d.rank,q(d.nome),q(d.ag),q(d.tier),q(d.trig),"","","","",""].join(","));else dd.forEach(dc=>rows.push([d.rank,q(d.nome),q(d.ag),q(d.tier),q(d.trig),q(dc.nome),q(dc.cargo),q(dc.email),q(dc.tel),q(dc.li)].join(",")));});
+    const blob=new Blob(["\uFEFF"+rows.join("\n")],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="galeria_decisores.csv";a.click();
+    setExported(true);setTimeout(()=>setExported(false),2500);
+  };
+
+  return(
+    <div style={{maxWidth:760,margin:"0 auto"}}>
+      {showSettings&&(
+        <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,.8)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+          <div style={{background:"#111827",borderRadius:16,padding:24,width:"100%",maxWidth:420,border:"1px solid #374151"}}>
+            <div style={{fontWeight:700,fontSize:15,marginBottom:16}}>Configuracoes</div>
+            <div style={{marginBottom:12}}>
+              <div style={{fontSize:11,color:"#9ca3af",marginBottom:4}}>Pipedrive API Key</div>
+              <input style={inp} placeholder="Cole sua API key do Pipedrive" value={pdKey} onChange={e=>setPdKey(e.target.value)}/>
+              <div style={{fontSize:10,color:"#4b5563",marginTop:3}}>app.pipedrive.com/settings/api</div>
+            </div>
+            <div style={{fontSize:11,color:"#374151",marginBottom:16}}>Hunter e Lusha ja configurados.</div>
+            <button style={{width:"100%",padding:"10px 0",borderRadius:10,border:"none",background:"#f97316",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer"}} onClick={()=>setShowSettings(false)}>Salvar e fechar</button>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
+        <div style={{width:40,height:40,borderRadius:10,background:"#f97316",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,fontSize:18,flexShrink:0}}>G</div>
+        <div><div style={{fontWeight:700,fontSize:16}}>Galeria Holding</div><div style={{fontSize:12,color:"#6b7280"}}>Motor de prospeccao omnicanal</div></div>
+        <div style={{marginLeft:"auto",display:"flex",gap:8,alignItems:"center"}}>
+          <span style={{fontSize:11,color:pdKey?"#4ade80":"#6b7280"}}>{pdKey?"Pipedrive on":"Pipedrive off"}</span>
+          <button onClick={()=>setShowSettings(true)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #374151",background:"#1f2937",color:"#9ca3af",fontSize:11,cursor:"pointer"}}>Config</button>
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:8,marginBottom:16}}>
+        {[[PROSP.length,"Prospeccao","#fb923c"],[NEWS.length,"Newsletter","#facc15"],[nDec,"Com decisores","#4ade80"],[nA,"Tier A","#fb923c"]].map(([v,l,c])=>(
+          <div key={l} style={{background:"#111827",borderRadius:12,padding:"12px 8px",textAlign:"center"}}>
+            <div style={{fontSize:20,fontWeight:700,color:c}}>{v}</div>
+            <div style={{fontSize:11,color:"#6b7280",marginTop:2}}>{l}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:16}}>
+        {[["p","Prospeccao ("+PROSP.length+")","Blitz omnicanal"],["n","Newsletter ("+NEWS.length+")","Clientes da holding"]].map(([id,tt,ts])=>(
+          <button key={id} style={{padding:12,borderRadius:12,border:"1px solid "+(aba===id?"#f97316":"#374151"),background:aba===id?"rgba(249,115,22,0.1)":"#111827",cursor:"pointer",textAlign:"left",color:"#fff",width:"100%"}} onClick={()=>{setAba(id);setSel({});setExp({});}}>
+            <div style={{fontSize:13,fontWeight:600}}>{tt}</div>
+            <div style={{fontSize:11,color:"#6b7280",marginTop:2}}>{ts}</div>
+          </button>
+        ))}
+      </div>
+
+      <div style={{background:"#111827",borderRadius:16,padding:16,marginBottom:12}}>
+        <input style={inp} placeholder="Buscar empresa..." value={busca} onChange={e=>setBusca(e.target.value)}/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,margin:"10px 0"}}>
+          <div><div style={{fontSize:11,color:"#9ca3af",marginBottom:4}}>Agencia</div><select style={inp} value={agFil} onChange={e=>setAgFil(e.target.value)}>{["Todas","Galeria","404","Mila","Caramelo"].map(o=><option key={o}>{o}</option>)}</select></div>
+          <div><div style={{fontSize:11,color:"#9ca3af",marginBottom:4}}>Prioridade</div><select style={inp} value={tierFil} onChange={e=>setTierFil(e.target.value)}>{["Todos","Tier A","Tier B","Tier C"].map(o=><option key={o}>{o}</option>)}</select></div>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap",marginTop:10}}>
+          <button style={{padding:"7px 14px",borderRadius:8,border:"none",background:"#1f2937",color:"#d1d5db",fontSize:12,cursor:"pointer"}} onClick={selAll}>Sel. todos</button>
+          <button style={{padding:"7px 14px",borderRadius:8,border:"none",background:"#1f2937",color:"#d1d5db",fontSize:12,cursor:"pointer"}} onClick={selNone}>Limpar</button>
+          {nSel>0&&<span style={{fontSize:12,color:"#fb923c",fontWeight:700}}>{nSel} selecionados</span>}
+          <button style={{padding:"9px 18px",borderRadius:10,border:"none",background:exported?"#16a34a":"#f97316",color:"#fff",fontWeight:700,fontSize:13,cursor:"pointer",marginLeft:"auto"}} onClick={exportar}>{exported?"Baixado!":"Exportar CSV ("+(nSel>0?nSel:lista.length)+")"}</button>
+        </div>
+      </div>
+
+      <div style={{maxHeight:640,overflowY:"auto"}}>
+        {lista.slice(0,300).map(d=>{
+          const r=d.rank,isSel=!!sel[r],isEx=!!exp[r],dd=decs[r]||[],hd=dd.length>0,log=enrichLog[r];
+          return(
+            <div key={r} style={{borderRadius:12,marginBottom:5,background:"#111827",border:"1px solid "+(isSel?"rgba(249,115,22,0.4)":"transparent"),overflow:"hidden"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 12px",flexWrap:"wrap"}}>
+                <div onClick={()=>togSel(r)} style={{width:16,height:16,borderRadius:4,border:"2px solid "+(isSel?"#f97316":"#4b5563"),background:isSel?"#f97316":"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,cursor:"pointer",fontSize:10,color:"#fff"}}>{isSel?"v":""}</div>
+                <span style={{fontSize:11,color:"#4b5563",width:28,textAlign:"right",flexShrink:0}}>#{r}</span>
+                <span onClick={()=>togSel(r)} style={{fontSize:13,fontWeight:500,flex:1,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",cursor:"pointer",minWidth:80}}>{d.nome}</span>
+                {aba==="p"?<span style={{fontSize:11,fontWeight:600,flexShrink:0,color:agC[d.ag]||"#9ca3af"}}>{d.ag}</span>:<span style={{fontSize:11,fontWeight:600,flexShrink:0,color:"#facc15"}}>Radar</span>}
+                <span style={{fontSize:10,padding:"2px 8px",borderRadius:20,flexShrink:0,background:aba==="n"?"rgba(161,98,7,.5)":tBg[d.tier],color:aba==="n"?"#fde047":tCr[d.tier]}}>{aba==="n"?"Cliente":d.tier}</span>
+                <button style={{padding:"4px 10px",borderRadius:6,border:"none",background:hd?"rgba(249,115,22,0.15)":"#1f2937",color:hd?"#fb923c":"#9ca3af",fontSize:11,cursor:"pointer",flexShrink:0}} onClick={()=>togExp(r)}>{hd?"Dec. ("+dd.length+")":"+ Dec."}</button>
+                <button onClick={()=>enrich(r,d.nome)} disabled={!!enriching[r]} style={{padding:"4px 10px",borderRadius:6,border:"none",background:"rgba(96,165,250,0.15)",color:enriching[r]?"#6b7280":"#60a5fa",fontSize:11,cursor:"pointer",flexShrink:0}}>{enriching[r]?"...":"Enriquecer"}</button>
+              </div>
+              {isEx&&(
+                <div style={{background:"#0f172a",borderTop:"1px solid #1e293b",padding:14}}>
+                  {log&&(
+                    <div style={{background:log.ok?"rgba(74,222,128,0.05)":"rgba(96,165,250,0.05)",border:"1px solid "+(log.ok?"rgba(74,222,128,0.2)":"rgba(96,165,250,0.2)"),borderRadius:8,padding:10,marginBottom:12,fontSize:11,color:log.ok?"#4ade80":"#94a3b8"}}>
+                      {log.status}
+                      {log.cors&&(
+                        <div style={{marginTop:8,display:"flex",gap:6,flexWrap:"wrap"}}>
+                          <a href={"https://app.hunter.io/domain-search?domain="+(log.domain||"")} target="_blank" style={{padding:"5px 10px",borderRadius:7,background:"rgba(96,165,250,0.15)",color:"#60a5fa",border:"1px solid rgba(96,165,250,0.3)",fontSize:10,fontWeight:600}}>Hunter.io</a>
+                          <a href={"https://app.lusha.com/search?company="+encodeURIComponent(log.nome||"")} target="_blank" style={{padding:"5px 10px",borderRadius:7,background:"rgba(74,222,128,0.15)",color:"#4ade80",border:"1px solid rgba(74,222,128,0.3)",fontSize:10,fontWeight:600}}>Lusha</a>
+                          <a href={"https://www.linkedin.com/search/results/people/?keywords="+encodeURIComponent(log.nome||"")+"&titleFreeText=CMO+OR+%22Diretor+de+Marketing%22+OR+%22VP+Marketing%22+OR+%22Gerente+de+Marketing%22"} target="_blank" style={{padding:"5px 10px",borderRadius:7,background:"rgba(56,189,248,0.15)",color:"#38bdf8",border:"1px solid rgba(56,189,248,0.3)",fontSize:10,fontWeight:600}}>LinkedIn</a>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                    <span style={{fontSize:12,fontWeight:600,color:"#94a3b8"}}>Decisores — {d.nome}</span>
+                    <button style={{padding:"5px 12px",borderRadius:7,border:"none",background:"#f97316",color:"#fff",fontSize:11,fontWeight:600,cursor:"pointer"}} onClick={()=>addDec(r)}>+ Adicionar</button>
+                  </div>
+                  {!dd.length?<div style={{textAlign:"center",padding:16,fontSize:12,color:"#475569"}}>Clique em Enriquecer para buscar automaticamente.</div>
+                    :dd.map((dc,i)=>(
+                      <DecCard key={i} dc={dc} r={r} i={i} empresa={d.nome} agencia={d.ag} trigger={d.trig} pdKey={pdKey}
+                        isEditing={!!expd[r+"-"+i]}
+                        onToggleEdit={()=>togEd(r+"-"+i)}
+                        onUpdate={(f,v)=>updDec(r,i,f,v)}
+                        onRemove={()=>rmDec(r,i)}/>
+                    ))
+                  }
+                </div>
+              )}
+            </div>
+          );
+        })}
+        {lista.length>300&&<div style={{textAlign:"center",fontSize:12,color:"#4b5563",padding:10}}>+{lista.length-300} resultados</div>}
+      </div>
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
