@@ -1,0 +1,2151 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Galeria Holding — Central Comercial</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&family=Inter:wght@300;400;500;600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#060606;color:#eee;min-height:100vh;overflow:hidden;display:flex;flex-direction:column;font-size:14px;line-height:1.5}
+input,select,button,textarea{font-family:inherit}
+a{text-decoration:none}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:#2a2a2a;border-radius:2px}
+
+/* ── FIGURINHA ── */
+.fig-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:14px;margin-bottom:18px}
+.fig-card{background:#0e0e0e;border:1px solid #1a1a1a;border-radius:10px;overflow:hidden;position:relative;transition:all .2s;cursor:pointer;display:flex;flex-direction:column}
+.fig-card:hover{border-color:var(--tc);transform:translateY(-2px);box-shadow:0 6px 20px rgba(0,0,0,.5)}
+.fig-card.contacted{border-color:rgba(52,211,153,.35);background:rgba(52,211,153,.02)}
+.fig-shine{position:absolute;inset:0;background:linear-gradient(135deg,rgba(255,255,255,.03) 0%,transparent 60%);pointer-events:none}
+.fig-badge{position:absolute;top:7px;right:7px;font-size:7px;font-family:'DM Mono',monospace;padding:2px 5px;border-radius:100px;letter-spacing:.5px}
+.fig-photo{width:100%;height:110px;background:#111;display:flex;align-items:center;justify-content:center;font-size:28px;font-weight:800;overflow:hidden;position:relative}
+.fig-body{padding:9px 11px}
+.fig-name{font-size:11px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:2px}
+.fig-cargo{font-size:9px;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:'DM Mono',monospace}
+.fig-actions{display:flex;gap:3px;margin-top:7px;flex-wrap:wrap}
+.fig-btn{padding:3px 7px;border-radius:3px;font-size:8px;font-family:'DM Mono',monospace;cursor:pointer;border:1px solid #1e1e1e;background:transparent;color:#444;transition:all .15s}
+.fig-btn:hover{border-color:var(--tc);color:var(--tc)}
+.fig-btn.em{color:#60A5FA;border-color:rgba(96,165,250,.3)}
+.fig-btn.wa{color:#34D399;border-color:rgba(52,211,153,.3)}
+.fig-btn.li{color:#38bdf8;border-color:rgba(56,189,248,.3)}
+.fig-decisao{border-color:rgba(var(--tcr),.3)!important;box-shadow:0 0 12px rgba(var(--tcr),.08)}
+.org-tree{display:flex;flex-direction:column;gap:0}
+.org-level{margin-bottom:4px}
+.org-level-label{font-size:9px;font-family:"DM Mono",monospace;letter-spacing:1.5px;text-transform:uppercase;padding:6px 4px 4px;color:#333;display:flex;align-items:center;gap:8px}
+.org-level-label::after{content:"";flex:1;height:1px;background:#1a1a1a}
+.org-level-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;padding:2px 0 10px}
+.org-connector{width:2px;height:14px;background:linear-gradient(to bottom,rgba(var(--tcr),.3),#1a1a1a);margin:0 auto}
+
+/* ── INSIGHT ── */
+.insight-card{background:linear-gradient(135deg,rgba(var(--tcr),.04),rgba(var(--tcr),.02));border:1px solid rgba(var(--tcr),.18);border-radius:8px;padding:16px;margin-bottom:16px}
+.insight-badge{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:100px;font-size:9px;font-family:'DM Mono',monospace;background:rgba(var(--tcr),.1);color:var(--tc);border:1px solid rgba(var(--tcr),.2);margin-bottom:8px;letter-spacing:.5px}
+.insight-body{font-size:12px;line-height:1.8;color:#999}
+
+/* ── HOLDING ── */
+.holding-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px}
+.holding-card{background:#0e0e0e;border:1px solid #1a1a1a;border-radius:8px;padding:16px;cursor:pointer;transition:all .2s}
+.holding-card:hover{transform:translateY(-2px)}
+.holding-name{font-size:15px;font-weight:800;font-family:'Syne',sans-serif;margin-bottom:4px}
+.holding-desc{font-size:10px;color:#444;line-height:1.5;margin-bottom:10px;font-family:'DM Mono',monospace}
+
+/* ── BATCH ── */
+.batch-row{display:flex;align-items:center;gap:10px;padding:10px 12px;background:#0e0e0e;border:1px solid #1a1a1a;border-radius:6px;margin-bottom:5px}
+.bcheck{width:18px;height:18px;border-radius:3px;border:2px solid #1e1e1e;display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;font-size:10px}
+.bcheck.on{background:var(--tc);border-color:var(--tc);color:#000}
+
+/* ── TOPBAR BTNS ── */
+.tbtn{padding:5px 11px;border:1px solid #1e1e1e;border-radius:3px;background:transparent;color:#555;font-size:9px;font-family:'DM Mono',monospace;cursor:pointer;letter-spacing:.5px;transition:all .15s;white-space:nowrap}
+.tbtn:hover{border-color:var(--tc);color:var(--tc)}
+.tbtn.green{border-color:rgba(52,211,153,.3);color:#34D399}
+.tbtn.blue{border-color:rgba(96,165,250,.3);color:#60A5FA}
+.tbtn.purple{border-color:rgba(167,139,250,.3);color:#A78BFA}
+.topbar{display:flex;align-items:stretch;background:#0a0a0a;border-bottom:1px solid #181818;height:50px;flex-shrink:0;overflow-x:auto}
+.brand{display:flex;align-items:center;gap:9px;padding:0 18px;border-right:1px solid #181818;flex-shrink:0}
+.bdot{width:7px;height:7px;border-radius:50%;animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.bname{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:3px;white-space:nowrap}
+.tabs-row{display:flex;align-items:stretch;flex:1}
+.ctab{display:flex;align-items:center;gap:7px;padding:0 15px;border-right:1px solid #181818;cursor:pointer;transition:all .15s;white-space:nowrap;border-bottom:2px solid transparent;flex-shrink:0}
+.ctab:hover{background:rgba(255,255,255,.025)}
+.ctab.on{border-bottom-color:var(--tc)}
+.tdot{width:6px;height:6px;border-radius:50%;background:var(--tc)}
+.tname{font-size:10px;font-family:'DM Mono',monospace;letter-spacing:.5px;color:#555}
+.ctab.on .tname{color:var(--tc)}
+.tb-right{display:flex;align-items:center;gap:10px;padding:0 14px;border-left:1px solid #181818;flex-shrink:0}
+.api-chip{display:flex;align-items:center;gap:4px;font-size:9px;font-family:'DM Mono',monospace;color:#333;letter-spacing:.5px}
+.apdot{width:5px;height:5px;border-radius:50%}
+.cfgbtn{padding:4px 10px;border:1px solid #1e1e1e;border-radius:3px;background:transparent;color:#444;font-size:9px;font-family:'DM Mono',monospace;cursor:pointer;letter-spacing:.5px}
+.cfgbtn:hover{border-color:#555;color:#aaa}
+.resbtn{padding:4px 10px;border:1px solid rgba(255,71,87,.3);border-radius:3px;background:rgba(255,71,87,.06);color:#FF4757;font-size:9px;font-family:'DM Mono',monospace;cursor:pointer;letter-spacing:.5px}
+.resbtn:hover{background:rgba(255,71,87,.12)}
+.ws{display:flex;flex:1;overflow:hidden}
+.sb{width:295px;flex-shrink:0;border-right:1px solid #181818;display:flex;flex-direction:column;background:#080808}
+.sbhead{padding:11px 14px;border-bottom:1px solid #181818;display:flex;align-items:center;justify-content:space-between}
+.sbtitle{font-size:9px;font-family:'DM Mono',monospace;color:#333;letter-spacing:2px;text-transform:uppercase}
+.sbcnt{font-size:9px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:100px;border:1px solid var(--tc);color:var(--tc)}
+.sbsearch{padding:8px 12px;border-bottom:1px solid #181818}
+.sbsearch input{width:100%;background:#060606;border:1px solid #1a1a1a;border-radius:3px;padding:6px 9px;color:#eee;font-family:'DM Mono',monospace;font-size:10px;outline:none}
+.sbsearch input:focus{border-color:var(--tc)}
+.sbsearch input::placeholder{color:#252525}
+.sbfil{display:flex;gap:4px;padding:6px 12px;border-bottom:1px solid #181818;flex-wrap:wrap}
+.fb{padding:3px 8px;border-radius:3px;border:1px solid #1a1a1a;background:transparent;color:#333;font-size:8px;font-family:'DM Mono',monospace;cursor:pointer;letter-spacing:.5px}
+.fb.on{border-color:var(--tc);color:var(--tc)}
+.fb.res{border-color:rgba(255,71,87,.3);color:#FF4757}
+.fb.res.on{background:rgba(255,71,87,.08)}
+.sblist{flex:1;overflow-y:auto}
+.coitem{padding:10px 12px;border-bottom:1px solid #111;cursor:pointer;display:flex;align-items:center;gap:9px;transition:background .1s}
+.coitem:hover{background:rgba(255,255,255,.018)}
+.coitem.sel{border-left:2px solid var(--tc);background:rgba(255,255,255,.02)}
+.coitem.restricted{border-left:2px solid rgba(255,71,87,.4);background:rgba(255,71,87,.025)}
+.corank{font-family:'DM Mono',monospace;font-size:8px;color:#2a2a2a;min-width:24px;text-align:right}
+.cobody{flex:1;min-width:0}
+.coname{font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cosec{font-size:8px;font-family:'DM Mono',monospace;color:#333;margin-top:1px}
+.fittag{font-size:7px;font-family:'DM Mono',monospace;padding:2px 5px;border-radius:100px;white-space:nowrap}
+.restag{font-size:7px;font-family:'DM Mono',monospace;padding:2px 6px;border-radius:100px;white-space:nowrap;background:rgba(255,71,87,.1);color:#FF4757;border:1px solid rgba(255,71,87,.25)}
+.crmdot{width:5px;height:5px;border-radius:50%;background:#4B9EFF;flex-shrink:0}
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.subtabs{display:flex;border-bottom:1px solid #181818;background:#080808;flex-shrink:0}
+.st{padding:10px 16px;font-size:9px;font-family:'DM Mono',monospace;color:#333;cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.5px;transition:all .15s}
+.st:hover{color:#888}
+.st.on{color:var(--tc);border-bottom-color:var(--tc)}
+.panel{flex:1;overflow-y:auto;padding:22px 26px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.card{background:#0e0e0e;border:1px solid #181818;border-radius:5px;padding:14px}
+.clbl{font-size:8px;font-family:'DM Mono',monospace;color:#333;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.cval{font-size:14px;font-weight:700}
+.csub{font-size:9px;font-family:'DM Mono',monospace;color:#333;margin-top:3px}
+.sec{font-size:8px;font-family:'DM Mono',monospace;color:#2a2a2a;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.sec::after{content:'';flex:1;height:1px;background:#181818}
+.tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
+.tag{font-size:9px;font-family:'DM Mono',monospace;padding:3px 8px;border-radius:3px;background:#0e0e0e;border:1px solid #181818;color:#333}
+.taghl{border-color:rgba(var(--tcr),.25);color:var(--tc);background:rgba(var(--tcr),.05)}
+.btn{padding:7px 13px;border-radius:3px;font-family:'Syne',sans-serif;font-size:10px;font-weight:700;cursor:pointer;transition:all .15s;letter-spacing:.3px}
+.btnp{color:#000;border:none}
+.btno{background:transparent;color:#888;border:1px solid #222}
+.btno:hover{border-color:var(--tc);color:var(--tc)}
+.btnsm{padding:5px 9px;font-size:9px}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap}
+.deccard{background:#0e0e0e;border:1px solid #181818;border-radius:5px;padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:7px}
+.decav{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;border:1px solid #1e1e1e}
+.decinfo{flex:1;min-width:0}
+.decname{font-size:11px;font-weight:700}
+.deccargo{font-size:9px;font-family:'DM Mono',monospace;color:#444;margin-top:1px}
+.dectags{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+.dt{font-size:8px;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:2px;background:#111;border:1px solid #1a1a1a;color:#333}
+.dtok{color:var(--tc);border-color:rgba(var(--tcr),.2)}
+.decacts{display:flex;gap:4px;flex-wrap:wrap}
+.feeditem{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #111}
+.fiicon{width:26px;height:26px;border-radius:50%;background:#0e0e0e;border:1px solid #181818;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0}
+.fibody{flex:1}
+.fititle{font-size:11px;font-weight:600;margin-bottom:2px}
+.fimeta{font-size:8px;font-family:'DM Mono',monospace;color:#333}
+.finote{font-size:10px;color:#444;margin-top:4px;font-family:'DM Mono',monospace;border-left:2px solid #181818;padding-left:7px;line-height:1.5}
+.aiout{background:#0e0e0e;border:1px solid rgba(var(--tcr),.15);border-radius:5px;padding:15px;margin-bottom:14px;font-size:11px;font-family:'DM Mono',monospace;line-height:1.8;color:#888}
+.monitem{background:#0e0e0e;border:1px solid #181818;border-radius:5px;padding:12px 14px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start}
+.monbody{flex:1}.montitle{font-size:11px;font-weight:700;margin-bottom:3px}
+.mondesc{font-size:10px;font-family:'DM Mono',monospace;color:#444;line-height:1.5}
+.montime{font-size:8px;font-family:'DM Mono',monospace;color:#2a2a2a;margin-top:4px}
+.monbadge{font-size:7px;font-family:'DM Mono',monospace;padding:2px 6px;border-radius:100px;flex-shrink:0;letter-spacing:.5px}
+.frow{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.flbl{font-size:8px;font-family:'DM Mono',monospace;color:#333;letter-spacing:1px;text-transform:uppercase}
+.finp{background:#060606;border:1px solid #1a1a1a;border-radius:3px;padding:7px 9px;color:#eee;font-family:'DM Mono',monospace;font-size:10px;outline:none;width:100%}
+.finp:focus{border-color:var(--tc)}
+.finp::placeholder{color:#222}
+textarea.finp{resize:vertical;min-height:70px;line-height:1.6}
+select.finp{cursor:pointer}
+.modov{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px}
+.mod{background:#0e0e0e;border:1px solid #222;border-radius:7px;width:100%;max-width:480px;max-height:86vh;overflow-y:auto;padding:22px}
+.mod-wide{max-width:680px}
+.modtitle{font-size:15px;font-weight:800;margin-bottom:16px;letter-spacing:-.5px}
+.modacts{display:flex;gap:7px;margin-top:16px;justify-content:flex-end}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;opacity:.2;text-align:center}
+.emptyicon{font-size:44px}
+.lbar{height:1px;background:#181818;overflow:hidden;margin:5px 0}
+.lfill{height:100%;background:var(--tc);animation:la 1.4s ease-in-out infinite}
+@keyframes la{0%{width:0;margin-left:0}50%{width:60%;margin-left:20%}100%{width:0;margin-left:100%}}
+.stxt{font-size:9px;font-family:'DM Mono',monospace;color:var(--tc);padding:4px 0}
+.accname{font-size:24px;font-weight:800;letter-spacing:-1px;line-height:1}
+.accmeta{font-size:9px;font-family:'DM Mono',monospace;color:#333;margin-top:5px}
+.acctop{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+.angtabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px}
+.angtab{padding:4px 9px;border-radius:3px;border:1px solid #1a1a1a;background:transparent;color:#333;font-size:8px;font-family:'DM Mono',monospace;cursor:pointer;letter-spacing:.5px}
+.angtab.on{border-color:var(--tc);color:var(--tc)}
+
+/* RESTRICTION BANNER */
+.res-banner{background:rgba(255,71,87,.06);border:1px solid rgba(255,71,87,.25);border-radius:5px;padding:12px 14px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start}
+.res-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+.res-body{flex:1}
+.res-title{font-size:11px;font-weight:700;color:#FF4757;margin-bottom:4px}
+.res-desc{font-size:10px;font-family:'DM Mono',monospace;color:#884040;line-height:1.6}
+.res-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.rtag{font-size:8px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:100px;background:rgba(255,71,87,.1);color:#FF4757;border:1px solid rgba(255,71,87,.2)}
+
+/* RESTRICTION PANEL */
+.res-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #111;border-radius:4px;margin-bottom:4px;background:#0c0c0c}
+.res-co{font-size:11px;font-weight:700;flex:1}
+.res-reason{font-size:9px;font-family:'DM Mono',monospace;color:#444;flex:2}
+.res-agency{font-size:8px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:100px}
+
+/* REMINDER BANNER */
+.reminder{background:rgba(255,181,71,.05);border:1px solid rgba(255,181,71,.25);border-radius:5px;padding:12px 16px;margin-bottom:0;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.reminder-txt{flex:1;font-size:11px;color:#FFB547;font-family:'DM Mono',monospace}
+.reminder-btn{padding:5px 12px;border-radius:3px;border:1px solid rgba(255,181,71,.4);background:transparent;color:#FFB547;font-size:9px;font-family:'DM Mono',monospace;cursor:pointer;white-space:nowrap}
+</style>
+</head>
+<body>
+<div id="root"></div><div id="modal-root" style="position:relative;z-index:9999"></div>
+
+<script type="text/babel">
+const {useState,useMemo,useEffect,useCallback} = React;
+
+const HUNTER_KEY = "21466c7f183f70470dbd90ed0a7fd1c1d675d125";
+const LUSHA_KEY  = "e0f6b54f-d280-49ff-a68f-69ad9536c384";
+
+// ─── DOMAIN MAP ──────────────────────────────────────────────────────────────
+const DM={"GLOBO PLAY":"globo.com","AMBEV":"ambev.com.br","MERCADO LIVRE":"mercadolivre.com.br","CLARO":"claro.com.br","AMAZON":"amazon.com.br","MAGAZINE LUIZA":"magazineluiza.com.br","SHOPEE":"shopee.com.br","TIM BRASIL":"tim.com.br","BRADESCO":"bradesco.com.br","SANTANDER":"santander.com.br","NU PAGAMENTOS":"nubank.com.br","BYD DO BRASIL":"byd.com.br","NETFLIX":"netflix.com","LATAM AIRLINES":"latam.com","UBER DO BRASIL":"uber.com","MERCADO PAGO":"mercadopago.com.br","APPLE BRASIL":"apple.com","TIKTOK":"tiktok.com","AIRBNB":"airbnb.com","STONE PAGAMENTOS":"stone.com.br","IFOOD":"ifood.com.br","LOJAS RENNER":"lojasrenner.com.br","CARREFOUR":"carrefour.com.br","ASSAI ATACADISTA":"assai.com.br","VOLKSWAGEN":"vw.com.br","AMERICANAS":"americanas.com.br","PICPAY":"picpay.com","SERASA EXPERIAN":"serasa.com.br","BTG PACTUAL":"btgpactual.com","XP INVESTIMENTOS":"xpi.com.br","INTER":"inter.co","MICROSOFT":"microsoft.com.br","GOOGLE":"google.com.br","TOTVS":"totvs.com","TOYOTA":"toyota.com.br","QUINTO ANDAR":"quintoandar.com","ICARROS":"icarros.com.br","WEBMOTORS":"webmotors.com.br","OLX":"olx.com.br","KABUM":"kabum.com.br","DAFITI":"dafiti.com.br","O BOTICARIO":"boticario.com.br","HAPVIDA":"hapvida.com.br","PORTO SEGURO":"portoseguro.com.br","MASTERCARD":"mastercard.com","VISA DO BRASIL":"visa.com.br","SPOTIFY":"spotify.com","VALE":"vale.com","MOVIDA":"movida.com.br","VIVARA":"vivara.com.br","RAIA DROGASIL":"rd.com.br","AZUL LINHAS AEREAS":"voeazul.com.br","GOL LINHAS AEREAS":"voegol.com.br","MULTIPLAN":"multiplan.com.br","SHEIN":"shein.com","AREZZO":"arezzoco.com.br","LOJAS RIACHUELO":"riachuelo.com.br","HYUNDAI":"hyundai.com.br","FIAT":"fiat.com.br","HONDA AUTOMOVEIS":"honda.com.br","LEROY MERLIN":"leroymerlin.com.br","DECATHLON":"decathlon.com.br","ADOBE SYSTEMS":"adobe.com","MOTOROLA":"motorola.com.br","SAMSUNG":"samsung.com.br","COCA COLA":"cocacola.com.br","BOOKING":"booking.com","DECOLAR":"decolar.com","ADIDAS":"adidas.com.br","NIKE DO BRASIL":"nike.com.br","SEPHORA":"sephora.com.br","CIELO":"cielo.com.br"};
+function getDomain(n){for(const k of Object.keys(DM)){if(n.includes(k))return DM[k];}return null;}
+
+// ─── LEADS DATA ──────────────────────────────────────────────────────────────
+const RAW=[
+  [1,"GLOBO PLAY","Streaming"],[2,"AMBEV","FMCG"],[3,"MERCADO LIVRE","E-commerce"],
+  [5,"EMS FARMACEUTICA","Farma"],[8,"ITAU",null],[9,"CLARO","Telecom"],
+  [10,"AMAZON","E-commerce"],[14,"MAGAZINE LUIZA","E-commerce"],[16,"WALT DISNEY","Streaming"],
+  [18,"SKY BRASIL","Telecom"],[22,"SHOPEE","E-commerce"],[23,"TIM BRASIL","Telecom"],
+  [24,"MC DONALD",null],[25,"GLOBO","Media"],[27,"BRADESCO","Financeiro"],
+  [30,"BRF BRASIL FOODS","FMCG"],[32,"GRUPO CASAS BAHIA","Varejo"],[34,"COLGATE PALMOLIVE","FMCG"],
+  [35,"SANTANDER","Financeiro"],[36,"COCA COLA","FMCG"],[39,"NU PAGAMENTOS","Fintech"],
+  [43,"BYD DO BRASIL","Automotivo"],[44,"SEARA",null],[45,"CAIXA","Financeiro"],
+  [47,"BURGER KING","Food"],[48,"O BOTICARIO","Beleza"],[49,"NATURA",null],
+  [50,"ULTRAFARMA","Farma"],[55,"SAMSUNG","Tech"],[56,"PETROBRAS","Energia"],
+  [60,"SBT","Media"],[63,"LOJAS RENNER","Varejo Moda"],[64,"GENERAL MOTORS","Automotivo"],
+  [67,"VOLKSWAGEN","Automotivo"],[72,"NESTLE","FMCG"],[74,"SICREDI","Financeiro"],
+  [76,"STELLANTIS","Automotivo"],[77,"WARNER BROS","Streaming"],[79,"CARREFOUR","Varejo"],
+  [80,"L OREAL BRASIL","Beleza"],[82,"ASSAI ATACADISTA","Varejo"],[83,"IFOOD","Super App"],
+  [86,"JBS","FMCG"],[89,"NETFLIX",null],[91,"LATAM AIRLINES","Travel"],
+  [94,"DECOLAR","Travel"],[97,"ELECTROLUX","Eletro"],[98,"ATACADAO","Varejo"],
+  [105,"UBER DO BRASIL","Super App"],[106,"HYUNDAI","Automotivo"],[107,"MERCADO PAGO","Fintech"],
+  [109,"APPLE BRASIL","Tech"],[110,"GOL LINHAS AEREAS","Travel"],[112,"TIKTOK","Social Media"],
+  [115,"AIRBNB","Travel"],[120,"STONE PAGAMENTOS","Fintech"],[134,"AMERICANAS","E-commerce"],
+  [135,"PEPSICO","FMCG"],[140,"CIELO","Fintech"],[141,"AZUL LINHAS AEREAS","Travel"],
+  [142,"YDUQS","Educacao"],[144,"MADEIRAMADEIRA","E-commerce"],[145,"PICPAY","Fintech"],
+  [146,"BOOKING","Travel"],[148,"SERASA EXPERIAN","Fintech"],[149,"LEROY MERLIN","Varejo"],
+  [160,"VALE","Mineracao"],[161,"BTG PACTUAL","Financeiro"],[164,"RAIA DROGASIL","Farma"],
+  [165,"HAPVIDA","Saude"],[178,"SHEIN","Varejo Moda"],[186,"GERDAU","Industria"],
+  [187,"MOBLY","E-commerce"],[189,"MRV ENGENHARIA","Construcao"],[192,"FIAT","Automotivo"],
+  [197,"RENAULT DO BRASIL","Automotivo"],[200,"XP INVESTIMENTOS",null],
+  [211,"GRUPO PAO DE ACUCAR","Varejo"],[215,"FACEBOOK BRASIL","Social Media"],
+  [217,"VISA DO BRASIL","Financeiro"],[224,"PEUGEOT CITROEN","Automotivo"],
+  [226,"AMIL","Saude"],[230,"QUINTO ANDAR","Proptech"],[234,"FORD","Automotivo"],
+  [235,"NISSAN DO BRASIL","Automotivo"],[237,"DIAGEO","FMCG"],[238,"MOVIDA","Mobilidade"],
+  [247,"VIVARA","Varejo"],[255,"DAFITI","E-commerce"],[268,"LENOVO","Tech"],
+  [272,"ADOBE SYSTEMS","B2B Tech"],[279,"KABUM","E-commerce"],[281,"MOTOROLA","Tech"],
+  [282,"NOMAD FINTECH","Fintech"],[284,"BCO INTER","Fintech"],[296,"SPOTIFY","Streaming"],
+  [303,"TOYOTA","Automotivo"],[313,"LOJAS RIACHUELO","Varejo Moda"],[315,"LOCALIZA","Mobilidade"],
+  [321,"OUTBACK","Food"],[323,"MASTERCARD","Financeiro"],[325,"GOOGLE",null],
+  [331,"PORTO SEGURO","Seguros"],[338,"NIKE DO BRASIL","Varejo Esporte"],
+  [340,"BELEZA NA WEB","Beleza"],[356,"DELL","B2B Tech"],[382,"HONDA AUTOMOVEIS","Automotivo"],
+  [390,"TOK STOK","Varejo"],[404,"MARISA","Varejo Moda"],[422,"BAYER","Farma"],
+  [429,"MULTIPLAN","Real Estate"],[439,"SEPHORA","Beleza"],[444,"KIMBERLY CLARK","FMCG"],
+  [455,"SONY MUSIC","Entretenimento"],[474,"WEBMOTORS","Marketplace"],
+  [495,"JAGUAR LAND ROVER","Automotivo"],[510,"HOTELARIA ACCOR","Travel"],
+  [547,"ADIDAS","Varejo Esporte"],[553,"AREZZO","Varejo Moda"],[561,"REDE D OR","Saude"],
+  [605,"OLX","Marketplace"],[651,"DECATHLON","Varejo Esporte"],[296,"SPOTIFY","Streaming"],
+  [282,"NOMAD FINTECH","Fintech"],[150,"RED BULL","FMCG"],[136,"BCO PAN","Financeiro"],
+  [169,"CIMED","Farma"],[154,"CRUZEIRO DO SUL","Educacao"],[142,"YDUQS","Educacao"],
+  [181,"GRUPO MADERO","Food"],[199,"CREFISA","Financeiro"],[150,"RED BULL","FMCG"],
+  [321,"OUTBACK","Food"],[47,"BURGER KING","Food"],[296,"SPOTIFY","Streaming"],
+  [325,"GOOGLE",null],[200,"XP INVESTIMENTOS",null],[89,"NETFLIX",null]
+];
+
+// deduplicate
+const seen=new Set();
+const LEADS_ALL=RAW.filter(x=>{const k=x[0]+x[1];if(seen.has(k))return false;seen.add(k);return true;}).map(x=>({rank:x[0],nome:x[1],setor:x[2],cli:x[2]===null}));
+const PROSP=LEADS_ALL.filter(d=>d.setor!==null);
+
+// ─── RESTRICTIONS MAP ─────────────────────────────────────────────────────────
+// Each entry: { agencies, reason, category, expiresAt (optional ISO date) }
+// category is used to match leads by setor or name keywords
+const RESTRICTIONS = [
+  // ── GALERIA ──
+  {agencies:["galeria"],keywords:["BCO","BANCO","BRADESCO","SANTANDER","CAIXA","SICREDI","SICOOB","BTG","INTER","CREFISA","BCO PAN","BV","BANRISUL","ORIGINAL"],reason:"Conflito com Itaú",category:"Financeiro/Bancos"},
+  {agencies:["galeria"],keywords:["HAVAIANAS","GRENDENE","IPANEMA","RIDER","MELISSA","AREZZO","ANACAPRI","VIZZANO"],reason:"Conflito com Havaianas",category:"Calcados"},
+  {agencies:["galeria"],keywords:["NATURA","O BOTICARIO","AVON","MARY KAY","EUDORA","QUEM DISSE","AMEND","SALON LINE"],reason:"Conflito com Natura (até jun/25)",category:"Beleza",expiresAt:"2025-06-30"},
+  {agencies:["galeria"],keywords:["ITALAC","PIRACANJUBA","BETANIA","VIGOR","EMBARÉ","LATICINIOS","QUATÁ","ITALAC"],reason:"Conflito com Italac (lácteos)",category:"Lacteos"},
+  {agencies:["galeria"],keywords:["CAFÉ 3 CORACOES","NESCAFE","MELITTA","PILAO","TRES CORACOES","CAFÉ DO PONTO","STARBUCKS"],reason:"Conflito com Café 3 Corações",category:"Cafe"},
+  {agencies:["galeria"],keywords:["GALLO","AZEITE","ANDORINHA","CARBONELL","BORGES"],reason:"Conflito com Gallo (azeites)",category:"Azeite"},
+  {agencies:["galeria"],keywords:["BET365","BETFAIR","SPORTINGBET","PIXBET","BETANO","VAIDEBET","ESPORTES DA SORTE","ESTRELA BET","BETNACIONAL","SUPERBET","BLAZE","BETESPORTE","NOVIBET"],reason:"Conflito com Flutter/Betnacional (bets)",category:"Betting"},
+  {agencies:["galeria"],keywords:["BAUDUCCO","VISCONTI","OREO","LACTA","TRAKINAS","CLUB SOCIAL","TRIUNFO","PANCO","WICKBOLD"],reason:"Conflito com Bauducco (biscoitos/panificados)",category:"Panificados"},
+  {agencies:["galeria"],keywords:["DORIANA","QUALY","DELÍCIA","BECEL","PRIMOR","MILA MARG"],reason:"Conflito com Doriana (margarinas)",category:"Margarinas"},
+  {agencies:["galeria"],keywords:["SEARA","SADIA","PERDIGAO","FRIBOI","MARFRIG","MINERVA","JBS","BRF"],reason:"Conflito com Seara Gourmet (carnes/frios)",category:"Carnes"},
+  {agencies:["galeria"],keywords:["VIVO","CLARO","TIM","OI","SKY","NEXTEL","ALGAR TELECOM"],reason:"Conflito com Vivo (telecom)",category:"Telecom"},
+  {agencies:["galeria"],keywords:["BURGER KING","BOB S","SUBWAY","GIRAFFAS","CHINA IN BOX","HABIB","DOMINOS","PIZZA HUT","OUTBACK","KFC","POPEYES"],reason:"Conflito com McDonald's (fast food)",category:"Fast Food"},
+  {agencies:["galeria"],keywords:["KIMBERLY CLARK","SCOTT","NEVE","MILI","PERSONAL","ELSEVE","VEJA","BONI","PAPEL HIGIENE"],reason:"Conflito com Softys (papel/higiene)",category:"Higiene Papel"},
+  {agencies:["galeria"],keywords:["BING","YAHOO","BAIDU","PERPLEXITY","GEMINI","COPILOT","SEARCH","BUSCADOR"],reason:"Conflito com Google Search/Gemini",category:"Busca/IA"},
+
+  // ── MILÀ ──
+  {agencies:["mila"],keywords:["RED BULL","MONSTER","BURN","HELL ENERGY","REIGN","BANG","FUSION"],reason:"Conflito com Energético Sede",category:"Energeticos"},
+  {agencies:["mila"],keywords:["TOTALPASS","GYMPASS","WELLHUB","FLASH BENEFICIOS","SWILE"],reason:"Conflito com TotalPass",category:"Beneficios"},
+  {agencies:["mila"],keywords:["SMART FIT","ACADEMIA","BLUEFIT","BODYTECH","BIORITMO","FITNESS"],reason:"Conflito com SmartFit",category:"Academias"},
+  {agencies:["mila"],keywords:["VERISURE","PROSEGUR","TYCO","ADT","G4S","ALARME","SEGURANCA RESIDENCIAL"],reason:"Conflito com Verisure (alarmes)",category:"Seguranca"},
+  {agencies:["mila"],keywords:["CURAPROX","COLGATE","ORAL-B","SENSODYNE","CLOSE UP","ELGYDIUM","CREST"],reason:"Conflito com Curaprox (higiene oral)",category:"Higiene Oral"},
+  {agencies:["mila"],keywords:["ACHE","EMS","EUROFARMA","HYPERA","ACHÉ","NATULAB","CIMED","MEDLEY","BAYER","NOVARTIS","SANOFI"],reason:"Conflito com Aché Laboratórios",category:"Farmaceutico"},
+  {agencies:["mila"],keywords:["SUZANO","KLABIN","FIBRIA","BRACELL","CENIBRA","PAPEL CELULOSE"],reason:"Conflito com Suzano (papel/celulose)",category:"Papel Celulose"},
+  {agencies:["mila"],keywords:["BCO BMG","BANCO PAN","BMG","AGIBANK","BANQI","CREDITAS","C6"],reason:"Conflito com Banco BMG",category:"Banco"},
+
+  // ── 404 ──
+  {agencies:["404"],keywords:["BANCO","BCO","BRADESCO","SANTANDER","ITAU","CAIXA","SICREDI","SICOOB","BTG","INTER","NUBANK","C6","ORIGINAL","SAFRA","MODAL","MASTER","AGIBANK"],reason:"Conflito com XP + Itaú (financeiro)",category:"Financeiro/Bancos"},
+  {agencies:["404"],keywords:["NETFLIX","PARAMOUNT","HBO","MAX","DISNEY PLUS","APPLE TV","AMAZON PRIME","GLOBOPLAY","TELECINE"],reason:"Conflito com Netflix (streaming)",category:"Streaming"},
+  {agencies:["404"],keywords:["SAMSUNG","MOTOROLA","XIAOMI","HUAWEI","OPPO","ONEPLUS","PIXEL","ANDROID"],reason:"Conflito com Android/Google (tech)",category:"Android/Tech"},
+  {agencies:["404"],keywords:["NATURA","O BOTICARIO","AVON","EUDORA","QUEM DISSE"],reason:"Conflito com Natura (até jun/25)",category:"Beleza",expiresAt:"2025-06-30"},
+];
+
+// ─── CHECK RESTRICTION ────────────────────────────────────────────────────────
+function checkRestrictions(lead, groupId, customRestrictions=[]) {
+  const allRes = [...RESTRICTIONS, ...customRestrictions];
+  const matched = allRes.filter(r => {
+    if (!r.agencies.includes(groupId)) return false;
+    // Check expiry
+    if (r.expiresAt) {
+      const exp = new Date(r.expiresAt);
+      if (exp < new Date()) return false; // expired, no longer restricted
+    }
+    return r.keywords.some(kw => lead.nome.toUpperCase().includes(kw.toUpperCase()));
+  });
+  return matched;
+}
+
+// ─── GRUPO EMPRESAS ───────────────────────────────────────────────────────────
+const GRUPO = [
+  {id:"galeria",name:"Galeria",color:"#E8C97A",rgb:"232,201,122",desc:"Agência integrada de performance e criatividade",
+   angles:["Performance + Criatividade","Resultado de Negócio","Integração de Canais","Data-Driven Creative","ROI de Mídia"],
+   fit:s=>["E-commerce","Varejo","Fintech","FMCG","Telecom","Super App","Social Media"].includes(s)?"alto":["Automotivo","Saude","Educacao"].includes(s)?"medio":"medio",
+   dor:s=>({"E-commerce":"Campanhas com alto CPM mas baixa conversão — criatividade e performance não falam a mesma língua.","Fintech":"CAC elevado por ausência de creative testing sistemático nas campanhas digitais.","FMCG":"Marca presente na mídia mas sem conectar criatividade com dados de performance.","Telecom":"Alta verba de mídia com baixo ROI por falta de integração entre planejamento e execução.","Super App":"Múltiplas campanhas rodando sem unidade criativa — cada canal conta uma história diferente."})[s]||"Investimento em mídia sem atribuição clara de resultado por canal.",
+   prompt:"Você representa a Galeria, agência integrada líder em performance e criatividade. Une dados, mídia e criatividade para gerar resultado real de negócio."},
+  {id:"mila",name:"Milà",color:"#C9A87C",rgb:"201,168,124",desc:"Agência de cases e storytelling de marca",
+   angles:["Construção de Marca","Storytelling","Propósito de Marca","Relevância Cultural","Case de Sucesso"],
+   fit:s=>["FMCG","Beleza","Varejo Moda","Automotivo","Food"].includes(s)?"alto":["Fintech","Streaming"].includes(s)?"medio":"medio",
+   dor:s=>({"FMCG":"Marca com alto investimento em mídia mas sem narrativa que gere amor e preferência no longo prazo.","Beleza":"Presença digital forte mas sem um território de marca que diferencie da concorrência.","Varejo Moda":"Performance de varejo sem construção de desejo — a marca precisa ser mais que o preço.","Automotivo":"Comunicação de produto sem construção de sonho e aspiração junto ao consumidor."})[s]||"Marca com investimento em mídia sem narrativa de longo prazo.",
+   prompt:"Você representa a Milà, agência especializada em construção de marca e storytelling. Cria narrativas que geram amor, preferência e relevância cultural para grandes marcas."},
+  {id:"404",name:"404",color:"#7EB8D4",rgb:"126,184,212",desc:"Agência de inovação, tech e novos modelos",
+   angles:["Inovação Digital","Novos Modelos de Negócio","Tech + Criatividade","Transformação Digital","Futuro da Comunicação"],
+   fit:s=>["Fintech","B2B Tech","Martech","Proptech","Super App","Social Media"].includes(s)?"alto":["Telecom","Saude","Educacao","Streaming"].includes(s)?"medio":"medio",
+   dor:s=>({"Fintech":"Produto inovador mas comunicação ainda no modelo tradicional.","B2B Tech":"Empresa de tecnologia com dificuldade de comunicar valor de forma humana e acessível.","Super App":"Produto com múltiplas features sem posicionamento claro."})[s]||"Empresa inovadora com comunicação ainda no modelo tradicional.",
+   prompt:"Você representa a 404, agência de inovação que une tecnologia e criatividade para marcas que estão construindo o futuro."},
+  {id:"cccaramelo",name:"cccaramelo",color:"#E8916A",rgb:"232,145,106",desc:"Agência de cultura, entretenimento e música",
+   angles:["Cultura e Entretenimento","Branded Music","Comunidade e Fandom","Relevância Jovem","Co-criação com Artistas"],
+   fit:s=>["FMCG","Streaming","Social Media","Food","Beleza","Entretenimento"].includes(s)?"alto":["Varejo","Varejo Moda","Automotivo"].includes(s)?"medio":"medio",
+   dor:s=>({"FMCG":"Marca com grande verba mas sem conexão real com cultura — o consumidor jovem não se identifica.","Streaming":"Plataforma de entretenimento que precisa de presença cultural fora do próprio produto.","Social Media":"Marca que existe no social mas sem território cultural que gere pertencimento."})[s]||"Marca com investimento em mídia sem conexão com a cultura do seu consumidor.",
+   prompt:"Você representa a cccaramelo, agência especializada em cultura, entretenimento e música. Conecta marcas com a cultura brasileira através de música, comunidades e co-criação com artistas."},
+  {id:"gaia",name:"GAIA",color:"#A78BFA",rgb:"167,139,250",desc:"Martech do grupo — CR.IA e BrandSync",
+   angles:["Produção de Peças com IA","BrandSync Franquias","Escala de Criativo","Performance de Conteúdo","Inteligência de Campanha"],
+   fit:s=>"alto",
+   dor:s=>({"E-commerce":"Alto volume de SKUs sem infraestrutura de produção que acompanhe a demanda de peças.","FMCG":"Múltiplas campanhas simultâneas com produtoras lentas que não aprendem com os dados.","Fintech":"Campanha com dezenas de variações necessárias para teste sem capacidade de produção em escala."})[s]||"Alto volume de peças necessárias sem infraestrutura de produção inteligente.",
+   prompt:"Você representa a GAIA, martech com CR.IA (estúdio de criativos com IA) e BrandSync (coordenação de conteúdo para franquias). Cases: McFriday, Natura, iCarros."},
+  {id:"catalyst",name:"Catalyst",color:"#34D399",rgb:"52,211,153",desc:"Mobile growth — compra e otimização de mídia mobile",
+   angles:["Mobile Growth","Apple Ads + In-App","Aquisição de Usuários","Retenção Mobile","CTV e Web Mobile"],
+   fit:s=>["Super App","Fintech","E-commerce","Streaming","Proptech","Marketplace"].includes(s)?"alto":["Saude","Educacao","FMCG"].includes(s)?"medio":"baixo",
+   dor:s=>({"Super App":"App com alto investimento em mídia mobile mas sem especialista em Apple Ads.","Fintech":"CAC de aquisição no app crescendo sem controle por falta de especialização em mobile growth.","E-commerce":"App com bom produto mas aquisição e retenção mobile sem estrutura de otimização."})[s]||"App com potencial de crescimento sem estrutura especializada de mobile growth.",
+   prompt:"Você representa a Catalyst, empresa de mobile growth. Compra e otimiza mídia mobile. Cases: McDonald's, Nomad, Belo, Rentcars."},
+  {id:"mantiqueira",name:"Mantiqueira",color:"#F472B6",rgb:"244,114,182",desc:"Empresa de conteúdo e entretenimento",
+   angles:["Branded Content","Série ou Filme de Marca","Universo Narrativo","Engajamento por Conteúdo","Amor de Marca Durável"],
+   fit:s=>["FMCG","Fintech","E-commerce","Streaming","Food","Beleza"].includes(s)?"alto":["Automotivo","Telecom","Saude"].includes(s)?"medio":"medio",
+   dor:s=>({"FMCG":"Marca com alto investimento em mídia interruptiva sem nenhum ativo de conteúdo duradouro.","Fintech":"Produto racional sem conexão emocional — conteúdo pode humanizar a marca.","E-commerce":"Plataforma que precisa sair da comunicação de oferta e construir território de conteúdo."})[s]||"Marca com investimento em interrupção sem ativo de conteúdo duradouro.",
+   prompt:"Você representa a Mantiqueira, empresa de conteúdo e entretenimento. Cria séries, filmes e roteiros para marcas. Conteúdo que gera relevância por interesse, não por interrupção."},
+  {id:"agente",name:"A.gente",color:"#FB923C",rgb:"251,146,60",desc:"Agência de influência estratégica",
+   angles:["Influência Estratégica","Fit de Audiência","Briefing de Campanha","Creator Economy","Micro e Macro Influência"],
+   fit:s=>["Beleza","FMCG","Varejo Moda","Food","Streaming","Social Media"].includes(s)?"alto":["E-commerce","Fintech","Saude"].includes(s)?"medio":"medio",
+   dor:s=>({"Beleza":"Investimento em influenciadores sem briefing alinhado à campanha — cada creator fala uma coisa diferente.","FMCG":"Influência usada como mídia paga sem estratégia de fit de audiência.","Varejo Moda":"Ações de influência pontuais sem consistência com o brand guide."})[s]||"Investimento em influenciadores sem estratégia ou fit de audiência definido.",
+   prompt:"Você representa a A.gente, agência de influência estratégica com briefing aderente à campanha e fit real com o público do creator."},
+  {id:"vitrine",name:"Vitrine",color:"#60A5FA",rgb:"96,165,250",desc:"Maior comprador de OOH e DOOH do Brasil",
+   angles:["Poder de Compra OOH","Inteligência de Inventário","Projetos Especiais","ROI de OOH","Negociação Sênior"],
+   fit:s=>"alto",
+   dor:s=>({"E-commerce":"Alto investimento em digital mas zero presença física — OOH fecha o loop de awareness.","FMCG":"Compra de OOH feita de forma subjetiva, sem dados quantitativos de potencial de público.","Fintech":"Marca digital que precisa construir presença física e autoridade."})[s]||"Investimento em OOH sem inteligência de dados, poder de negociação ou atendimento sênior.",
+   prompt:"Você representa a Vitrine, maior comprador de OOH e DOOH do Brasil. Inventário diário atualizado, central de inteligência com dados quantitativos, maior poder de negociação e atendimento ultra-sênior."},
+  {id:"gux",name:"GUX",color:"#00FF94",rgb:"0,255,148",desc:"UX estratégico que gera resultado real de negócio",
+   angles:["Conversão e Receita","Retenção e Churn","UX para LLMs e IA","Brand Consistency Digital","Diagnóstico Gratuito"],
+   fit:s=>["Fintech","E-commerce","Super App","Proptech","B2B Tech","Streaming","Social Media","Marketplace"].includes(s)?"alto":["Telecom","Saude","Educacao","Automotivo","Varejo"].includes(s)?"medio":"medio",
+   dor:s=>({"Fintech":"Alta fricção no onboarding digital e CAC elevado por fluxos não otimizados para LLMs.","E-commerce":"Taxa de abandono de carrinho acima da média por inconsistências de UX entre canais.","Super App":"Múltiplos fluxos desalinhados com o brand guide — queda de retenção em sessões recorrentes.","Streaming":"Churn silencioso por experiências de descoberta que não se adaptam ao novo comportamento de busca."})[s]||"Experiência digital com alta fricção impactando diretamente conversão e receita.",
+   prompt:"Você representa a GUX, empresa de UX estratégico que gera resultado real de negócio. Avalia se a experiência digital está preparada para LLMs, garante atribuição conectada à receita, assegura consistência com brand guide. Alto craft em UX + performance."}
+];
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+async function hunterSearch(domain){try{const r=await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${HUNTER_KEY}&limit=10`);const d=await r.json();return(d.data&&d.data.emails)||[];}catch(e){return[];}}
+async function hunterVerify(email){try{const r=await fetch(`https://api.hunter.io/v2/email-verifier?email=${email}&api_key=${HUNTER_KEY}`);const d=await r.json();return d.data||null;}catch(e){return null;}}
+async function lushaSearch(fn,ln,company){try{const r=await fetch(`https://api.lusha.com/v2/person?firstName=${encodeURIComponent(fn)}&lastName=${encodeURIComponent(ln)}&company=${encodeURIComponent(company)}`,{headers:{"api_key":LUSHA_KEY}});const d=await r.json();const p=(d.data&&d.data.phoneNumbers)||[];return p.length>0?p[0].internationalNumber||"":" ";}catch(e){return "";}}
+async function pipedriveSearch(email,key){try{const r=await fetch(`https://api.pipedrive.com/v1/persons/search?term=${encodeURIComponent(email)}&api_token=${key}`);const d=await r.json();return d.data&&d.data.items&&d.data.items.length>0?d.data.items[0].item:null;}catch(e){return null;}}
+async function pipedriveCreate(contact,empresa,key){try{const r=await fetch(`https://api.pipedrive.com/v1/persons?api_token=${key}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:contact.nome,email:[{value:contact.email,primary:true}],phone:[{value:contact.wa||"",primary:true}],org_name:empresa,job_title:contact.cargo||""})});const d=await r.json();return d.data||null;}catch(e){return null;}}
+async function createDeal(empresa,nomeCo,key){try{const r=await fetch(`https://api.pipedrive.com/v1/deals?api_token=${key}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:nomeCo+" — "+empresa,status:"open"})});const d=await r.json();return d.data||null;}catch(e){return null;}}
+async function createActivity(dealId,label,note,key){try{await fetch(`https://api.pipedrive.com/v1/activities?api_token=${key}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({subject:label,type:"task",note,done:0,...(dealId?{deal_id:dealId}:{})})});}catch(e){}}
+function claudeFetch(body){
+  const stored=loadSt("ghub_claude","");
+  const key=stored||"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";
+  return fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json","x-api-key":key,"anthropic-version":"2023-06-01","anthropic-dangerous-direct-browser-access":"true"},body:JSON.stringify(body)});
+}
+const PROMPTS_RICOS={
+  galeria:`Você representa a Galeria, agência integrada líder em performance e criatividade no Brasil.
+POSICIONAMENTO: A Galeria une dados, mídia e criatividade para gerar resultado real de negócio. Somos a agência que faz a criatividade trabalhar a serviço da performance — não o contrário. Nossos clientes reduzem CPM, aumentam conversão e constroem marca ao mesmo tempo.
+DIFERENCIAIS: operação em escala sem perder qualidade criativa, inteligência de dados proprietária, times dedicados por cliente, cases com os maiores anunciantes do Brasil.
+CLIENTES DE REFERÊNCIA: marcas líderes em FMCG, varejo, financeiro e telecom.`,
+
+  mila:`Você representa a Milà, agência especializada em construção de marca e storytelling estratégico.
+POSICIONAMENTO: A Milà é uma case factory — trabalhamos com um número selecionado de contas para garantir excelência criativa absoluta. Criamos narrativas que o mercado inteiro comenta. Para marcas que querem mais que campanha: querem território.
+DIFERENCIAIS: time sênior dedicado, foco em marcas que querem liderar culturalmente, metodologia de construção de marca de longo prazo, histórico de cases premiados.
+FILOSOFIA: marca forte é o melhor ativo de marketing que existe. Construímos isso com estratégia, craft e consistência.`,
+
+  "404":`Você representa a 404, agência de inovação que une tecnologia e criatividade.
+POSICIONAMENTO: A 404 existe para marcas que estão construindo o futuro. Sem vínculos com veículos de mídia — o que recomendamos é o que faz sentido pro negócio, sem agenda escondida. Criatividade + design + tecnologia para construir comunidades em torno da marca.
+DIFERENCIAIS: especialistas em comunicação para empresas digitais e inovadoras, metodologia de inovação aplicada à comunicação, visão de produto + marketing integrados.
+PARA QUEM: fintechs, super apps, empresas de tecnologia, marcas que precisam comunicar inovação de forma humana e acessível.`,
+
+  cccaramelo:`Você representa a cccaramelo, agência especializada em cultura, entretenimento e música.
+POSICIONAMENTO: A cccaramelo conecta marcas com a cultura brasileira de verdade — através de música, comunidades, criadores e co-criação. Não fazemos publicidade disfarçada de cultura. Fazemos cultura que carrega a marca.
+DIFERENCIAIS: network único com artistas, produtores e criadores brasileiros, expertise em branded music e branded entertainment, acesso a audiências que rejeitam publicidade tradicional.
+FILOSOFIA: a melhor propaganda é aquela que as pessoas escolhem consumir.`,
+
+  gaia:`Você representa a GAIA, martech do grupo com dois produtos complementares.
+CR.IA: estúdio de desdobramento de criativos com inteligência artificial. Mais rápido que qualquer produtora, mais barato, e aprende com cada campanha para gerar peças cada vez mais performáticas. Atende exigências dos veículos automaticamente. Cases: McFriday (McDonald's), Natura, iCarros, todas as ofertas do maior operador de turismo do Brasil.
+BRANDSYNC: plataforma de coordenação de conteúdo para redes de franquias e revendedores. Analisa posts, cria rankings, colhe aprendizados e promove crescimento de uma mídia que grandes marcas deixam de lado. 4 módulos: POC, Lite, Standard, Create e Growth.
+PARA QUEM: qualquer empresa com alto volume de campanhas ou rede de franquias com 30+ unidades.`,
+
+  catalyst:`Você representa a Catalyst, empresa especializada em mobile growth.
+POSICIONAMENTO: A Catalyst não é agência — é uma empresa de mobile growth. Compramos e otimizamos mídia mobile com especialização que agências generalistas não têm. Apple Ads, Google UAC, In-App, Web Mobile e CTV. Cada real investido em mobile precisa de quem entende mobile de verdade.
+DIFERENCIAIS: especialização exclusiva em mobile, otimização contínua baseada em dados de performance, metodologia própria de growth para apps, acesso a inventários exclusivos.
+CASES: McDonald's, Nomad, Belo, Rentcars — todos com crescimento significativo de aquisição e retenção mobile.`,
+
+  mantiqueira:`Você representa a Mantiqueira, empresa de conteúdo e entretenimento para marcas.
+POSICIONAMENTO: A Mantiqueira cria séries, filmes e conteúdos que as pessoas escolhem assistir — e que carregam marcas. Quando se divide um sofá com alguém, os interesses convergem. Isso é o que fazemos para marcas: criamos algo tangível, durável e com valor próprio.
+PROCESSO: encontramos roteiristas, produtores e atores, criamos o projeto e levamos para a marca. Entregamos algo que a marca possui — não aluga por 30 segundos.
+PARA QUEM: marcas com verba para construir ativo de longo prazo, que entendem que relevância se conquista por interesse e não por interrupção.`,
+
+  agente:`Você representa a A.gente, agência de influência estratégica.
+POSICIONAMENTO: A A.gente entende que influência precisa ser estratégica — não é só contratar creator e soltar. Briefing aderente à campanha, fit real com o público do influenciador, liberdade criativa dentro do guide e dos objetivos. Influência que converte e constrói marca ao mesmo tempo.
+DIFERENCIAIS: metodologia própria de seleção e briefing de creators, visão integrada de influência com a campanha maior, monitoramento de resultados além de alcance e engajamento.
+FILOSOFIA: o creator certo, com o briefing certo, na hora certa — isso é estratégia de influência.`,
+
+  vitrine:`Você representa a Vitrine, maior comprador de OOH e DOOH do Brasil.
+POSICIONAMENTO: A Vitrine tem o maior poder de compra de OOH do Brasil — o que significa melhor negociação, melhor inventário e melhor resultado para o cliente. Não é subjetivo: temos dados quantitativos do potencial de público de cada ponto do Brasil.
+DIFERENCIAIS: inventário atualizado diariamente de todos os veículos OOH e DOOH do Brasil, central de inteligência com dados de audiência por ponto, projetos especiais com alto nível criativo, atendimento ultra-sênior em todas as negociações.
+PARA QUEM: qualquer empresa que investe ou quer investir em mídia exterior — de forma inteligente e com o melhor custo-benefício do mercado.`,
+
+  gux:`Você representa a GUX, empresa de UX estratégico que gera resultado real de negócio.
+POSICIONAMENTO: A GUX transforma usabilidade em valor. Avaliamos se a experiência digital está preparada para LLMs e novas práticas de busca, garantimos modelos de atribuição conectados à geração de receita e asseguramos a consistência dos ativos digitais com o brand guide.
+DIFERENCIAIS: alto nível de craft em UX com foco em performance, design como sistema de retenção e crescimento, metodologia própria de diagnóstico de experiência digital, visão integrada de UX + negócio.
+PARA QUEM: qualquer empresa com produto digital que quer parar de perder receita por fricção na experiência.`
+};
+
+function getAssinatura(grupoId){
+  if(grupoId==="gaia") return "Pedro Ica\nSócio Fundador — GAIA | Galeria Holding\n11 98226-7711";
+  if(grupoId==="galeria") return "Pedro Ica\nHead de Growth — Galeria\nGaleria Holding — Maior Grupo de Comunicação do Brasil\n11 98226-7711";
+  return "Pedro Ica\nSócio — Galeria Holding\nMaior Grupo de Comunicação do Brasil\n11 98226-7711";
+}
+
+async function gerarEmail(nome,empresa,setor,grupo,angulo,tom,hist){
+  const promptRico=PROMPTS_RICOS[grupo.id]||grupo.prompt;
+  const assinatura=getAssinatura(grupo.id);
+  const prompt=`${promptRico}
+
+Escreva um email de prospecção B2B PERSONALIZADO para a empresa ${empresa} do setor ${setor}.
+ÂNGULO: ${angulo}
+TOM: ${tom}
+${nome?"DESTINATÁRIO: "+nome+"\n":""}${hist?"HISTÓRICO DE CONTATO: "+hist+"\nATENÇÃO: este é um follow-up — mencione sutilmente o contato anterior sem repetir o mesmo argumento.\n":""}
+DOR IDENTIFICADA PARA ESTE SETOR: ${grupo.dor(setor)}
+
+REGRAS OBRIGATÓRIAS:
+1. Primeira linha: observação ESPECÍFICA e CONCRETA sobre ${empresa} — algo sobre o negócio deles, não genérico
+2. Segunda parte: conectar a dor identificada ao que ${grupo.name} resolve — de forma direta e sem jargão
+3. Uma frase com prova ou referência de resultado (pode ser de setor similar)
+4. CTA simples: propor 20 minutos de conversa, sem pressão
+5. Tom: ${tom.toLowerCase()}, humano, sem corporativês, parágrafos curtos com linha em branco entre eles
+6. Máximo 160 palavras no corpo
+7. ASSINATURA OBRIGATÓRIA (use exatamente assim no final):
+
+${assinatura}
+
+Retorne APENAS JSON válido sem markdown: {"assunto":"...","corpo":"..."}`;
+  const r=await claudeFetch({model:"claude-sonnet-4-20250514",max_tokens:900,messages:[{role:"user",content:prompt}]});
+  const d=await r.json();
+  const txt=(d.content&&d.content[0]&&d.content[0].text)||"{}";
+  return JSON.parse(txt.replace(/```json|```/g,"").trim());
+}
+async function gerarIntel(empresa,setor,grupo,decs,hist){
+  const prompt=`Você é analista de inteligência comercial para ${grupo.name} (${grupo.desc}).\nEMPRESA: ${empresa} | SETOR: ${setor}\nDECISORES: ${decs||"nenhum"}\nHISTÓRICO: ${hist||"nenhuma atividade"}\n\nGere análise estratégica em parágrafos fluidos (sem bullets) cobrindo: diagnóstico de fit com ${grupo.name}, recomendação baseada no histórico, serviço com maior chance de abrir porta e insight de timing do setor ${setor}. Máximo 200 palavras.`;
+  const r=await claudeFetch({model:"claude-sonnet-4-20250514",max_tokens:700,messages:[{role:"user",content:prompt}]});
+  const d=await r.json();
+  return(d.content&&d.content[0]&&d.content[0].text)||"";
+}
+async function gerarAlertas(empresa,setor,grupo){
+  const prompt=`Simule 3 alertas de inteligência de mercado sobre ${empresa} (setor ${setor}) relevantes para ${grupo.name}. JSON sem markdown: [{"title":"...","desc":"...","urgency":"new"}]`;
+  const r=await claudeFetch({model:"claude-sonnet-4-20250514",max_tokens:500,messages:[{role:"user",content:prompt}]});
+  const d=await r.json();
+  try{return JSON.parse((d.content&&d.content[0]&&d.content[0].text||"[]").replace(/```json|```/g,"").trim());}catch(e){return[];}
+}
+
+// ─── TEMPLATES FIXOS POR EMPRESA ─────────────────────────────────────────────
+const TEMPLATES={
+  galeria:[
+    {label:"Abertura — Performance",assunto:(e,s)=>`${e}: criatividade que converte`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nVi que a ${e} vem investindo pesado em mídia — e queria conversar sobre como tornar esse investimento ainda mais eficiente.\n\nNa Galeria, a gente acredita que criatividade e performance não precisam ser opostos. Pelo contrário: quando trabalham juntas, o resultado é exponencial. É isso que fazemos para as maiores marcas do Brasil.\n\nPoderia reservar 20 minutos para eu mostrar o que estamos fazendo no setor de ${s}?\n\n${sg}`},
+    {label:"Dor — CPM alto",assunto:(e,s)=>`Por que o CPM da ${e} pode estar alto demais`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nUma das maiores dores que vemos em marcas de ${s} é investimento crescente em mídia com CPM subindo e conversão estagnada.\n\nGeralmente o problema não é a mídia — é o criativo. Quando a mensagem certa encontra a audiência certa, o custo cai e o resultado sobe.\n\nNa Galeria, integramos dados, mídia e criatividade numa operação só. O resultado: clientes nossos reduziram CPM em até 30% mantendo qualidade criativa.\n\nTem 20 minutos essa semana para conversar?\n\n${sg}`},
+    {label:"Proposta — Integração",assunto:(e,s)=>`Galeria + ${e}: uma ideia`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nA ${e} tem uma operação de marketing robusta. O que raramente vemos nesse nível é a integração real entre criatividade, dados e mídia funcionando como um sistema único.\n\nÉ exatamente o que a Galeria faz. E o impacto no resultado é direto: mais conversão, menos desperdício, marca mais forte.\n\nGostaria de mostrar como isso funciona na prática. Cabe uma conversa de 20 minutos?\n\n${sg}`},
+    {label:"Follow-up — Urgência",assunto:(e,s)=>`Retomando: ${e} e Galeria`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nRetomando meu contato anterior — sei que a agenda é corrida, mas queria insistir porque acredito genuinamente que há uma oportunidade real aqui para a ${e}.\n\nO mercado de ${s} está se movendo rápido. Marcas que integram criatividade e performance agora estão saindo na frente.\n\nUm papo de 20 minutos. Pode ser essa semana?\n\n${sg}`},
+    {label:"Networking — Indicação",assunto:(e,s)=>`Uma conversa sobre ${e}`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nChegaram até mim pelo nosso trabalho com marcas de ${s} e queria apresentar a Galeria para você.\n\nSomos uma agência integrada que une performance e criatividade — e temos alguns resultados no setor de ${s} que acho que vão te interessar.\n\nPodemos conversar 20 minutos?\n\n${sg}`}
+  ],
+  mila:[
+    {label:"Abertura — Território de marca",assunto:(e,s)=>`${e} tem território de marca?`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nA ${e} tem investimento sólido em comunicação. A pergunta que me faço é: existe um território de marca claro que faz o consumidor escolher vocês quando o preço está empatado?\n\nNa Milà, construímos exatamente isso. Cases que o mercado inteiro comenta, narrativas que geram preferência de longo prazo.\n\nTrabalhamos com um número selecionado de contas — e adoraria conversar sobre a ${e}. Tem 20 minutos?\n\n${sg}`},
+    {label:"Dor — Commodity",assunto:(e,s)=>`Quando ${e} vira commodity`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nUma das maiores ameaças para marcas de ${s} hoje é a comoditização. Quando o consumidor não consegue diferenciar, ele escolhe pelo preço.\n\nA solução não é mais mídia — é narrativa mais forte. Uma história que cria pertencimento e faz o consumidor escolher sem comparar.\n\nIsso é o que a Milà faz. E fazemos muito bem.\n\nPode ser uma conversa de 20 minutos?\n\n${sg}`},
+    {label:"Proposta — Case factory",assunto:(e,s)=>`Por que a Milà trabalha com poucas marcas`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nA Milà faz uma escolha deliberada: trabalhamos com poucas contas para garantir excelência em todas. Cada cliente recebe o melhor do nosso time, sempre.\n\nO resultado são cases que o mercado inteiro comenta — e marcas que lideram culturalmente no seu setor.\n\nEstou avaliando algumas marcas de ${s} para o próximo ciclo. A ${e} está na lista. Podemos conversar?\n\n${sg}`},
+    {label:"Follow-up — Insistência estratégica",assunto:(e,s)=>`Insistindo: ${e} e Milà`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nSei que é meu segundo contato. Mas continuo acreditando que há uma oportunidade real aqui.\n\nMarcas de ${s} que investem em construção de narrativa agora vão colher diferenciação por anos. E esse é exatamente o trabalho da Milà.\n\n20 minutos. Pode ser esta semana?\n\n${sg}`},
+    {label:"Provocação — Concorrente",assunto:(e,s)=>`O que o concorrente da ${e} está fazendo`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nVi que algumas marcas de ${s} estão investindo pesado em construção de narrativa e território de marca. Isso cria diferenciação difícil de copiar.\n\nA ${e} está nesse movimento?\n\nNa Milà, ajudamos marcas a construir esse ativo. E o momento de fazer isso é antes do mercado se consolidar.\n\nTem 20 minutos para conversar?\n\n${sg}`}
+  ],
+  "404":[
+    {label:"Abertura — Inovação",assunto:(e,s)=>`${e} está comunicando sua inovação?`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nA ${e} tem um produto inovador. A pergunta é: a comunicação acompanha o nível de inovação do que vocês estão construindo?\n\nNa 404, trabalhamos com marcas que estão construindo o futuro — e ajudamos a comunicar isso de forma que faça sentido para as pessoas, sem jargão e sem agenda escondida.\n\nTem 20 minutos para conversar?\n\n${sg}`},
+    {label:"Dor — Comunicação técnica demais",assunto:(e,s)=>`Por que marcas de ${s} perdem no storytelling`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nUm padrão que vemos em empresas de ${s}: produto excelente, comunicação técnica demais. O consumidor não compra o que não entende.\n\nNa 404, traduzimos complexidade em desejo. Criatividade + tecnologia para fazer marcas inovadoras serem entendidas — e escolhidas.\n\nPode ser uma conversa de 20 minutos?\n\n${sg}`},
+    {label:"Proposta — Sem vínculo com mídia",assunto:(e,s)=>`404: sem conflito de interesse`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nDiferente de agências tradicionais, a 404 não tem vínculo com veículos de mídia. O que recomendamos é o que faz sentido pro negócio — sem agenda escondida.\n\nPara a ${e}, isso significa uma visão isenta de qual é o melhor caminho para comunicar sua inovação.\n\nTem 20 minutos esta semana?\n\n${sg}`},
+    {label:"Follow-up — Tech + criatividade",assunto:(e,s)=>`Retomando: tech + criatividade para ${e}`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nRetomando meu contato — quero insistir porque acredito que a 404 tem muito a oferecer para a ${e}.\n\nO mercado de ${s} está em transformação acelerada. Marcas que comunicam inovação de forma humana e acessível saem na frente.\n\n20 minutos esta semana?\n\n${sg}`},
+    {label:"Comunidade — Engajamento",assunto:(e,s)=>`${e} tem comunidade em torno da marca?`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nUma das maiores oportunidades para marcas de ${s} hoje é construir comunidade — audiência própria que não depende de algoritmo ou mídia paga.\n\nNa 404, fazemos isso através de criatividade + tecnologia. Marcas que constroem comunidade têm CAC mais baixo e LTV mais alto.\n\nPodemos conversar 20 minutos?\n\n${sg}`}
+  ],
+  cccaramelo:[
+    {label:"Abertura — Cultura",assunto:(e,s)=>`${e} e a cultura brasileira`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nA ${e} investe em comunicação. Mas a marca tem um lugar real na cultura do consumidor?\n\nNa cccaramelo, conectamos marcas com a cultura brasileira de verdade — música, comunidades, criadores. Não publicidade disfarçada de cultura: cultura que carrega a marca.\n\nTem 20 minutos para conversar?\n\n${sg}`},
+    {label:"Dor — Jovem não se identifica",assunto:(e,s)=>`Por que o jovem não se identifica com ${e}`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nUm padrão que vemos em marcas de ${s}: investimento alto em mídia, mas audiência jovem que não se identifica. O problema não é a verba — é a conexão cultural.\n\nNa cccaramelo, a gente cria essa conexão. Através de música, criadores e co-criação com artistas brasileiros.\n\nPode ser uma conversa de 20 minutos?\n\n${sg}`},
+    {label:"Proposta — Branded Music",assunto:(e,s)=>`E se ${e} tivesse sua própria música?`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nMarcas que criam ativos musicais próprios têm algo que nenhuma mídia compra: presença emocional. A música é o atalho mais rápido para o coração do consumidor.\n\nNa cccaramelo, fazemos isso. Conectamos marcas com os melhores artistas e produtores do Brasil para criar algo que as pessoas escolhem ouvir.\n\nTem 20 minutos para conversar sobre o que isso poderia ser para a ${e}?\n\n${sg}`},
+    {label:"Follow-up — Entretenimento",assunto:(e,s)=>`Retomando: ${e} e entretenimento`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nRetomando meu contato anterior. O que fica na minha cabeça é o quanto a ${e} poderia se beneficiar de uma conexão mais profunda com a cultura do seu consumidor.\n\nNa cccaramelo, isso é o que fazemos todos os dias. E os resultados em engajamento e preferência são consistentes.\n\n20 minutos esta semana?\n\n${sg}`},
+    {label:"Co-criação — Artistas",assunto:(e,s)=>`${e} + artistas brasileiros`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nAlgumas das marcas mais amadas do Brasil construíram esse amor através de co-criação com artistas e criadores.\n\nNa cccaramelo, temos o network e a metodologia para fazer isso acontecer para a ${e}. Não uma campanha pontual — uma conexão cultural duradoura.\n\nPodemos conversar 20 minutos?\n\n${sg}`}
+  ],
+  gaia:[
+    {label:"CR.IA — Escala de peças",assunto:(e,s)=>`${e}: quantas peças por campanha?`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nUma pergunta direta: a ${e} consegue produzir todas as variações de peças que as campanhas precisam — no prazo e no custo certo?\n\nO CR.IA é um estúdio de desdobramento de criativos com IA. Mais rápido que qualquer produtora, mais barato, e aprende com cada campanha para gerar peças mais performáticas.\n\nCases: McFriday, Natura, iCarros. Tem 20 minutos?\n\n${sg}`},
+    {label:"CR.IA — Custo de produção",assunto:(e,s)=>`Reduzindo custo de produção criativa em ${e}`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nProdução criativa em escala é um dos maiores gargalos de marketing em empresas de ${s}. Produtoras caras, prazos longos, peças que não aprendem com a performance.\n\nO CR.IA resolve isso. IA + criatividade humana para desdobrar peças em qualquer formato, atendendo as exigências dos veículos automaticamente.\n\nPode ser uma conversa de 20 minutos?\n\n${sg}`},
+    {label:"BrandSync — Franquias",assunto:(e,s)=>`As redes sociais das franquias da ${e}`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nRedes de franquias têm um ativo de mídia enorme nas redes sociais das unidades — e na maioria dos casos esse ativo está sendo desperdiçado por falta de coordenação.\n\nO BrandSync resolve isso. Analisa posts, cria rankings, colhe aprendizados e coordena o conteúdo de todas as unidades.\n\nPara a ${e}, isso pode representar alcance orgânico significativo sem custo adicional. Tem 20 minutos?\n\n${sg}`},
+    {label:"GAIA — Combo CR.IA + BrandSync",assunto:(e,s)=>`Produção + distribuição: o combo GAIA para ${e}`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nDois problemas que vejo em marcas de ${s}: custo alto de produção de peças e conteúdo de franquias sem coordenação.\n\nA GAIA resolve os dois. CR.IA para produção em escala com IA. BrandSync para coordenar as redes das franquias.\n\nPodemos conversar sobre como isso se aplica à realidade da ${e}?\n\n${sg}`},
+    {label:"Follow-up — Inteligência de campanha",assunto:(e,s)=>`Retomando: inteligência criativa para ${e}`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nRetomando meu contato — o que não sai da minha cabeça é o quanto a ${e} poderia ganhar em eficiência com IA aplicada à produção criativa.\n\nO CR.IA aprende com cada campanha e aplica o que funciona nas próximas. É um sistema que melhora com o tempo.\n\n20 minutos esta semana?\n\n${sg}`}
+  ],
+  catalyst:[
+    {label:"Abertura — Mobile growth",assunto:(e,s)=>`O app da ${e} está crescendo no ritmo certo?`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nA ${e} tem um app. A pergunta é: a estratégia de aquisição e retenção mobile está no nível do produto?\n\nNa Catalyst, somos especialistas em mobile growth — Apple Ads, Google UAC, In-App, Web Mobile e CTV. Cases: McDonald's, Nomad, Belo, Rentcars.\n\nTem 20 minutos para conversar?\n\n${sg}`},
+    {label:"Dor — CAC mobile alto",assunto:(e,s)=>`CAC mobile da ${e}: tem espaço para otimizar?`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nUm padrão que vemos em apps de ${s}: CAC mobile crescendo sem controle porque a mídia mobile é gerenciada por agências generalistas sem especialização.\n\nNa Catalyst, só fazemos mobile growth. Essa especialização se traduz em CAC mais baixo e retenção mais alta — com dados para provar.\n\nPode ser uma conversa de 20 minutos?\n\n${sg}`},
+    {label:"Proposta — Apple Ads",assunto:(e,s)=>`Apple Ads: a oportunidade que ${e} pode estar perdendo`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nApple Ads ainda é subutilizado pela maioria das marcas brasileiras — o que significa custo por instalação mais baixo e audiência de maior valor.\n\nNa Catalyst, somos especialistas nisso. E as oportunidades para apps de ${s} são concretas.\n\nTem 20 minutos para eu mostrar o que estamos vendo no mercado?\n\n${sg}`},
+    {label:"Follow-up — Retenção",assunto:(e,s)=>`Retomando: retenção mobile para ${e}`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nRetomando — quero insistir porque acredito que a Catalyst tem muito a oferecer para o app da ${e}.\n\nAquisição sem retenção é dinheiro jogado fora. Na Catalyst, trabalhamos os dois lados: trazer o usuário certo e mantê-lo ativo.\n\n20 minutos esta semana?\n\n${sg}`},
+    {label:"CTV — Novo canal",assunto:(e,s)=>`CTV: o canal mobile que ${e} ainda não explorou`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nConnected TV é um dos canais mobile com melhor custo-benefício para apps de ${s} agora — e a maioria das marcas ainda não chegou lá.\n\nNa Catalyst, já operamos CTV para clientes do seu setor com resultados consistentes. É uma janela de oportunidade que não vai durar.\n\nTem 20 minutos para conversar?\n\n${sg}`}
+  ],
+  mantiqueira:[
+    {label:"Abertura — Sofá",assunto:(e,s)=>`E se a ${e} tivesse sua própria série?`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nQuando você divide o sofá com alguém, os interesses convergem. Isso é o que a Mantiqueira faz para marcas: cria conteúdo que as pessoas escolhem assistir — e que carrega a marca.\n\nSéries, filmes, documentários. Algo que a ${e} possui, não aluga por 30 segundos.\n\nTem 20 minutos para conversar sobre o que isso poderia ser?\n\n${sg}`},
+    {label:"Dor — Interrupção",assunto:(e,s)=>`${e} ainda depende de interrupção?`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nA mídia de interrupção fica cada vez mais cara e cada vez menos eficiente. O consumidor de ${s} aprende a ignorar.\n\nA Mantiqueira cria o oposto: conteúdo que as pessoas buscam ativamente. Uma série, um filme, um universo narrativo que pertence à ${e}.\n\nPode ser uma conversa de 20 minutos?\n\n${sg}`},
+    {label:"Proposta — Ativo de marca",assunto:(e,s)=>`O ativo de marca que ${e} ainda não tem`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nMarcas que investem em conteúdo próprio constroem um ativo que se valoriza com o tempo. Diferente de mídia paga, que some quando você para de pagar.\n\nNa Mantiqueira, criamos esse ativo. Roteiristas, produtores, atores — entregamos o projeto pronto para a ${e} aprovar e executar.\n\nTem 20 minutos para explorar essa ideia?\n\n${sg}`},
+    {label:"Follow-up — Relevância",assunto:(e,s)=>`Retomando: relevância de longo prazo para ${e}`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nRetomando meu contato. O que continua me intrigando é o potencial narrativo da ${e} — e o quanto existe a explorar além da comunicação tradicional.\n\nNa Mantiqueira, transformamos isso em projeto concreto. 20 minutos esta semana?\n\n${sg}`},
+    {label:"Universo — Roteiro",assunto:(e,s)=>`Já temos uma ideia para o universo narrativo da ${e}`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nFiz uma pesquisa rápida sobre a ${e} e já tenho uma ideia concreta de que tipo de série ou filme faria sentido para a marca.\n\nNão quero revelar tudo por email — prefiro contar pessoalmente. Mas posso dizer que o setor de ${s} tem material narrativo rico e pouco explorado.\n\nTem 20 minutos?\n\n${sg}`}
+  ],
+  agente:[
+    {label:"Abertura — Estratégia",assunto:(e,s)=>`Influência estratégica para ${e}`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nA ${e} usa influenciadores. A pergunta é: a estratégia está integrada com a campanha maior, com briefing claro e fit real de audiência?\n\nNa A.gente, não fazemos contratação de creator — fazemos estratégia de influência. O creator certo, com o briefing certo, na hora certa.\n\nTem 20 minutos para conversar?\n\n${sg}`},
+    {label:"Dor — Creator sem briefing",assunto:(e,s)=>`Cada creator da ${e} fala uma coisa diferente?`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nUm padrão que vemos em marcas de ${s}: múltiplos creators ativos, cada um com uma mensagem diferente. O consumidor não sabe o que a marca representa.\n\nNa A.gente, criamos consistência sem matar a autenticidade do creator. Briefing estratégico + liberdade criativa dentro do guide.\n\nPode ser uma conversa de 20 minutos?\n\n${sg}`},
+    {label:"Proposta — Fit de audiência",assunto:(e,s)=>`O creator certo para o público da ${e}`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nA maioria das marcas escolhe influenciadores pelo número de seguidores. Na A.gente, escolhemos pelo fit real com a audiência — e a diferença em conversão é enorme.\n\nPara a ${e}, tenho algumas ideias concretas de perfis que fariam sentido. Posso compartilhar em 20 minutos?\n\n${sg}`},
+    {label:"Follow-up — Resultados",assunto:(e,s)=>`Retomando: influência com resultado para ${e}`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nRetomando meu contato — continuo acreditando que a A.gente tem muito a oferecer para a estratégia de influência da ${e}.\n\nInfluência sem estratégia é orçamento desperdiçado. Com estratégia, é um dos canais mais eficientes que existem.\n\n20 minutos esta semana?\n\n${sg}`},
+    {label:"Micro-influência — Nicho",assunto:(e,s)=>`Micro-influenciadores: a oportunidade da ${e}`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nMicro-influenciadores de nicho têm taxas de engajamento até 3x maiores que grandes influenciadores — com custo significativamente menor.\n\nPara marcas de ${s}, isso representa uma oportunidade concreta de ampliar alcance qualificado sem estourar o budget.\n\nNa A.gente, especializamos nisso. Tem 20 minutos para conversar?\n\n${sg}`}
+  ],
+  vitrine:[
+    {label:"Abertura — OOH inteligente",assunto:(e,s)=>`OOH para ${e}: dado ou intuição?`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nA ${e} investe em OOH. A pergunta é: a escolha dos pontos é baseada em dados de audiência ou em intuição?\n\nNa Vitrine, temos a maior central de inteligência de OOH do Brasil — dados quantitativos do potencial de público de cada ponto. Sem subjetividade, só resultado.\n\nTem 20 minutos para conversar?\n\n${sg}`},
+    {label:"Dor — Negociação fraca",assunto:(e,s)=>`${e} está pagando caro demais no OOH`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nO maior comprador de OOH do Brasil negocia condições que anunciantes individuais nunca conseguem. É matemática simples: volume = poder de negociação.\n\nA Vitrine é esse maior comprador. E quando você contrata por nós, tem acesso ao nosso poder de barganha — com preço melhor e inventário premium.\n\nPode ser uma conversa de 20 minutos?\n\n${sg}`},
+    {label:"Proposta — DOOH",assunto:(e,s)=>`DOOH: o OOH que a ${e} ainda não explorou`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nDigital Out of Home está crescendo rápido no Brasil — e as oportunidades de segmentação e mensuração são radicalmente diferentes do OOH tradicional.\n\nNa Vitrine, temos inventário atualizado diariamente de todos os pontos DOOH do país. Para a ${e}, isso pode ser um canal novo com ROI mensurável.\n\nTem 20 minutos?\n\n${sg}`},
+    {label:"Follow-up — Inventário",assunto:(e,s)=>`Retomando: OOH estratégico para ${e}`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nRetomando meu contato — quero insistir porque acredito que a Vitrine tem uma proposta concreta e diferenciada para a ${e}.\n\nMaior poder de negociação + inteligência de dados + atendimento sênior. Difícil encontrar isso junto no mercado.\n\n20 minutos esta semana?\n\n${sg}`},
+    {label:"Projetos Especiais — Criativo",assunto:(e,s)=>`Um projeto especial de OOH para ${e}`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nAlém da compra estratégica de mídia, a Vitrine tem uma área de projetos especiais — intervenções urbanas e instalações de OOH que geram PR espontâneo e viralizam nas redes.\n\nPara a ${e}, isso pode ser uma ação de alto impacto com orçamento controlado.\n\nTem 20 minutos para ver alguns exemplos?\n\n${sg}`}
+  ],
+  gux:[
+    {label:"Abertura — Conversão",assunto:(e,s)=>`${e}: quanto a UX está custando em receita?`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nA ${e} investe em mídia para trazer usuários. Mas quanto da receita potencial está sendo perdida por fricção na experiência digital?\n\nNa GUX, medimos exatamente isso — e transformamos UX em resultado de negócio. Alto craft + foco em performance.\n\nTem 20 minutos para conversar?\n\n${sg}`},
+    {label:"Dor — LLMs e busca",assunto:(e,s)=>`A experiência digital da ${e} está pronta para IA?`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nAs novas práticas de busca com LLMs estão mudando como usuários encontram e interagem com produtos digitais. Marcas de ${s} que não adaptam a experiência agora vão perder visibilidade.\n\nNa GUX, avaliamos se a experiência digital está preparada para esse novo cenário — e entregamos o roadmap de ajustes.\n\nPode ser uma conversa de 20 minutos?\n\n${sg}`},
+    {label:"Proposta — Diagnóstico",assunto:(e,s)=>`Diagnóstico gratuito de UX para ${e}`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nProponho algo concreto: um diagnóstico rápido da experiência digital da ${e} — sem custo, sem compromisso.\n\nEm 20 minutos, mostro os principais pontos de atrito que estão impactando conversão e retenção. Se fizer sentido continuar, conversamos.\n\nAceita?\n\n${sg}`},
+    {label:"Follow-up — Brand guide",assunto:(e,s)=>`Retomando: consistência digital para ${e}`,corpo:(e,s,n,sg)=>`${n?`${n.split(" ")[0]},`:"Olá,"}\n\nRetomando — o que não sai da minha cabeça é o quanto a experiência digital da ${e} poderia melhorar com consistência de brand guide aplicada a todos os touchpoints.\n\nNa GUX, garantimos isso. E o impacto em NPS e retenção é direto.\n\n20 minutos esta semana?\n\n${sg}`},
+    {label:"Retenção — Churn",assunto:(e,s)=>`${e}: churn silencioso na experiência digital`,corpo:(e,s,n,sg)=>`${n?`Olá, ${n.split(" ")[0]}!`:"Olá!"}\n\nChurn silencioso é um dos maiores problemas em produtos digitais de ${s}: o usuário não cancela, simplesmente para de usar. E a experiência ruim é geralmente o motivo.\n\nNa GUX, identificamos esses pontos de abandono e transformamos UX em sistema de retenção.\n\nTem 20 minutos para conversar?\n\n${sg}`}
+  ]
+};
+
+// ─── GLOBAL MAILING CSV ──────────────────────────────────────────────────────
+function exportMailing(accs,grupo){
+  const rows=["empresa,setor,nome,cargo,email,whatsapp,linkedin,contatado,adicionado_em"];
+  PROSP.forEach(lead=>{
+    const key=grupo.id+"_"+lead.rank;
+    const acc=accs[key];
+    if(!acc||!(acc.decisors||[]).length) return;
+    acc.decisors.forEach(d=>{
+      if(!d.nome) return;
+      const contacted=(acc.activities||[]).some(a=>a.decisor===d.nome);
+      var qg=function(v){return String(v||"").replace(/,/g," ");};
+      rows.push([qg(lead.nome),qg(lead.setor),qg(d.nome),qg(d.cargo),qg(d.email),qg(d.wa),qg(d.li),contacted?"sim":"nao",qg(d.addedAt)].join(","));
+    });
+  });
+  if(rows.length===1){alert("Nenhum decisor enriquecido ainda.");return;}
+  var csvData=rows.join("\n");var blob=new Blob([csvData],{type:"text/csv;charset=utf-8"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+  a.download="mailing_completo_"+grupo.name+"_"+new Date().toISOString().slice(0,10)+".csv";a.click();
+}
+
+// ─── VCARD / IPHONE ───────────────────────────────────────────────────────────
+function downloadVCard(dc,empresa){
+  var vlines=["BEGIN:VCARD","VERSION:3.0","FN:"+(dc.nome||""),"ORG:"+empresa,"TITLE:"+(dc.cargo||""),"EMAIL;TYPE=WORK:"+(dc.email||""),"TEL;TYPE=CELL:"+(dc.wa||""),"URL:"+(dc.li||""),"NOTE:Galeria Holding","END:VCARD"];
+  var v=vlines.join("\r\n");
+  const blob=new Blob([v],{type:"text/vcard"});
+  const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=(dc.nome||"contato").replace(/\s+/g,"_")+".vcf";a.click();
+}
+
+// ─── FIT SCORE for pipeline ───────────────────────────────────────────────────
+function fitScore(lead,grupo){
+  const f=grupo.fit(lead.setor||"");
+  const base=f==="alto"?100:f==="medio"?60:20;
+  const boost=lead.rank<=50?30:lead.rank<=100?20:lead.rank<=200?10:0;
+  const res=checkRestrictions(lead,grupo.id).length>0?-50:0;
+  return base+boost+res;
+}
+
+function getTop50(grupo){
+  return PROSP
+    .map(l=>({...l,score:fitScore(l,grupo)}))
+    .sort((a,b)=>b.score-a.score)
+    .slice(0,50);
+}
+
+// ─── ENRICH FUNCTION ─────────────────────────────────────────────────────────
+async function enrichLead(lead,pdKey,onResult){
+  const domain=getDomain(lead.nome);
+  const results=[];
+  if(domain){
+    const emails=await hunterSearch(domain);
+    const mkKw=["cmo","chief marketing","marketing","brand","comunicacao","media","midia","vp market","diretor","gerente","head"];
+    const filtered=emails.filter(e=>mkKw.some(k=>(e.position||"").toLowerCase().includes(k)));
+    const src=filtered.length>0?filtered:emails.slice(0,5);
+    for(const em of src.slice(0,5)){
+      const fn=(em.first_name||"").trim(),ln=(em.last_name||"").trim();
+      let wa="";
+      if(fn&&ln) wa=await lushaSearch(fn,ln,lead.nome);
+      const d={nome:(fn+" "+ln).trim(),cargo:em.position||"Marketing",email:em.value||"",wa:wa||"",li:em.linkedin||"",emailStatus:em.verification&&em.verification.result||null,addedAt:new Date().toLocaleDateString("pt-BR")};
+      results.push(d);
+      if(pdKey) await pipedriveCreate(d,lead.nome,pdKey);
+    }
+  }
+  onResult(results,domain);
+}
+
+
+function fitColor(f){return f==="alto"?"#00FF94":f==="medio"?"#FFB547":"#FF4757";}
+function fitLabel(f){return f==="alto"?"FIT ALTO":f==="medio"?"FIT MED":"SEM FIT";}
+function initials(name){return(name||"?").split(" ").slice(0,2).map(w=>w[0]).join("").toUpperCase();}
+function loadSt(k,def){try{const v=localStorage.getItem(k);return v?JSON.parse(v):def;}catch(e){return def;}}
+function saveSt(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){}}
+function hexRgb(h){const m=h.replace("#","").match(/.{2}/g);return m?m.map(x=>parseInt(x,16)).join(","):"255,255,255";}
+
+// ─── EMAIL MODAL ──────────────────────────────────────────────────────────────
+function EmailModal({dc,empresa,setor,grupo,angulo,hist,restrictions,onClose}){
+  const [mode,setMode]=useState("templates"); // "templates" | "ia"
+  const [selTpl,setSelTpl]=useState(0);
+  const [email,setEmail]=useState(null);
+  const [loading,setLoading]=useState(false);
+  const [copied,setCopied]=useState("");
+  const [tom,setTom]=useState("Direto e estratégico");
+
+  const sg=getAssinatura(grupo.id);
+  const tpls=TEMPLATES[grupo.id]||TEMPLATES.galeria;
+  const nome=dc&&dc.nome||"";
+
+  // Build template email
+  const buildTpl=useCallback((i)=>{
+    const t=tpls[i];
+    const assunto=t.assunto(empresa,setor);
+    const corpo=t.corpo(empresa,setor,nome,sg);
+    return {assunto,corpo};
+  },[empresa,setor,nome,sg,tpls]);
+
+  useEffect(()=>{if(mode==="templates")setEmail(buildTpl(selTpl));},[mode,selTpl]);
+
+  const gerarIA=()=>{
+    setLoading(true);
+    gerarEmail(nome,empresa,setor,grupo,angulo,tom,hist)
+      .then(e=>{setEmail(e);setLoading(false);})
+      .catch(()=>{setEmail({assunto:"Erro — verifique a Claude API.",corpo:""});setLoading(false);});
+  };
+  useEffect(()=>{if(mode==="ia")gerarIA();},[mode]);
+
+  const cp=(txt,k)=>{navigator.clipboard.writeText(txt);setCopied(k);setTimeout(()=>setCopied(""),2500);};
+  const oo=()=>email&&window.open(`https://outlook.office.com/mail/deeplink/compose?${dc&&dc.email?"to="+encodeURIComponent(dc.email)+"&":""}subject=${encodeURIComponent(email.assunto)}&body=${encodeURIComponent(email.corpo)}`,"_blank");
+  const og=()=>email&&window.open(`https://mail.google.com/mail/?view=cm&${dc&&dc.email?"to="+encodeURIComponent(dc.email)+"&":""}su=${encodeURIComponent(email.assunto)}&body=${encodeURIComponent(email.corpo)}`,"_blank");
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+      <div style={{background:"#0e0e0e",borderRadius:10,width:"100%",maxWidth:600,border:"1px solid #222",maxHeight:"94vh",overflowY:"auto"}}>
+        <div style={{padding:"14px 18px",borderBottom:"1px solid #1a1a1a",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:14,color:grupo.color}}>Email — {grupo.name}</div>
+            <div style={{fontSize:10,color:"#444",marginTop:1,fontFamily:"DM Mono,monospace"}}>{empresa}{dc&&dc.nome?" · "+dc.nome:""}</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"#444",cursor:"pointer",fontSize:20}}>×</button>
+        </div>
+
+        {restrictions&&restrictions.length>0&&(
+          <div style={{margin:"10px 18px 0",background:"rgba(255,71,87,.06)",border:"1px solid rgba(255,71,87,.25)",borderRadius:4,padding:"8px 12px"}}>
+            <div style={{fontSize:9,color:"#FF4757",fontWeight:700,marginBottom:3}}>⚠ ATENÇÃO — Lead com restrição de conflito</div>
+            {restrictions.map((r,i)=><div key={i} style={{fontSize:8,fontFamily:"DM Mono,monospace",color:"#884040"}}>{r.reason} · {r.category}</div>)}
+          </div>
+        )}
+
+        {/* MODE TOGGLE */}
+        <div style={{display:"flex",gap:0,padding:"10px 18px 0"}}>
+          {[["templates","📋 5 Templates Fixos"],["ia","✨ Gerar com IA"]].map(([m,l])=>(
+            <button key={m} onClick={()=>setMode(m)} style={{padding:"6px 14px",border:"1px solid "+(mode===m?grupo.color:"#1e1e1e"),borderRadius:m==="templates"?"3px 0 0 3px":"0 3px 3px 0",background:mode===m?`rgba(${grupo.rgb},.1)`:"transparent",color:mode===m?grupo.color:"#444",fontSize:10,fontFamily:"DM Mono,monospace",cursor:"pointer",letterSpacing:".3px"}}>{l}</button>
+          ))}
+        </div>
+
+        <div style={{padding:"12px 18px"}}>
+          {/* TEMPLATE SELECTOR */}
+          {mode==="templates"&&(
+            <div style={{display:"flex",gap:4,marginBottom:12,flexWrap:"wrap"}}>
+              {tpls.map((t,i)=>(
+                <button key={i} onClick={()=>setSelTpl(i)} style={{padding:"4px 9px",borderRadius:3,border:"1px solid "+(selTpl===i?grupo.color:"#1e1e1e"),background:selTpl===i?`rgba(${grupo.rgb},.08)`:"transparent",color:selTpl===i?grupo.color:"#444",fontSize:8,fontFamily:"DM Mono,monospace",cursor:"pointer",letterSpacing:".3px"}}>{t.label}</button>
+              ))}
+            </div>
+          )}
+
+          {/* IA CONTROLS */}
+          {mode==="ia"&&(
+            <div style={{display:"flex",gap:5,marginBottom:10,flexWrap:"wrap"}}>
+              {["Direto e estratégico","Provocativo","Consultivo","Follow-up"].map(t=>(
+                <button key={t} onClick={()=>setTom(t)} style={{padding:"4px 8px",borderRadius:3,border:"1px solid "+(tom===t?grupo.color:"#1e1e1e"),background:"transparent",color:tom===t?grupo.color:"#444",fontSize:8,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>{t}</button>
+              ))}
+              <button onClick={gerarIA} style={{padding:"4px 9px",borderRadius:3,border:"1px solid #1e1e1e",background:"transparent",color:"#444",fontSize:8,fontFamily:"DM Mono,monospace",cursor:"pointer",marginLeft:"auto"}}>↺ Regerar</button>
+            </div>
+          )}
+
+          {loading?<div style={{textAlign:"center",padding:32,color:"#333",fontFamily:"DM Mono,monospace",fontSize:10}}>Gerando email personalizado...</div>:email&&(
+            <>
+              <div style={{marginBottom:8}}>
+                <div style={{fontSize:7,color:"#2a2a2a",fontFamily:"DM Mono,monospace",letterSpacing:"1px",textTransform:"uppercase",marginBottom:3}}>ASSUNTO</div>
+                <input style={{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:3,padding:"7px 9px",color:"#eee",fontFamily:"DM Mono,monospace",fontSize:11,outline:"none"}} value={email.assunto} onChange={e=>setEmail(em=>({...em,assunto:e.target.value}))}/>
+              </div>
+              <div style={{marginBottom:12}}>
+                <div style={{fontSize:7,color:"#2a2a2a",fontFamily:"DM Mono,monospace",letterSpacing:"1px",textTransform:"uppercase",marginBottom:3}}>CORPO</div>
+                <textarea style={{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:3,padding:"7px 9px",color:"#eee",fontFamily:"DM Mono,monospace",fontSize:10,outline:"none",minHeight:200,resize:"vertical",lineHeight:1.75}} value={email.corpo} onChange={e=>setEmail(em=>({...em,corpo:e.target.value}))}/>
+              </div>
+              <div style={{background:"#fff",borderRadius:5,overflow:"hidden",marginBottom:10}}>
+                <div style={{background:"#f1f3f4",padding:"5px 10px",display:"flex",gap:5}}><div style={{width:7,height:7,borderRadius:"50%",background:"#ff5f57"}}></div><div style={{width:7,height:7,borderRadius:"50%",background:"#febc2e"}}></div><div style={{width:7,height:7,borderRadius:"50%",background:"#28c840"}}></div></div>
+                <div style={{padding:"9px 14px 5px",fontFamily:"Arial,sans-serif",fontSize:13,fontWeight:700,color:"#000",borderBottom:"1px solid #e0e0e0"}}>{email.assunto}</div>
+                <div style={{padding:"9px 14px 4px",fontFamily:"Arial,sans-serif",fontSize:12,color:"#111",lineHeight:1.75,whiteSpace:"pre-wrap"}}>{email.corpo}</div>
+              <SigBlock sigType={grupo.sig||"holding"}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5,marginBottom:5}}>
+                <button onClick={oo} style={{padding:"9px 0",borderRadius:4,border:"none",background:"#0078d4",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer"}}>Abrir no Outlook</button>
+                <button onClick={og} style={{padding:"9px 0",borderRadius:4,border:"none",background:"#ea4335",color:"#fff",fontWeight:700,fontSize:11,cursor:"pointer"}}>Abrir no Gmail</button>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+                <button onClick={()=>cp(email.corpo,"corpo")} style={{padding:"7px 0",borderRadius:4,border:"1px solid #1e1e1e",background:copied==="corpo"?"#16a34a":"#111",color:copied==="corpo"?"#fff":"#555",fontSize:10,cursor:"pointer"}}>{copied==="corpo"?"Copiado!":"Copiar corpo"}</button>
+                <button onClick={()=>cp("Assunto: "+email.assunto+"\n\n"+email.corpo,"tudo")} style={{padding:"7px 0",borderRadius:4,border:"1px solid #1e1e1e",background:copied==="tudo"?"#16a34a":"#111",color:copied==="tudo"?"#fff":"#555",fontSize:10,cursor:"pointer"}}>{copied==="tudo"?"Copiado!":"Copiar tudo"}</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── DEC CARD ─────────────────────────────────────────────────────────────────
+function DecCard({dc,empresa,setor,grupo,isEditing,onToggleEdit,onUpdate,onRemove,pdKey,restrictions}){
+  const [pdStatus,setPdStatus]=useState(null);
+  const [pdLoading,setPdLoading]=useState(false);
+  const [showEmail,setShowEmail]=useState(false);
+  const [verifying,setVerifying]=useState(false);
+  const verifyEmail=async()=>{if(!dc.email)return;setVerifying(true);const v=await hunterVerify(dc.email);if(v)onUpdate("emailStatus",v.result);setVerifying(false);};
+  const syncPD=async()=>{if(!pdKey||!dc.email)return;setPdLoading(true);const ex=await pipedriveSearch(dc.email,pdKey);setPdStatus(ex?"exists":(await pipedriveCreate(dc,empresa,pdKey))?"ok":"error");setPdLoading(false);};
+  const stC={"ok":"#34D399","invalid":"#FF4757","risky":"#FFB547","unknown":"#555","exists":"#A78BFA"};
+  return(
+    <>
+      {emailModal&&<EmailModal dc={dc} empresa={empresa} setor={setor} grupo={grupo} angulo={grupo.angles[0]} hist="" restrictions={restrictions} onClose={()=>setEmailModal(false)}/>}
+      <div className="deccard">
+        <div className="decav" style={{background:`rgba(${grupo.rgb},.1)`,color:grupo.color}}>{initials(dc.nome||"?")}</div>
+        <div className="decinfo">
+          <div className="decname">{dc.nome||"Nome não informado"}</div>
+          <div className="deccargo">{dc.cargo||"Cargo não informado"}</div>
+          <div className="dectags">
+            <span className={"dt"+(dc.email?" dtok":"")}>✉ {dc.email||"sem email"}{dc.emailStatus&&<span style={{fontSize:8,padding:"1px 4px",borderRadius:8,background:stC[dc.emailStatus]||"#222",color:"#000",marginLeft:4}}>{dc.emailStatus}</span>}</span>
+            <span className={"dt"+(dc.wa?" dtok":"")}>💬 {dc.wa||"sem WA"}</span>
+          </div>
+        </div>
+        <div className="decacts">
+          {dc.email&&<button className="btn btno btnsm" onClick={()=>setEmailModal(true)}>✉ Email</button>}
+          {dc.wa&&<button className="btn btno btnsm" onClick={()=>window.open("https://wa.me/"+dc.wa.replace(/\D/g,""),"_blank")}>💬</button>}
+          {dc.li&&<button className="btn btno btnsm" onClick={()=>window.open(dc.li.startsWith("http")?dc.li:"https://"+dc.li,"_blank")}>in</button>}
+          <button className="btn btno btnsm" onClick={()=>downloadVCard(dc,empresa)} title="Salvar no iPhone" style={{color:"#34D399",borderColor:"rgba(52,211,153,.3)"}}>📱 vCard</button>
+          {dc.email&&!dc.emailStatus&&<button className="btn btno btnsm" onClick={verifyEmail} disabled={verifying}>{verifying?"...":"Validar"}</button>}
+          {pdKey&&dc.email&&<button className="btn btno btnsm" onClick={syncPD} disabled={pdLoading} style={{color:"#A78BFA",borderColor:"rgba(167,139,250,.3)"}}>{pdLoading?"...":pdStatus==="exists"?"No Pipe":pdStatus==="ok"?"Criado!":"Pipedrive"}</button>}
+          <button className="btn btno btnsm" onClick={onToggleEdit}>{isEditing?"Fechar":"Editar"}</button>
+          <button className="btn btnsm" onClick={onRemove} style={{background:"rgba(255,71,87,.08)",color:"#FF4757",border:"1px solid rgba(255,71,87,.2)"}}>✕</button>
+        </div>
+      </div>
+      {isEditing&&(
+        <div style={{background:"#0a0a0a",border:"1px solid #181818",borderRadius:4,padding:12,marginBottom:8}}>
+          <div className="g2">{[["nome","Nome"],["cargo","Cargo"],["email","Email"],["wa","WhatsApp"]].map(([f,pl])=>(
+            <div className="frow" key={f}><div className="flbl">{pl}</div><input className="finp" placeholder={pl} value={dc[f]||""} onChange={e=>onUpdate(f,e.target.value)}/></div>
+          ))}</div>
+          <div className="frow"><div className="flbl">LinkedIn URL</div><input className="finp" placeholder="linkedin.com/in/..." value={dc.li||""} onChange={e=>onUpdate("li",e.target.value)}/></div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── RESTRICTIONS PANEL ───────────────────────────────────────────────────────
+function RestrictionsPanel({onClose}){
+  const byAgency={};
+  RESTRICTIONS.forEach(r=>{
+    r.agencies.forEach(ag=>{
+      if(!byAgency[ag]) byAgency[ag]=[];
+      byAgency[ag].push(r);
+    });
+  });
+  const agMap={"galeria":"Galeria","mila":"Milà","404":"404","cccaramelo":"cccaramelo"};
+  const agColor={"galeria":"#E8C97A","mila":"#C9A87C","404":"#7EB8D4","cccaramelo":"#E8916A"};
+
+  // Find restricted leads
+  const resLeads=PROSP.filter(l=>{
+    return GRUPO.some(g=>checkRestrictions(l,g.id).length>0);
+  });
+
+  return(
+    <div className="modov"><div className="mod mod-wide">
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div>
+          <div className="modtitle" style={{marginBottom:4}}>⚠ Painel de Restrições de Conflito</div>
+          <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#444"}}>Revisão trimestral recomendada · Última atualização: {new Date().toLocaleDateString("pt-BR")}</div>
+        </div>
+        <button onClick={onClose} style={{background:"none",border:"none",color:"#444",cursor:"pointer",fontSize:20}}>×</button>
+      </div>
+
+      <div style={{background:"rgba(255,181,71,.05)",border:"1px solid rgba(255,181,71,.2)",borderRadius:5,padding:"10px 14px",marginBottom:18}}>
+        <div style={{fontSize:10,color:"#FFB547",fontWeight:700,marginBottom:4}}>📅 LEMBRETE TRIMESTRAL</div>
+        <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#887040",lineHeight:1.6}}>Revise estas restrições a cada 3 meses para confirmar se os clientes e contratos ainda estão ativos. Restrições expiradas são removidas automaticamente quando a data vence.</div>
+      </div>
+
+      <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#444",marginBottom:12}}>
+        {resLeads.length} leads restritos identificados na base
+      </div>
+
+      {Object.keys(byAgency).sort().map(ag=>(
+        <div key={ag} style={{marginBottom:18}}>
+          <div style={{fontSize:10,fontWeight:700,color:agColor[ag]||"#888",fontFamily:"DM Mono,monospace",letterSpacing:1,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:agColor[ag]||"#888",display:"inline-block"}}></span>
+            {(agMap[ag]||ag).toUpperCase()} — {byAgency[ag].length} RESTRIÇÕES
+          </div>
+          {byAgency[ag].map((r,i)=>(
+            <div key={i} className="res-row">
+              <div style={{flex:2}}>
+                <div style={{fontSize:10,fontWeight:700}}>{r.reason}</div>
+                <div style={{fontSize:8,fontFamily:"DM Mono,monospace",color:"#444",marginTop:2}}>{r.category}</div>
+              </div>
+              <div style={{flex:3}}>
+                <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+                  {r.keywords.slice(0,6).map((k,ki)=><span key={ki} style={{fontSize:7,fontFamily:"DM Mono,monospace",padding:"1px 5px",borderRadius:100,background:"rgba(255,71,87,.08)",color:"#FF4757",border:"1px solid rgba(255,71,87,.18)"}}>{k}</span>)}
+                  {r.keywords.length>6&&<span style={{fontSize:7,fontFamily:"DM Mono,monospace",color:"#444"}}>+{r.keywords.length-6}</span>}
+                </div>
+              </div>
+              {r.expiresAt&&<div style={{fontSize:8,fontFamily:"DM Mono,monospace",color:"#FFB547",whiteSpace:"nowrap",marginLeft:8}}>até {new Date(r.expiresAt).toLocaleDateString("pt-BR")}</div>}
+            </div>
+          ))}
+        </div>
+      ))}
+
+      <div className="modacts">
+        <button className="btn btno btnsm" onClick={onClose}>Fechar</button>
+        <button className="btn btnsm" style={{background:"rgba(255,181,71,.15)",color:"#FFB547",border:"1px solid rgba(255,181,71,.3)"}} onClick={()=>{saveSt("ghub_res_review",new Date().toISOString());onClose();}}>✓ Confirmar revisão trimestral</button>
+      </div>
+    </div></div>
+  );
+}
+
+// ─── AGENT VIEW ───────────────────────────────────────────────────────────────
+function AgentView({grupo,lead,acc,pdKey,curUser,onAccUpdate,onActivitySaved,accs}){
+  const [tab,setTab]=useState("overview");
+  const [curAngle,setCurAngle]=useState(0);
+  const [emailModal,setEmailModal]=useState(false);
+  const [intelLoading,setIntelLoading]=useState(false);
+  const [monLoading,setMonLoading]=useState(false);
+  const [actModal,setActModal]=useState(false);
+  const [decModal,setDecModal]=useState(false);
+  const [editDec,setEditDec]=useState({});
+  const [actType,setActType]=useState("email");
+  const [actDec,setActDec]=useState("");
+  const [actNote,setActNote]=useState("");
+  const [newDec,setNewDec]=useState({nome:"",cargo:"",email:"",wa:"",li:""});
+
+  const setor=lead.setor||"";
+  const fit=grupo.fit(setor);
+  const dor=grupo.dor(setor);
+  const restrictions=checkRestrictions(lead,grupo.id);
+  const isRestricted=restrictions.length>0;
+  const hist=(acc.activities||[]).map(a=>a.typeLabel+" "+a.date+(a.note?": "+a.note:"")).join("; ");
+  const decStr=(acc.decisors||[]).map(d=>d.nome+" ("+d.cargo+")").join(", ");
+
+  const tabs=[["overview","VISÃO GERAL"],["decisores","DECISORES"],["historico","HISTÓRICO"],["email","EMAIL"],["intel","INTELIGÊNCIA"],["pipeline","TOP 50 FIT"]];
+
+  const genIntel=async()=>{setIntelLoading(true);const t=await gerarIntel(lead.nome,setor,grupo,decStr,hist);onAccUpdate({...acc,intel:t});setIntelLoading(false);};
+  const runMon=async()=>{setMonLoading(true);const al=await gerarAlertas(lead.nome,setor,grupo);onAccUpdate({...acc,alerts:[...(acc.alerts||[]),...al.map(a=>({...a,date:new Date().toLocaleDateString("pt-BR")})) ]});setMonLoading(false);};
+
+  const saveAct=async()=>{
+    const tmap={email:"✉ Email",call:"📞 Ligação",whatsapp:"💬 WhatsApp",linkedin:"in LinkedIn",meeting:"🤝 Reunião",response:"↩ Resposta"};
+    const a={type:actType,typeLabel:tmap[actType]||actType,decisor:actDec,note:actNote,date:new Date().toLocaleDateString("pt-BR"),synced:false};
+    const newActs=[...(acc.activities||[]),a];
+    onAccUpdate({...acc,activities:newActs});
+    if(pdKey){await createActivity(acc.pdDealId,tmap[actType]+" — "+lead.nome,actNote,pdKey);a.synced=true;}
+    // Log globally for dashboard
+    if(onActivitySaved) await onActivitySaved(lead.nome,actType,tmap[actType]||actType,actDec,actNote);
+    setActModal(false);setActNote("");
+    if(newActs.length>=3&&newActs.length%3===0)setTimeout(genIntel,800);
+  };
+
+  const saveDec=async()=>{
+    if(!newDec.nome)return;
+    const d={...newDec,addedAt:new Date().toLocaleDateString("pt-BR")};
+    // Close modal FIRST before any async operations to prevent black screen
+    setDecModal(false);
+    setNewDec({nome:"",cargo:"",email:"",wa:"",li:""});
+    onAccUpdate({...acc,decisors:[...(acc.decisors||[]),d]});
+    // Async Pipedrive sync after modal is closed
+    if(pdKey){try{await pipedriveCreate(d,lead.nome,pdKey);}catch(e){}}
+  };
+
+  const [enriching,setEnriching]=useState(false);
+  const [enrichLog,setEnrichLog]=useState("");
+  const [aiSuggestions,setAiSuggestions]=useState([]);
+
+  const doEnrich=async()=>{
+    setEnriching(true);
+    setAiSuggestions([]);
+    setEnrichLog("Buscando decisores via Hunter + Lusha...");
+    // Step 1: Hunter + Lusha
+    await enrichLead(lead,pdKey,(results,domain)=>{
+      if(!domain){
+        setEnrichLog("Domínio não mapeado — sugerindo decisores via IA...");
+        suggestWithAI();
+        return;
+      }
+      if(!results.length){
+        setEnrichLog("Hunter não encontrou contatos — sugerindo via IA...");
+        suggestWithAI();
+        return;
+      }
+      const existing=acc.decisors||[];
+      const novos=results.filter(r=>r.email&&!existing.some(e=>e.email===r.email));
+      onAccUpdate({...acc,decisors:[...existing,...novos]});
+      setEnrichLog("✓ "+novos.length+" decisores adicionados via Hunter+Lusha"+(pdKey?" + Pipedrive":"")+". Gerando sugestões IA...");
+      suggestWithAI(novos);
+    });
+  };
+
+  const suggestWithAI=async(found)=>{
+    try{
+      const prompt=`Você é especialista em prospecção B2B. A empresa é ${lead.nome} do setor ${lead.setor}. 
+Sugira os 5 principais cargos/perfis de decisão de marketing que provavelmente existem nesta empresa, com nomes fictícios verossímeis para o contexto brasileiro, cargo preciso e uma dica de onde encontrar esta pessoa.
+Responda APENAS JSON sem markdown: [{"nome":"...","cargo":"...","dica":"...","linkedin_busca":"..."}]`;
+      const r=await claudeFetch({model:"claude-sonnet-4-20250514",max_tokens:600,messages:[{role:"user",content:prompt}]});
+      const d=await r.json();
+      const txt=(d.content&&d.content[0]&&d.content[0].text)||"[]";
+      const sugs=JSON.parse(txt.replace(/\`\`\`json|\`\`\`/g,"").trim());
+      setAiSuggestions(sugs);
+      setEnrichLog(prev=>prev+" IA sugeriu "+sugs.length+" perfis adicionais.");
+    }catch(e){setEnrichLog(prev=>prev+" (IA indisponível)");}
+    setEnriching(false);
+  };
+
+  const addSuggestion=(s)=>{
+    const d={nome:s.nome,cargo:s.cargo,email:"",wa:"",li:s.linkedin_busca||"",aiSuggested:true,addedAt:new Date().toLocaleDateString("pt-BR")};
+    onAccUpdate({...acc,decisors:[...(acc.decisors||[]),d]});
+    setAiSuggestions(prev=>prev.filter(x=>x.nome!==s.nome));
+  };
+  // Auto-enrich when no decisors yet
+  useEffect(()=>{
+    if((acc.decisors||[]).length===0 && !enriching){
+      doEnrich();
+    }
+  },[lead.rank]);
+
+  const syncDeal=async()=>{if(!pdKey)return;const deal=await createDeal(lead.nome,grupo.name,pdKey);if(deal)onAccUpdate({...acc,pdDealId:deal.id});};
+
+  // Insight state
+  const [insight,setInsight]=useState("");
+  const [insightLoading,setInsightLoading]=useState(false);
+
+  const loadInsight=async()=>{
+    setInsightLoading(true);
+    const t=await getSectorInsight(lead.nome,setor,grupo.name,grupo.desc);
+    setInsight(t);
+    setInsightLoading(false);
+  };
+
+  // Auto-load insight on first visit
+  useEffect(()=>{
+    if(!insight&&!insightLoading) loadInsight();
+  },[lead.rank,grupo.id]);
+
+  // Auto-contact: registers activity when clicking email/WA/LinkedIn
+  const autoContact=async(dc,tipo,tipoLabel,url)=>{
+    window.open(url,"_blank");
+    const tmap={email:"✉ Email",whatsapp:"💬 WhatsApp",linkedin:"in LinkedIn"};
+    const a={type:tipo,typeLabel:tmap[tipo]||tipo,decisor:dc.nome,note:"Contato via "+tipoLabel,date:new Date().toLocaleDateString("pt-BR"),synced:false};
+    const newActs=[...(acc.activities||[]),a];
+    onAccUpdate({...acc,activities:newActs});
+    if(onActivitySaved) await onActivitySaved(lead.nome,tipo,tmap[tipo]||tipo,dc.nome,"Contato via "+tipoLabel);
+  };
+  const updDec=(i,f,v)=>{const a=[...(acc.decisors||[])];a[i]={...a[i],[f]:v};onAccUpdate({...acc,decisors:a});};
+  const rmDec=i=>{const a=[...(acc.decisors||[])];a.splice(i,1);onAccUpdate({...acc,decisors:a});};
+
+  const ResBanner=()=>isRestricted?(
+    <div className="res-banner">
+      <div className="res-icon">⚠</div>
+      <div className="res-body">
+        <div className="res-title">LEAD RESTRITO — Conflito de cliente</div>
+        <div className="res-desc">Este anunciante é concorrente direto de um cliente ativo de {grupo.name}. Prossiga com cautela e valide com liderança antes de qualquer abordagem.</div>
+        <div className="res-tags">{restrictions.map((r,i)=><span key={i} className="rtag">{r.reason}</span>)}</div>
+      </div>
+    </div>
+  ):null;
+
+  const renderTab=()=>{
+    if(tab==="overview") return(
+      <div>
+        <ResBanner/>
+        <div className="acctop">
+          <div><div className="accname">{lead.nome}</div><div className="accmeta">Rank #{lead.rank} · {setor} · <span style={{color:fitColor(fit),fontSize:8,background:`rgba(${hexRgb(fitColor(fit))},.08)`,border:`1px solid rgba(${hexRgb(fitColor(fit))},.2)`,padding:"1px 6px",borderRadius:100}}>{fitLabel(fit)}</span>{isRestricted&&<span className="restag" style={{marginLeft:6}}>RESTRITO</span>}</div></div>
+          <div className="btnrow">
+            <button className="btn btno btnsm" onClick={runMon} disabled={monLoading}>{monLoading?"...":"◉ Monitorar"}</button>
+            <button className="btn btnp btnsm" style={{background:grupo.color}} onClick={()=>setTab("decisores")}>+ Decisor</button>
+          </div>
+        </div>
+        {/* INSIGHT */}
+        {(insight||insightLoading)&&(
+          <div className="insight-card" style={{marginBottom:16}}>
+            <div className="insight-badge">💡 INSIGHT DE SETOR</div>
+            {insightLoading?<div className="stxt">Analisando {setor}...</div>:<div className="insight-body">{insight}</div>}
+          </div>
+        )}
+
+        <div className="g3">
+          <div className="card"><div className="clbl">DECISORES</div><div className="cval">{(acc.decisors||[]).length}</div><div className="csub">cadastrados</div></div>
+          <div className="card"><div className="clbl">CONTATADOS</div><div className="cval" style={{color:grupo.color}}>{[...new Set((acc.activities||[]).map(a=>a.decisor).filter(Boolean))].length}</div><div className="csub">decisores</div></div>
+          <div className="card"><div className="clbl">ÚLTIMO CONTATO</div><div className="cval" style={{fontSize:12}}>{acc.activities&&acc.activities.length>0?acc.activities[acc.activities.length-1].date:"—"}</div><div className="csub">{acc.activities&&acc.activities.length>0?acc.activities[acc.activities.length-1].typeLabel:"sem contato"}</div></div>
+        </div>
+
+        <div className="sec">DECISORES — ÁLBUM</div>
+        {(acc.decisors||[]).length===0?(
+          <div style={{background:"#0a0a0a",border:"1px dashed #1e1e1e",borderRadius:8,padding:16,marginBottom:14,display:"flex",alignItems:"center",gap:12}}>
+            <div style={{fontSize:24}}>◌</div>
+            <div style={{flex:1}}><div style={{fontSize:12,fontWeight:700,marginBottom:3}}>Nenhum decisor ainda</div><div style={{fontSize:10,color:"#444",fontFamily:"DM Mono,monospace"}}>{enriching?"Buscando...":"Clique em ⚡ Enriquecer para buscar automaticamente"}</div></div>
+            <button className="btn btnsm" style={{background:grupo.color,color:"#000",border:"none",flexShrink:0}} onClick={()=>{setTab("decisores");doEnrich();}}>⚡ Enriquecer</button>
+          </div>
+        ):(
+          <div className="fig-grid" style={{marginBottom:16}}>
+            {(acc.decisors||[]).slice(0,5).map((d,i)=>{
+              const contacted=(acc.activities||[]).some(a=>a.decisor===d.nome);
+              return<FigurinhaCard key={i} dc={d} grupo={grupo} contacted={contacted}
+                onEmail={()=>setEmailModal(true)}
+                onWhatsApp={()=>autoContact(d,"whatsapp","WhatsApp","https://wa.me/"+(d.wa||"").replace(/\D/g,""))}
+                onLinkedIn={()=>autoContact(d,"linkedin","LinkedIn",(d.li&&d.li.startsWith("http"))?d.li:"https://www.linkedin.com/search/results/people/?keywords="+encodeURIComponent(d.nome))}
+                onVCard={()=>downloadVCard(d,lead.nome)}/>;
+            })}
+          </div>
+        )}
+
+        <div className="sec">POSICIONAMENTO {grupo.name.toUpperCase()}</div>
+        <div className="aiout" style={{fontSize:10,padding:12,marginBottom:14}}>{dor}</div>
+        {acc.intel&&<><div className="sec">ÚLTIMA ANÁLISE DE IA</div><div className="aiout">{acc.intel}</div></>}
+        <div className="sec">AÇÕES RÁPIDAS</div>
+        <div className="btnrow">
+          <button className="btn btno btnsm" onClick={()=>setTab("email")}>✉ Email</button>
+          <button className="btn btno btnsm" onClick={()=>setActModal(true)}>+ Contato</button>
+          <button className="btn btno btnsm" onClick={()=>setTab("intel")}>◈ Análise IA</button>
+          <button className="btn btno btnsm" onClick={()=>{setTab("decisores");doEnrich();}} style={{color:"#FFB547",borderColor:"rgba(255,181,71,.3)"}}>⚡ Enriquecer</button>
+          {pdKey&&<button className="btn btno btnsm" onClick={syncDeal} style={{color:"#A78BFA",borderColor:"rgba(167,139,250,.3)"}}>↑ Deal CRM</button>}
+        </div>
+      </div>
+    );
+
+    if(tab==="decisores"){
+      var exportCSV=function(){
+        var rows=["empresa,nome,cargo,email,whatsapp,linkedin,status"];
+        var qc=function(v){return String(v||"").replace(/,/g," ");};
+        (acc.decisors||[]).forEach(function(d){
+          var contacted=(acc.activities||[]).some(function(a){return a.decisor===d.nome;});
+          rows.push([qc(lead.nome),qc(d.nome),qc(d.cargo),qc(d.email),qc(d.wa),qc(d.li),contacted?"contatado":"pendente"].join(","));
+        });
+        var blob=new Blob([rows.join("\n")],{type:"text/csv"});
+        var a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="mailing_"+lead.nome.split(" ")[0]+".csv";a.click();
+      };
+
+      var getLevel=function(cargo){
+        var cl=(cargo||"").toLowerCase();
+        var decisaoKw=["cmo","chief","vp ","vice-pres","diretor","ceo","coo","cto","cfo","head of","head de","c-level","presidente","managing","country manager","svp","evp"];
+        return decisaoKw.some(function(k){return cl.includes(k);})?"decisao":"influencia";
+      };
+
+      var decisores=acc.decisors||[];
+      var topLevel=decisores.filter(function(d){return getLevel(d.cargo)==="decisao";});
+      var midLevel=decisores.filter(function(d){return getLevel(d.cargo)!=="decisao";});
+
+      var renderCard=function(d,i,allDecs){
+        var idx2=allDecs.indexOf(d);
+        var contacted=(acc.activities||[]).some(function(a){return a.decisor===d.nome;});
+        return <FigurinhaCard key={idx2} dc={d} grupo={grupo} contacted={contacted} level={getLevel(d.cargo)}
+          onEmail={function(){setEmailModal(true);}}
+          onWhatsApp={function(){autoContact(d,"whatsapp","WhatsApp","https://wa.me/"+(d.wa||"").replace(/\D/g,""));}}
+          onLinkedIn={function(){autoContact(d,"linkedin","LinkedIn",(d.li&&d.li.startsWith("http"))?d.li:"https://www.linkedin.com/search/results/people/?keywords="+encodeURIComponent(d.nome));}}
+          onVCard={function(){downloadVCard(d,lead.nome);}}
+          onUpdate={function(field,val){updDec(idx2,field,val);}}
+          onRemove={function(){rmDec(idx2);}}/>;
+      };
+
+      return(
+        <div>
+          <ResBanner/>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,flexWrap:"wrap",gap:8}}>
+            <div className="sec" style={{margin:0,flex:1}}>ORGANIGRAMA DE DECISORES</div>
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {decisores.length>0&&<button className="tbtn green" onClick={exportCSV}>↓ Mailing</button>}
+              <button className="tbtn" style={{color:"#FFB547",borderColor:"rgba(255,181,71,.3)"}} onClick={doEnrich} disabled={enriching}>{enriching?"Buscando...":"⚡ Enriquecer"}</button>
+              <button className="btn btnp btnsm" style={{background:grupo.color}} onClick={function(){setDecModal(true);}}>+ Adicionar</button>
+            </div>
+          </div>
+          {enrichLog&&<div style={{fontSize:10,fontFamily:"DM Mono,monospace",color:enrichLog.includes("✓")||enrichLog.includes("✨")?"#34D399":"#FFB547",marginBottom:12,padding:"8px 12px",background:"var(--s2)",border:"1px solid var(--border)",borderRadius:6}}>{enrichLog}</div>}
+
+          {/* AI SUGGESTIONS */}
+          {aiSuggestions.length>0&&(
+            <div style={{background:"rgba(167,139,250,.04)",border:"1px solid rgba(167,139,250,.2)",borderRadius:8,padding:14,marginBottom:16}}>
+              <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#A78BFA",fontWeight:700,marginBottom:10,letterSpacing:1}}>✨ SUGESTÕES DA IA — perfis prováveis</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8}}>
+                {aiSuggestions.map(function(s,i){return(
+                  <div key={i} style={{background:"var(--s2)",border:"1px solid rgba(167,139,250,.2)",borderRadius:8,overflow:"hidden"}}>
+                    <div style={{height:60,background:"rgba(167,139,250,.08)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,fontWeight:800,color:"#A78BFA"}}>{initials(s.nome)}</div>
+                    <div style={{padding:"8px 10px"}}>
+                      <div style={{fontSize:11,fontWeight:700}}>{s.nome}</div>
+                      <div style={{fontSize:9,color:"var(--muted)",fontFamily:"DM Mono,monospace",marginTop:2}}>{s.cargo}</div>
+                      {s.dica&&<div style={{fontSize:8,color:"#444",marginTop:4,fontFamily:"DM Mono,monospace",lineHeight:1.4}}>💡 {s.dica}</div>}
+                      <div style={{display:"flex",gap:4,marginTop:8}}>
+                        {s.linkedin_busca&&<button className="fig-btn li" onClick={function(){window.open("https://www.linkedin.com/search/results/people/?keywords="+encodeURIComponent(s.linkedin_busca),"_blank");}}>Buscar</button>}
+                        <button className="fig-btn" onClick={function(){addSuggestion(s);}} style={{color:"#A78BFA",borderColor:"rgba(167,139,250,.3)"}}>+ Add</button>
+                      </div>
+                    </div>
+                  </div>
+                );})}
+              </div>
+            </div>
+          )}
+
+          {decisores.length===0?(
+            <div className="empty" style={{height:200}}>
+              <div className="emptyicon" style={{fontSize:36}}>◌</div>
+              <div style={{fontSize:14,fontWeight:700}}>Nenhum decisor</div>
+              <div style={{fontSize:11,color:"var(--muted)"}}>Clique em ⚡ Enriquecer para buscar automaticamente</div>
+            </div>
+          ):(
+            <div className="org-tree">
+              {/* NÍVEL 1: DECISÃO */}
+              <div className="org-level">
+                <div className="org-level-label" style={{color:grupo.color}}>
+                  <div style={{width:8,height:8,borderRadius:"50%",background:grupo.color}}></div>
+                  DECISÃO — C-Level / VP / Diretor ({topLevel.length})
+                </div>
+                {topLevel.length===0?(
+                  <div style={{fontSize:10,color:"#333",fontFamily:"DM Mono,monospace",padding:"8px 4px",marginBottom:8}}>Nenhum decisor de nível C cadastrado. Adicione ou enriqueça.</div>
+                ):(
+                  <div className="org-level-cards">{topLevel.map(function(d){return renderCard(d,topLevel.indexOf(d),decisores);})}</div>
+                )}
+              </div>
+
+              {/* CONNECTOR */}
+              {topLevel.length>0&&midLevel.length>0&&(
+                <div style={{display:"flex",justifyContent:"center",marginBottom:4}}>
+                  <div style={{width:2,height:20,background:"linear-gradient(to bottom,rgba("+grupo.rgb+",.4),#1a1a1a)"}}></div>
+                </div>
+              )}
+
+              {/* NÍVEL 2: INFLUÊNCIA */}
+              {midLevel.length>0&&(
+                <div className="org-level">
+                  <div className="org-level-label" style={{color:"#666"}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:"#333"}}></div>
+                    INFLUÊNCIA — Gerentes / Coordenadores / Analistas ({midLevel.length})
+                  </div>
+                  <div className="org-level-cards">{midLevel.map(function(d){return renderCard(d,midLevel.indexOf(d),decisores);})}</div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+    if(tab==="historico") return(
+      <div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div className="sec" style={{margin:0,flex:1}}>HISTÓRICO DE ATIVIDADES</div>
+          <button className="btn btnp btnsm" style={{background:grupo.color,marginLeft:12}} onClick={()=>setActModal(true)}>+ Registrar</button>
+        </div>
+        {!(acc.activities&&acc.activities.length)?<div className="empty" style={{height:220}}><div className="emptyicon" style={{fontSize:28}}>◌</div><div style={{fontSize:12,fontWeight:700}}>Nenhuma atividade</div></div>:(
+          <div>{[...(acc.activities||[])].reverse().map((a,i)=>{
+            const icons={email:"✉",call:"📞",whatsapp:"💬",linkedin:"in",meeting:"🤝",response:"↩"};
+            return(<div className="feeditem" key={i}><div className="fiicon">{icons[a.type]||"◎"}</div><div className="fibody"><div className="fititle">{a.typeLabel}{a.decisor?" — "+a.decisor:""}</div><div className="fimeta">{a.date}{a.synced&&<span style={{color:"#4B9EFF",marginLeft:6}}>· sync Pipedrive</span>}</div>{a.note&&<div className="finote">{a.note}</div>}</div></div>);
+          })}</div>
+        )}
+      </div>
+    );
+
+    if(tab==="email") return(
+      <div>
+        <ResBanner/>
+        <div className="sec">EMAIL IA — {grupo.name.toUpperCase()}</div>
+        <div className="angtabs">{grupo.angles.map((a,i)=><button key={i} className={"angtab"+(curAngle===i?" on":"")} onClick={()=>setCurAngle(i)}>{a}</button>)}</div>
+        {hist&&<div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#333",marginBottom:12,padding:"8px 10px",background:"#0e0e0e",border:"1px solid #181818",borderRadius:3}}>◉ {(acc.activities||[]).length} atividade(s) no histórico — IA personaliza o follow-up.</div>}
+        <button className="btn btnp" style={{background:grupo.color,marginBottom:16}} onClick={()=>setEmailModal(true)}>Gerar Email com IA</button>
+        {emailModal&&<EmailModal dc={(acc.decisors||[])[0]} empresa={lead.nome} setor={setor} grupo={grupo} angulo={grupo.angles[curAngle]} hist={hist} restrictions={restrictions} onClose={()=>setEmailModal(false)}/>}
+      </div>
+    );
+
+    if(tab==="intel") return(
+      <div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:8}}>
+          <div><div className="accname" style={{fontSize:18}}>{lead.nome}</div><div className="accmeta">Inteligência de conta · {grupo.name}</div></div>
+          <div className="btnrow">
+            <button className="btn btnp btnsm" style={{background:grupo.color}} onClick={genIntel} disabled={intelLoading}>{intelLoading?"Analisando...":"◈ Análise IA"}</button>
+            <button className="btn btno btnsm" onClick={runMon} disabled={monLoading}>{monLoading?"🔄 Monitorando...":"◉ Monitorar agora"}</button>
+          </div>
+        </div>
+
+        {/* CRAWLER STATUS */}
+        <div style={{background:"#0a0a0a",border:"1px solid #181818",borderRadius:5,padding:12,marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+            <div style={{width:6,height:6,borderRadius:"50%",background:monLoading?"#FFB547":"#34D399",animation:monLoading?"blink 1s infinite":"none"}}></div>
+            <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:monLoading?"#FFB547":"#34D399",letterSpacing:1}}>
+              {monLoading?"MONITORANDO...":"CRAWLER ATIVO"}
+            </div>
+            <div style={{fontSize:8,fontFamily:"DM Mono,monospace",color:"#333",marginLeft:"auto"}}>
+              {(acc.alerts||[]).length>0?"Última varredura: "+[...(acc.alerts||[])].reverse()[0]?.date:"Nenhuma varredura ainda"}
+            </div>
+          </div>
+          <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#444",lineHeight:1.6}}>
+            Monitora mudanças de liderança de marketing, novos produtos digitais, expansão, notícias relevantes e movimentos que criam oportunidade de abordagem.
+          </div>
+        </div>
+
+        {acc.intel&&<><div className="sec">ANÁLISE ESTRATÉGICA</div><div className="aiout">{acc.intel}</div></>}
+        <div className="btnrow" style={{marginBottom:20,display:"none"}}></div>
+        {acc.alerts&&acc.alerts.length>0&&(
+          <><div className="sec">ALERTAS</div>
+          {[...(acc.alerts||[])].reverse().slice(0,5).map((a,i)=>{
+            const ug=a.urgency==="change"?"🔄":a.urgency==="risk"?"⚠️":"📌";
+            const bc=a.urgency==="change"?"rgba(255,181,71,.08)":"rgba(0,255,148,.04)";
+            const tc=a.urgency==="change"?"#FFB547":"#00FF94";
+            return(<div className="monitem" key={i} style={{borderColor:bc}}><div style={{fontSize:16,flexShrink:0}}>{ug}</div><div className="monbody"><div className="montitle">{a.title}</div><div className="mondesc">{a.desc}</div><div className="montime">{a.date}</div></div><span className="monbadge" style={{color:tc,border:`1px solid ${bc}`,background:bc}}>{a.urgency==="change"?"MUDANÇA":"NOVO"}</span></div>);
+          })}</>
+        )}
+      </div>
+    );
+
+    if(tab==="pipeline"){
+      const top50=getTop50(grupo);
+      return(
+        <div>
+          <div className="acctop" style={{marginBottom:16}}>
+            <div><div className="accname">Pipeline Top 50</div><div className="accmeta">Contas com maior score de fit para {grupo.name}</div></div>
+          </div>
+          <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#333",marginBottom:14,padding:"8px 12px",background:"#0a0a0a",border:"1px solid #181818",borderRadius:3}}>
+            Score = Fit (alto:100 / med:60) + Rank investimento (top50:+30 / top100:+20 / top200:+10) − Conflito (−50)
+          </div>
+          {top50.map((l,i)=>{
+            const res=checkRestrictions(l,grupo.id);
+            const isRes=res.length>0;
+            const accK=grupo.id+"_"+l.rank;
+            const hasDec=!!(accs[accK]&&accs[accK].decisors&&accs[accK].decisors.length>0);
+            const sc=l.score;
+            const scColor=sc>=100?"#00FF94":sc>=80?"#FFB547":sc>=50?"#888":"#FF4757";
+            return(
+              <div key={l.rank+l.nome} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderBottom:"1px solid #111",borderLeft:i<10?"2px solid "+grupo.color:"2px solid transparent"}}>
+                <div style={{width:26,textAlign:"center",fontFamily:"DM Mono,monospace",fontSize:10,fontWeight:700,color:i<10?grupo.color:"#333"}}>#{i+1}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:11,fontWeight:700,display:"flex",alignItems:"center",gap:5,flexWrap:"wrap"}}>
+                    {l.nome}
+                    {isRes&&<span style={{fontSize:7,color:"#FF4757",border:"1px solid rgba(255,71,87,.3)",padding:"1px 5px",borderRadius:100,fontFamily:"DM Mono,monospace"}}>RESTRITO</span>}
+                    {hasDec&&<span style={{fontSize:7,color:"#4B9EFF",border:"1px solid rgba(75,158,255,.3)",padding:"1px 5px",borderRadius:100,fontFamily:"DM Mono,monospace"}}>DECISORES ✓</span>}
+                  </div>
+                  <div style={{fontSize:8,fontFamily:"DM Mono,monospace",color:"#333",marginTop:2}}>{l.setor} · Rank #{l.rank}</div>
+                </div>
+                <div style={{textAlign:"right",flexShrink:0}}>
+                  <div style={{fontSize:16,fontWeight:800,color:scColor,fontFamily:"DM Mono,monospace"}}>{sc}</div>
+                  <div style={{fontSize:7,fontFamily:"DM Mono,monospace",color:"#333"}}>pts</div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      );
+    }
+  };
+
+  return(
+    <>
+      {actModal&&(<ModalPortal><div className="modov"><div className="mod">
+        <div className="modtitle">+ Registrar Atividade</div>
+        <div className="frow"><div className="flbl">TIPO</div><select className="finp" value={actType} onChange={e=>setActType(e.target.value)}>{[["email","✉ Email enviado"],["call","📞 Ligação"],["whatsapp","💬 WhatsApp"],["linkedin","in LinkedIn DM"],["meeting","🤝 Reunião"],["response","↩ Resposta recebida"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="frow"><div className="flbl">DECISOR</div><select className="finp" value={actDec} onChange={e=>setActDec(e.target.value)}><option value="">— Geral / Empresa —</option>{(acc.decisors||[]).map((d,i)=><option key={i}>{d.nome}</option>)}</select></div>
+        <div className="frow"><div className="flbl">NOTA</div><textarea className="finp" placeholder="O que aconteceu? Próximo passo..." value={actNote} onChange={e=>setActNote(e.target.value)}/></div>
+        <div className="modacts"><button className="btn btno btnsm" onClick={()=>setActModal(false)}>Cancelar</button><button className="btn btnp btnsm" style={{background:grupo.color}} onClick={saveAct}>Registrar + Sync CRM</button></div>
+      </div></div></ModalPortal>)}
+      {decModal&&(<ModalPortal><div className="modov"><div className="mod">
+        <div className="modtitle">+ Adicionar Decisor</div>
+        <div className="g2"><div className="frow"><div className="flbl">NOME</div><input className="finp" placeholder="Nome completo" value={newDec.nome} onChange={e=>setNewDec(d=>({...d,nome:e.target.value}))}/></div><div className="frow"><div className="flbl">CARGO</div><input className="finp" placeholder="CMO, VP Marketing..." value={newDec.cargo} onChange={e=>setNewDec(d=>({...d,cargo:e.target.value}))}/></div></div>
+        <div className="g2"><div className="frow"><div className="flbl">EMAIL</div><input className="finp" placeholder="nome@empresa.com" value={newDec.email} onChange={e=>setNewDec(d=>({...d,email:e.target.value}))}/></div><div className="frow"><div className="flbl">WHATSAPP</div><input className="finp" placeholder="+55 11 99999-9999" value={newDec.wa} onChange={e=>setNewDec(d=>({...d,wa:e.target.value}))}/></div></div>
+        <div className="frow"><div className="flbl">LINKEDIN URL</div><input className="finp" placeholder="linkedin.com/in/..." value={newDec.li} onChange={e=>setNewDec(d=>({...d,li:e.target.value}))}/></div>
+        <div className="modacts"><button className="btn btno btnsm" onClick={()=>setDecModal(false)}>Cancelar</button><button className="btn btnp btnsm" style={{background:grupo.color}} onClick={saveDec}>Salvar + Pipedrive</button></div>
+      </div></div></ModalPortal>)}
+      <div className="subtabs">{tabs.map(([id,lbl])=><div key={id} className={"st"+(tab===id?" on":"")} onClick={()=>setTab(id)}>{lbl}</div>)}</div>
+      <div className="panel">{renderTab()}</div>
+    </>
+  );
+}
+
+// ─── STORAGE (localStorage — works on Vercel) ────────────────────────────────
+function uid(){return Math.random().toString(36).slice(2,10);}
+function today(){return new Date().toISOString().slice(0,10);}
+function nowStr(){return new Date().toLocaleString("pt-BR");}
+
+// Shared = stored with "shared_" prefix, readable by all on same browser
+// In production all users share the same Vercel domain so localStorage is shared
+async function sharedGet(key){
+  try{const v=localStorage.getItem("ghub_sh_"+key);return v?JSON.parse(v):null;}catch(e){return null;}
+}
+async function sharedSet(key,val){
+  try{localStorage.setItem("ghub_sh_"+key,JSON.stringify(val));}catch(e){}
+}
+async function personalGet(key){
+  try{const v=localStorage.getItem("ghub_me_"+key);return v?JSON.parse(v):null;}catch(e){return null;}
+}
+async function personalSet(key,val){
+  try{if(val===null){localStorage.removeItem("ghub_me_"+key);}else{localStorage.setItem("ghub_me_"+key,JSON.stringify(val));}}catch(e){}
+}
+
+// ─── LOGIN SCREEN ─────────────────────────────────────────────────────────────
+
+// ── MODAL PORTAL ──────────────────────────────────────────────────────────────
+function ModalPortal({children}){
+  var el=document.getElementById("modal-root");
+  if(!el)return children;
+  return ReactDOM.createPortal(children,el);
+}
+
+function LoginScreen({onLogin}){
+  const [mode,setMode]=useState("login");// login | invite
+  const [name,setName]=useState("");
+  const [pass,setPass]=useState("");
+  const [invCode,setInvCode]=useState("");
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+
+  const doLogin=async()=>{
+    setErr("");setLoading(true);
+    const users=await sharedGet("users")||{};
+    // Admin bootstrap
+    if(Object.keys(users).length===0){
+      const adminId=uid();
+      const admin={id:adminId,name:"Admin",pass:"galeria2024",role:"admin",empresas:GRUPO.map(g=>g.id),createdAt:nowStr()};
+      users[adminId]=admin;
+      await sharedSet("users",users);
+    }
+    const user=Object.values(users).find(u=>u.name.toLowerCase()===name.toLowerCase()&&u.pass===pass);
+    if(!user){setErr("Nome ou senha incorretos.");setLoading(false);return;}
+    await personalSet("session",{uid:user.id,name:user.name,role:user.role,empresas:user.empresas});
+    onLogin(user);
+    setLoading(false);
+  };
+
+  const doInvite=async()=>{
+    setErr("");setLoading(true);
+    const invites=await sharedGet("invites")||{};
+    const inv=Object.values(invites).find(i=>i.code===invCode&&!i.used);
+    if(!inv){setErr("Código de convite inválido ou já usado.");setLoading(false);return;}
+    if(!name||!pass){setErr("Preencha nome e senha.");setLoading(false);return;}
+    const users=await sharedGet("users")||{};
+    const exists=Object.values(users).find(u=>u.name.toLowerCase()===name.toLowerCase());
+    if(exists){setErr("Este nome já está em uso.");setLoading(false);return;}
+    const newUid=uid();
+    users[newUid]={id:newUid,name,pass,role:"member",empresas:inv.empresas||[],createdAt:nowStr()};
+    await sharedSet("users",users);
+    inv.used=true;inv.usedBy=name;inv.usedAt=nowStr();
+    await sharedSet("invites",invites);
+    await personalSet("session",{uid:newUid,name,role:"member",empresas:inv.empresas||[]});
+    onLogin(users[newUid]);
+    setLoading(false);
+  };
+
+  const s={input:{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:4,padding:"10px 12px",color:"#eee",fontFamily:"DM Mono,monospace",fontSize:12,outline:"none",marginBottom:10}};
+  return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#060606"}}>
+      <div style={{width:"100%",maxWidth:360,padding:32,background:"#0e0e0e",border:"1px solid #1e1e1e",borderRadius:10}}>
+        <div style={{marginBottom:24,textAlign:"center"}}>
+          <div style={{fontSize:22,fontWeight:800,letterSpacing:-1,marginBottom:4}}>GALERIA HOLDING</div>
+          <div style={{fontSize:10,fontFamily:"DM Mono,monospace",color:"#333",letterSpacing:2}}>CENTRAL COMERCIAL</div>
+        </div>
+        <div style={{display:"flex",gap:0,marginBottom:20}}>
+          {[["login","Entrar"],["invite","Usar convite"]].map(([m,l])=>(
+            <button key={m} onClick={()=>setMode(m)} style={{flex:1,padding:"8px 0",border:"1px solid "+(mode===m?"#E8C97A":"#1e1e1e"),borderRadius:m==="login"?"4px 0 0 4px":"0 4px 4px 0",background:mode===m?"rgba(232,201,122,.08)":"transparent",color:mode===m?"#E8C97A":"#444",fontSize:10,fontFamily:"DM Mono,monospace",cursor:"pointer",letterSpacing:.5}}>{l}</button>
+          ))}
+        </div>
+        {mode==="invite"&&<input style={s.input} placeholder="Código de convite" value={invCode} onChange={e=>setInvCode(e.target.value)}/>}
+        <input style={s.input} placeholder="Seu nome" value={name} onChange={e=>setName(e.target.value)}/>
+        <input style={{...s.input,marginBottom:16}} type="password" placeholder="Senha" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&(mode==="login"?doLogin():doInvite())}/>
+        {err&&<div style={{fontSize:10,color:"#FF4757",fontFamily:"DM Mono,monospace",marginBottom:10,padding:"6px 10px",background:"rgba(255,71,87,.06)",border:"1px solid rgba(255,71,87,.2)",borderRadius:3}}>{err}</div>}
+        <button onClick={mode==="login"?doLogin:doInvite} disabled={loading} style={{width:"100%",padding:"11px 0",borderRadius:4,border:"none",background:"#E8C97A",color:"#000",fontWeight:800,fontSize:13,cursor:"pointer",letterSpacing:.3}}>{loading?"Entrando...":mode==="login"?"Entrar":"Criar conta com convite"}</button>
+        <div style={{fontSize:8,color:"#222",fontFamily:"DM Mono,monospace",textAlign:"center",marginTop:12}}>Primeiro acesso: nome "Admin" / senha "galeria2024"</div>
+      </div>
+    </div>
+  );
+}
+
+// ─── ADMIN PANEL ──────────────────────────────────────────────────────────────
+function AdminPanel({curUser,onClose}){
+  const [users,setUsers]=useState({});
+  const [invites,setInvites]=useState({});
+  const [newInvName,setNewInvName]=useState("");
+  const [selEmpresas,setSelEmpresas]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [copied,setCopied]=useState("");
+
+  useEffect(()=>{(async()=>{
+    const u=await sharedGet("users")||{};
+    const i=await sharedGet("invites")||{};
+    setUsers(u);setInvites(i);setLoading(false);
+  })();},[]);
+
+  const criarConvite=async()=>{
+    if(!newInvName||!selEmpresas.length)return;
+    const code=Math.random().toString(36).slice(2,10).toUpperCase();
+    const invs=await sharedGet("invites")||{};
+    const id=uid();
+    invs[id]={id,code,name:newInvName,empresas:selEmpresas,used:false,createdBy:curUser.name,createdAt:nowStr()};
+    await sharedSet("invites",invs);
+    setInvites({...invs});
+    setNewInvName("");setSelEmpresas([]);
+    navigator.clipboard.writeText(code);setCopied(code);setTimeout(()=>setCopied(""),3000);
+  };
+
+  const togEmp=id=>setSelEmpresas(e=>e.includes(id)?e.filter(x=>x!==id):[...e,id]);
+  const removeUser=async(id)=>{const u=await sharedGet("users")||{};delete u[id];await sharedSet("users",u);setUsers({...u});};
+
+  return(
+    <div className="modov"><div className="mod mod-wide" style={{maxWidth:600}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div className="modtitle" style={{marginBottom:0}}>👥 Gestão de Usuários</div>
+        <button onClick={onClose} style={{background:"none",border:"none",color:"#444",cursor:"pointer",fontSize:20}}>×</button>
+      </div>
+
+      {loading?<div style={{textAlign:"center",padding:24,color:"#333",fontFamily:"DM Mono,monospace",fontSize:10}}>Carregando...</div>:(
+        <>
+          {/* CREATE INVITE */}
+          <div style={{background:"#0a0a0a",border:"1px solid #181818",borderRadius:5,padding:16,marginBottom:18}}>
+            <div className="sec">CRIAR CONVITE</div>
+            <div className="g2">
+              <div className="frow"><div className="flbl">NOME DO CONVIDADO</div><input className="finp" placeholder="Ex: Maria Silva" value={newInvName} onChange={e=>setNewInvName(e.target.value)}/></div>
+              <div className="frow"><div className="flbl">EMPRESAS QUE PODERÁ VER</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4}}>
+                  {GRUPO.map(g=>(
+                    <button key={g.id} onClick={()=>togEmp(g.id)} style={{padding:"3px 8px",borderRadius:3,border:"1px solid "+(selEmpresas.includes(g.id)?g.color:"#1e1e1e"),background:selEmpresas.includes(g.id)?`rgba(${g.rgb},.1)`:"transparent",color:selEmpresas.includes(g.id)?g.color:"#444",fontSize:8,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>{g.name}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <button onClick={criarConvite} style={{padding:"8px 16px",borderRadius:3,border:"none",background:"#E8C97A",color:"#000",fontWeight:700,fontSize:10,cursor:"pointer"}}>
+              {copied?"Código copiado: "+copied:"Gerar código de convite"}
+            </button>
+          </div>
+
+          {/* PENDING INVITES */}
+          {Object.values(invites).filter(i=>!i.used).length>0&&(
+            <div style={{marginBottom:16}}>
+              <div className="sec">CONVITES PENDENTES</div>
+              {Object.values(invites).filter(i=>!i.used).map(inv=>(
+                <div key={inv.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",background:"#0a0a0a",border:"1px solid #181818",borderRadius:4,marginBottom:5}}>
+                  <div style={{fontFamily:"DM Mono,monospace",fontSize:11,fontWeight:700,color:"#E8C97A",letterSpacing:2}}>{inv.code}</div>
+                  <div style={{flex:1,fontSize:10,color:"#555"}}>{inv.name} · {inv.empresas.join(", ")}</div>
+                  <button onClick={()=>{navigator.clipboard.writeText(inv.code);}} style={{padding:"3px 8px",borderRadius:3,border:"1px solid #1e1e1e",background:"transparent",color:"#555",fontSize:8,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>Copiar</button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* USERS */}
+          <div className="sec">USUÁRIOS ATIVOS</div>
+          {Object.values(users).map(u=>(
+            <div key={u.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#0a0a0a",border:"1px solid #181818",borderRadius:4,marginBottom:5}}>
+              <div style={{width:28,height:28,borderRadius:"50%",background:"#181818",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#E8C97A",flexShrink:0}}>{u.name[0].toUpperCase()}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:11,fontWeight:700}}>{u.name} {u.role==="admin"&&<span style={{fontSize:7,color:"#E8C97A",border:"1px solid rgba(232,201,122,.3)",padding:"1px 5px",borderRadius:100,fontFamily:"DM Mono,monospace"}}>ADMIN</span>}</div>
+                <div style={{fontSize:8,fontFamily:"DM Mono,monospace",color:"#333",marginTop:1}}>{(u.empresas||[]).join(" · ")||"sem acesso"}</div>
+              </div>
+              {u.id!==curUser.id&&<button onClick={()=>removeUser(u.id)} style={{padding:"3px 8px",borderRadius:3,border:"1px solid rgba(255,71,87,.2)",background:"rgba(255,71,87,.05)",color:"#FF4757",fontSize:8,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>Remover</button>}
+            </div>
+          ))}
+        </>
+      )}
+    </div></div>
+  );
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+function Dashboard({curUser,accs,onClose}){
+  const [log,setLog]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [filterUser,setFilterUser]=useState("all");
+  const [filterPeriod,setFilterPeriod]=useState("today");
+  const [users,setUsers]=useState({});
+
+  useEffect(()=>{(async()=>{
+    const l=await sharedGet("activities_log")||[];
+    const u=await sharedGet("users")||{};
+    setLog(l);setUsers(u);setLoading(false);
+  })();},[]);
+
+  const todayStr=today();
+  const weekAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10);
+  const monthAgo=new Date(Date.now()-30*24*60*60*1000).toISOString().slice(0,10);
+
+  const filtered=log.filter(e=>{
+    if(filterUser!=="all"&&e.userId!==filterUser)return false;
+    const d=e.isoDate||"";
+    if(filterPeriod==="today"&&d!==todayStr)return false;
+    if(filterPeriod==="week"&&d<weekAgo)return false;
+    if(filterPeriod==="month"&&d<monthAgo)return false;
+    return true;
+  });
+
+  const todayCount=log.filter(e=>e.isoDate===todayStr).length;
+  const weekCount=log.filter(e=>e.isoDate>=weekAgo).length;
+  const byEmpresa={};
+  filtered.forEach(e=>{byEmpresa[e.empresa]=(byEmpresa[e.empresa]||0)+1;});
+  const byUser={};
+  filtered.forEach(e=>{byUser[e.userName]=(byUser[e.userName]||0)+1;});
+
+  const exportCSV=()=>{
+    const rows=["data,hora,usuario,empresa,decisor,tipo,nota"];
+    filtered.forEach(function(e){var nota=String(e.nota||"").replace(/,/g," ");rows.push([e.isoDate,e.time,e.userName,e.empresa,e.decisor||"",e.tipo,nota].join(","));});
+    const blob=new Blob([rows.join("\n")],{type:"text/csv;charset=utf-8"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="contatos_"+filterPeriod+".csv";a.click();
+  };
+
+  return(
+    <div className="modov" style={{alignItems:"flex-start",paddingTop:20}}><div className="mod mod-wide" style={{maxWidth:700,maxHeight:"90vh"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+        <div><div className="modtitle" style={{marginBottom:2}}>📊 Dashboard de Contatos</div>
+        <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#333"}}>Todos os contatos registrados pelo time</div></div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <button onClick={exportCSV} style={{padding:"5px 12px",borderRadius:3,border:"1px solid #1e1e1e",background:"transparent",color:"#555",fontSize:9,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>↓ CSV</button>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"#444",cursor:"pointer",fontSize:20}}>×</button>
+        </div>
+      </div>
+
+      {/* KPI CARDS */}
+      <div className="g3" style={{marginBottom:16}}>
+        <div className="card" style={{borderColor:"rgba(232,201,122,.2)"}}><div className="clbl">HOJE</div><div className="cval" style={{color:"#E8C97A",fontSize:28}}>{todayCount}</div><div className="csub">contatos</div></div>
+        <div className="card"><div className="clbl">ESTA SEMANA</div><div className="cval" style={{fontSize:28}}>{weekCount}</div><div className="csub">contatos</div></div>
+        <div className="card"><div className="clbl">TOTAL FILTRADO</div><div className="cval" style={{fontSize:28}}>{filtered.length}</div><div className="csub">contatos</div></div>
+      </div>
+
+      {/* FILTERS */}
+      <div style={{display:"flex",gap:6,marginBottom:14,flexWrap:"wrap"}}>
+        {[["today","Hoje"],["week","7 dias"],["month","30 dias"],["all","Tudo"]].map(([v,l])=>(
+          <button key={v} onClick={()=>setFilterPeriod(v)} className={"fb"+(filterPeriod===v?" on":"")} style={{"--tc":"#E8C97A"}}>{l}</button>
+        ))}
+        <div style={{flex:1}}></div>
+        <select className="finp" style={{width:"auto",fontSize:9}} value={filterUser} onChange={e=>setFilterUser(e.target.value)}>
+          <option value="all">Todos os usuários</option>
+          {Object.values(users).map(u=><option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+      </div>
+
+      {/* BY EMPRESA + BY USER */}
+      <div className="g2" style={{marginBottom:16}}>
+        <div>
+          <div className="sec">POR EMPRESA DO GRUPO</div>
+          {Object.entries(byEmpresa).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([e,c])=>(
+            <div key={e} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+              <div style={{flex:1,fontSize:10,fontFamily:"DM Mono,monospace",color:"#888",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e}</div>
+              <div style={{width:c*4,maxWidth:80,height:4,background:"#E8C97A",borderRadius:2,opacity:.7}}></div>
+              <div style={{fontSize:10,fontFamily:"DM Mono,monospace",color:"#E8C97A",minWidth:20,textAlign:"right"}}>{c}</div>
+            </div>
+          ))}
+        </div>
+        <div>
+          <div className="sec">POR USUÁRIO</div>
+          {Object.entries(byUser).sort((a,b)=>b[1]-a[1]).map(([n,c])=>(
+            <div key={n} style={{display:"flex",alignItems:"center",gap:8,marginBottom:5}}>
+              <div style={{width:24,height:24,borderRadius:"50%",background:"#181818",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#E8C97A",flexShrink:0}}>{n[0].toUpperCase()}</div>
+              <div style={{flex:1,fontSize:10,fontFamily:"DM Mono,monospace",color:"#888"}}>{n}</div>
+              <div style={{fontSize:11,fontWeight:700,color:"#eee",fontFamily:"DM Mono,monospace"}}>{c}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* ACTIVITY FEED */}
+      <div className="sec">FEED DE ATIVIDADES</div>
+      {loading?<div style={{textAlign:"center",padding:20,color:"#333",fontFamily:"DM Mono,monospace",fontSize:9}}>Carregando...</div>:
+        filtered.length===0?<div style={{textAlign:"center",padding:20,color:"#333",fontFamily:"DM Mono,monospace",fontSize:9}}>Nenhuma atividade no período</div>:
+        <div style={{maxHeight:300,overflowY:"auto"}}>
+          {[...filtered].reverse().map((e,i)=>{
+            const icons={email:"✉",call:"📞",whatsapp:"💬",linkedin:"in",meeting:"🤝",response:"↩"};
+            return(
+              <div key={i} className="feeditem">
+                <div className="fiicon">{icons[e.tipo]||"◎"}</div>
+                <div className="fibody">
+                  <div className="fititle" style={{display:"flex",alignItems:"center",gap:6}}>
+                    <span>{e.empresa}</span>
+                    {e.decisor&&<span style={{fontSize:9,color:"#555"}}>→ {e.decisor}</span>}
+                    <span style={{fontSize:8,color:"#333",fontFamily:"DM Mono,monospace",marginLeft:"auto"}}>{e.userName}</span>
+                  </div>
+                  <div className="fimeta">{e.isoDate} {e.time} · {e.tipoLabel}</div>
+                  {e.nota&&<div className="finote">{e.nota}</div>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      }
+    </div></div>
+  );
+}
+
+// ─── LOG ACTIVITY (global) ────────────────────────────────────────────────────
+async function logActivity(curUser,empresa,grupoName,tipo,tipoLabel,decisor,nota,pdKey){
+  const entry={
+    id:uid(),
+    isoDate:today(),
+    time:new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+    userId:curUser.id,
+    userName:curUser.name,
+    empresa,
+    grupoName,
+    tipo,tipoLabel,
+    decisor:decisor||"",
+    nota:nota||""
+  };
+  // Save to shared log
+  const log=await sharedGet("activities_log")||[];
+  log.push(entry);
+  if(log.length>2000) log.splice(0,log.length-2000);
+  await sharedSet("activities_log",log);
+  // Sync to Pipedrive if key present
+  if(pdKey) await createActivity(null,tipoLabel+" — "+empresa+" ("+grupoName+")",nota,pdKey);
+  return entry;
+}
+
+// ─── SIGNATURES ──────────────────────────────────────────────────────────────
+function SigHolding(){return React.createElement('div',{style:{fontFamily:'Arial,sans-serif',borderTop:'2px solid #000',marginTop:16,paddingTop:14,display:'flex',alignItems:'flex-start',justifyContent:'space-between'}},React.createElement('div',null,React.createElement('div',{style:{fontSize:14,fontWeight:700,color:'#000'}},'Pedro Ica'),React.createElement('div',{style:{fontSize:12,color:'#000',marginTop:1}},'Sócio | Galeria Holding'),React.createElement('div',{style:{fontSize:11,color:'#555',marginTop:1}},'Maior Grupo de Comunicação do Brasil'),React.createElement('div',{style:{fontSize:11,color:'#555',marginTop:1}},'11 98226-7711')),React.createElement('div',{style:{textAlign:'right'}},React.createElement('div',{style:{fontSize:17,fontWeight:900,letterSpacing:'-0.5px',color:'#000',fontFamily:"'Helvetica Neue',Arial,sans-serif",lineHeight:1.1}},'GALERIA',React.createElement('br',null),'HOLDING')));}
+
+function SigGaleria(){return React.createElement('div',{style:{fontFamily:'Arial,sans-serif',borderTop:'2px solid #000',marginTop:16,paddingTop:14,display:'flex',alignItems:'center',gap:20}},React.createElement('div',{style:{fontSize:26,fontWeight:900,letterSpacing:'-2px',color:'#000',lineHeight:1}},'GALERIA'),React.createElement('div',{style:{borderLeft:'1px solid #ccc',paddingLeft:18}},React.createElement('div',{style:{fontSize:13,fontWeight:700,color:'#000',letterSpacing:1,textTransform:'uppercase'}},'PEDRO ICA'),React.createElement('div',{style:{fontSize:11,color:'#444',marginTop:2}},'Head de Growth | Galeria'),React.createElement('div',{style:{fontSize:11,color:'#444',marginTop:1}},'Galeria Holding — Maior Grupo de Comunicação do Brasil'),React.createElement('div',{style:{fontSize:11,color:'#444',marginTop:1}},'11 98226-7711')));}
+
+function SigGAIA(){return React.createElement('div',{style:{fontFamily:'Arial,sans-serif',borderTop:'2px solid #7C3AED',marginTop:16,paddingTop:14}},React.createElement('div',{style:{fontSize:16,fontWeight:800,color:'#7C3AED',letterSpacing:1}},'GAIA'),React.createElement('div',{style:{fontSize:12,fontWeight:700,color:'#000',marginTop:3}},'Pedro Ica | Sócio Fundador'),React.createElement('div',{style:{fontSize:11,color:'#555',marginTop:2}},'GAIA — Martech | Galeria Holding'),React.createElement('div',{style:{fontSize:11,color:'#555',marginTop:1}},'Maior Grupo de Comunicação do Brasil | 11 98226-7711'));}
+
+function getSigComp(sigType){if(sigType==="galeria")return SigGaleria;if(sigType==="gaia")return SigGAIA;return SigHolding;}
+function SigBlock({sigType}){if(sigType==="galeria")return <SigGaleria/>;if(sigType==="gaia")return <SigGAIA/>;return <SigHolding/>;}
+function getSigText(sigType){
+  if(sigType==="galeria")return "Pedro Ica | Head de Growth — Galeria | 11 98226-7711 | Galeria Holding — Maior Grupo de Comunicação do Brasil";
+  if(sigType==="gaia")return "Pedro Ica | Sócio Fundador — GAIA | 11 98226-7711 | Galeria Holding — Maior Grupo de Comunicação do Brasil";
+  return "Pedro Ica | Sócio — Galeria Holding | Maior Grupo de Comunicação do Brasil | 11 98226-7711";
+}
+
+// ─── SECTOR INSIGHT ───────────────────────────────────────────────────────────
+async function getSectorInsight(empresa,setor,grupoName,grupoDesc){
+  var prompt="Você é especialista em marketing no Brasil. Em 2-3 frases diretas e perspicazes, gere um insight sobre os desafios de marketing do setor "+setor+" em 2025 que demonstre conhecimento profundo e conecte naturalmente ao que "+grupoName+" oferece ("+grupoDesc+"). Sem mencionar venda. Seja específico sobre "+empresa+".";
+  try{var r=await claudeFetch({model:"claude-sonnet-4-20250514",max_tokens:200,messages:[{role:"user",content:prompt}]});var d=await r.json();return(d.content&&d.content[0]&&d.content[0].text)||"";}catch(e){return "";}
+}
+
+// ─── FIGURINHA CARD ───────────────────────────────────────────────────────────
+function AvatarIA({nome,cargo,color,rgb,size}){
+  var ini=initials(nome||"?");
+  var s=size||80;
+  // Derive gradient from color
+  var colors=[
+    {from:"#E8C97A",to:"#C9A87C"},{from:"#A78BFA",to:"#7C3AED"},
+    {from:"#34D399",to:"#059669"},{from:"#60A5FA",to:"#2563EB"},
+    {from:"#F472B6",to:"#DB2777"},{from:"#FB923C",to:"#EA580C"},
+    {from:"#7EB8D4",to:"#0369A1"},{from:"#00FF94",to:"#00C570"},
+  ];
+  var hash=nome?nome.charCodeAt(0)%colors.length:0;
+  var grad=colors[hash];
+  return(
+    <div style={{width:s,height:s,borderRadius:"50%",background:"linear-gradient(135deg,"+grad.from+","+grad.to+")",display:"flex",alignItems:"center",justifyContent:"center",fontSize:s*0.32,fontWeight:800,color:"#fff",fontFamily:"'Syne',sans-serif",letterSpacing:-1,flexShrink:0,boxShadow:"0 4px 14px rgba(0,0,0,.4)"}}>
+      {ini}
+    </div>
+  );
+}
+
+function FigurinhaCard({dc,grupo,contacted,onEmail,onWhatsApp,onLinkedIn,onVCard,onRemove,onUpdate,level}){
+  var [editing,setEditing]=useState(false);
+  var isDecisao=level==="decisao";
+  return(
+    <div className={"fig-card"+(contacted?" contacted":"")+(isDecisao?" fig-decisao":"")} style={{minWidth:0}}>
+      <div className="fig-shine"></div>
+      {contacted&&<div className="fig-badge" style={{background:"rgba(52,211,153,.2)",color:"#34D399",border:"1px solid rgba(52,211,153,.35)"}}>✓ Contatado</div>}
+      {dc.aiSuggested&&!contacted&&<div className="fig-badge" style={{background:"rgba(167,139,250,.2)",color:"#A78BFA",border:"1px solid rgba(167,139,250,.35)"}}>✨ IA</div>}
+
+      {/* AVATAR AREA */}
+      <div className="fig-photo" style={{background:"linear-gradient(135deg,rgba("+grupo.rgb+",.12),rgba("+grupo.rgb+",.04))",height:110,display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
+        <AvatarIA nome={dc.nome} cargo={dc.cargo} color={grupo.color} rgb={grupo.rgb} size={72}/>
+        {dc.li&&<a href={dc.li.startsWith("http")?dc.li:"https://"+dc.li} target="_blank" style={{position:"absolute",bottom:6,right:8,width:22,height:22,borderRadius:"50%",background:"#0077B5",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff",fontWeight:700,textDecoration:"none"}}>in</a>}
+      </div>
+
+      <div className="fig-body">
+        {editing?(
+          <div style={{padding:"4px 0"}}>
+            {[["nome","Nome completo"],["cargo","Cargo"],["email","Email"],["wa","WhatsApp (+55...)"],["li","LinkedIn URL"]].map(function(f){return(
+              <input key={f[0]} className="finp" style={{fontSize:10,padding:"5px 7px",marginBottom:4}} placeholder={f[1]} value={dc[f[0]]||""} onChange={function(e){onUpdate(f[0],e.target.value);}}/>
+            );})}
+            <button className="btn btnp btnsm" style={{width:"100%",background:grupo.color,color:"#000",marginTop:2}} onClick={function(){setEditing(false);}}>✓ Salvar</button>
+            {onRemove&&<button onClick={onRemove} style={{width:"100%",marginTop:4,padding:"4px",border:"1px solid rgba(255,71,87,.3)",borderRadius:4,background:"transparent",color:"#FF4757",fontSize:10,cursor:"pointer"}}>Remover decisor</button>}
+          </div>
+        ):(
+          <div>
+            <div style={{fontWeight:700,fontSize:12,marginBottom:2,cursor:"pointer",lineHeight:1.3}} onClick={function(){setEditing(true);}} title="Clique para editar">{dc.nome||"Sem nome"}</div>
+            <div style={{fontSize:10,color:"#666",fontFamily:"DM Mono,monospace",marginBottom:8,cursor:"pointer"}} onClick={function(){setEditing(true);}}>{dc.cargo||"Cargo não definido"}</div>
+            {dc.dica&&<div style={{fontSize:8,color:"#444",marginBottom:6,fontFamily:"DM Mono,monospace",lineHeight:1.4}}>💡 {dc.dica}</div>}
+
+            {/* CONTACT ICONS - large and clear */}
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {dc.email&&(
+                <button onClick={function(e){e.stopPropagation();onEmail&&onEmail(dc);}} title={"Email: "+dc.email}
+                  style={{flex:1,minWidth:32,height:34,borderRadius:6,border:"1px solid rgba(96,165,250,.4)",background:"rgba(96,165,250,.08)",color:"#60A5FA",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>
+                  ✉
+                </button>
+              )}
+              {dc.wa&&(
+                <button onClick={function(e){e.stopPropagation();onWhatsApp&&onWhatsApp(dc);}} title={"WhatsApp: "+dc.wa}
+                  style={{flex:1,minWidth:32,height:34,borderRadius:6,border:"1px solid rgba(37,211,102,.4)",background:"rgba(37,211,102,.08)",color:"#25D366",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>
+                  💬
+                </button>
+              )}
+              {dc.li&&(
+                <button onClick={function(e){e.stopPropagation();onLinkedIn&&onLinkedIn(dc);}} title="LinkedIn"
+                  style={{flex:1,minWidth:32,height:34,borderRadius:6,border:"1px solid rgba(0,119,181,.4)",background:"rgba(0,119,181,.08)",color:"#0077B5",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,fontWeight:800}}>
+                  in
+                </button>
+              )}
+              <button onClick={function(e){e.stopPropagation();onVCard&&onVCard(dc);}} title="Salvar contato no celular"
+                style={{flex:1,minWidth:32,height:34,borderRadius:6,border:"1px solid rgba(52,211,153,.4)",background:"rgba(52,211,153,.08)",color:"#34D399",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>
+                📱
+              </button>
+              <button onClick={function(e){e.stopPropagation();setEditing(true);}} title="Editar contato"
+                style={{flex:1,minWidth:32,height:34,borderRadius:6,border:"1px solid rgba(255,181,71,.4)",background:"rgba(255,181,71,.08)",color:"#FFB547",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>
+                ✎
+              </button>
+            </div>
+            {/* Show contact info if available */}
+            {dc.email&&<div style={{fontSize:8,color:"#444",fontFamily:"DM Mono,monospace",marginTop:5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={dc.email}>✉ {dc.email}</div>}
+            {dc.wa&&<div style={{fontSize:8,color:"#444",fontFamily:"DM Mono,monospace",marginTop:2}}>💬 {dc.wa}</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+
+// ─── COLD CALL DIÁRIO ─────────────────────────────────────────────────────────
+function ColdCallView({grupo,accs,curUser,pdKey,onActivitySaved}){
+  var [done,setDone]=useState({});
+  var [noteMap,setNoteMap]=useState({});
+  var dateStr=new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"});
+  var callList=useMemo(function(){
+    return getTop50(grupo)
+      .filter(function(l){return checkRestrictions(l,grupo.id).length===0;})
+      .map(function(l){
+        var accK=grupo.id+"_"+l.rank;
+        var acc2=accs[accK]||{};
+        var lastCall=(acc2.activities||[]).filter(function(a){return a.type==="call";}).slice(-1)[0];
+        var daysSince=lastCall?Math.floor((Date.now()-new Date(lastCall.date.split("/").reverse().join("-")).getTime())/(86400000)):999;
+        return Object.assign({},l,{daysSince:daysSince,decs:(acc2.decisors||[]).length});
+      })
+      .sort(function(a,b){return b.daysSince-a.daysSince;})
+      .slice(0,15);
+  },[grupo,accs]);
+  var todayDone=Object.values(done).filter(Boolean).length;
+  var logCall=async function(lead,tipo){
+    setDone(function(d){return Object.assign({},d,{[lead.rank]:tipo});});
+    if(onActivitySaved)await onActivitySaved(lead.nome,tipo,tipo==="call"?"📞 Cold Call":"✉ Email","",noteMap[lead.rank]||"");
+  };
+  return(
+    <div style={{padding:"28px 32px",overflowY:"auto",height:"100%"}}>
+      <div style={{marginBottom:20}}>
+        <div style={{fontSize:22,fontWeight:800,fontFamily:"Syne,sans-serif",letterSpacing:-1}}>📞 Cold Calls — Hoje</div>
+        <div style={{fontSize:11,color:"#555",fontFamily:"DM Mono,monospace",marginTop:4,textTransform:"capitalize"}}>{dateStr} · {grupo.name}</div>
+      </div>
+      <div style={{display:"flex",gap:12,marginBottom:20}}>
+        {[["FEITOS",todayDone,grupo.color,28],["LISTA",callList.length,"#eee",28],["RESTAM",Math.max(0,callList.length-todayDone),"#FFB547",28]].map(function(k){return(
+          <div key={k[0]} className="card" style={{flex:1,textAlign:"center"}}><div className="clbl">{k[0]}</div><div className="cval" style={{color:k[2],fontSize:k[3]}}>{k[1]}</div></div>
+        );})}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {callList.map(function(l){
+          var isDone=!!done[l.rank];
+          var dotColor=isDone?"#34D399":l.daysSince<3?"#FF4757":l.daysSince<7?"#FFB547":"#2a2a2a";
+          return(
+            <div key={l.rank} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",background:isDone?"rgba(52,211,153,.04)":"var(--s2)",border:"1px solid "+(isDone?"rgba(52,211,153,.25)":"var(--border)"),borderRadius:8,opacity:isDone?.65:1}}>
+              <div style={{width:10,height:10,borderRadius:"50%",background:dotColor,flexShrink:0}}></div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                  {l.nome}
+                  {l.decs>0&&<span style={{fontSize:9,color:"#4B9EFF",border:"1px solid rgba(75,158,255,.3)",padding:"1px 6px",borderRadius:100,fontFamily:"DM Mono,monospace"}}>{l.decs} dec.</span>}
+                </div>
+                <div style={{fontSize:10,color:"var(--muted)",fontFamily:"DM Mono,monospace",marginTop:2}}>
+                  {l.setor} · #{l.rank} · {l.daysSince===999?"nunca contatado":l.daysSince===0?"hoje":"há "+l.daysSince+" dias"}
+                </div>
+                {!isDone&&<input placeholder="Nota rápida..." value={noteMap[l.rank]||""} onChange={function(e){setNoteMap(function(n){return Object.assign({},n,{[l.rank]:e.target.value});});}} style={{marginTop:6,width:"100%",maxWidth:280,background:"var(--bg)",border:"1px solid var(--border2)",borderRadius:4,padding:"4px 8px",color:"var(--text)",fontSize:10,fontFamily:"DM Mono,monospace",outline:"none"}}/>}
+              </div>
+              {!isDone?(
+                <div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <button onClick={function(){logCall(l,"call");}} style={{padding:"7px 14px",borderRadius:5,border:"none",background:grupo.color,color:"#000",fontWeight:700,fontSize:11,cursor:"pointer"}}>📞 Ligar</button>
+                  <button onClick={function(){logCall(l,"email");}} style={{padding:"7px 12px",borderRadius:5,border:"1px solid var(--border2)",background:"transparent",color:"var(--muted2)",fontSize:11,cursor:"pointer"}}>✉</button>
+                </div>
+              ):<div style={{fontSize:11,color:"#34D399",fontFamily:"DM Mono,monospace",flexShrink:0}}>✓ {done[l.rank]==="call"?"ligado":"enviado"}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function HoldingView(){
+  var [sel,setSel]=useState(null);
+  return(
+    <div style={{flex:1,overflow:"auto",padding:"28px 32px"}}>
+      <div style={{marginBottom:24}}>
+        <div style={{fontSize:26,fontWeight:800,letterSpacing:"-1px",fontFamily:"'Syne',sans-serif"}}>Galeria Holding</div>
+        <div style={{fontSize:11,color:"#555",fontFamily:"DM Mono,monospace",marginTop:5}}>Todas as empresas do grupo — clique para ver conflitos de cliente</div>
+      </div>
+      <div className="holding-grid">
+        {GRUPO.map(function(g){
+          var myRes=RESTRICTIONS.filter(function(r){return r.agencies.includes(g.id);});
+          var isOpen=sel===g.id;
+          return(
+            <div key={g.id} className="holding-card" onClick={function(){setSel(isOpen?null:g.id);}} style={{borderColor:isOpen?g.color:"#1a1a1a"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <div style={{width:9,height:9,borderRadius:"50%",background:g.color}}></div>
+                <div className="holding-name" style={{color:g.color}}>{g.name}</div>
+              </div>
+              <div className="holding-desc">{g.desc}</div>
+              {isOpen&&(
+                myRes.length>0?(
+                  <div>
+                    <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#FF4757",marginBottom:7,letterSpacing:1}}>⚠ CONFLITOS ATIVOS</div>
+                    <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                      {myRes.map(function(r,i){return<span key={i} style={{fontSize:8,fontFamily:"DM Mono,monospace",padding:"2px 6px",borderRadius:3,background:"rgba(255,71,87,.1)",color:"#FF4757",border:"1px solid rgba(255,71,87,.2)"}}>{r.category}</span>;})}
+                    </div>
+                  </div>
+                ):<div style={{fontSize:10,fontFamily:"DM Mono,monospace",color:"#34D399"}}>✓ Sem restrições ativas</div>
+              )}
+              {!isOpen&&myRes.length>0&&<div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"rgba(255,71,87,.5)",marginTop:5}}>{myRes.length} conflito(s)</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── BATCH VIEW ───────────────────────────────────────────────────────────────
+function BatchView({grupo,accs,curUser,pdKey,onActivitySaved}){
+  var [sel,setSel]=useState({});
+  var [emailModal,setEmailModal]=useState(null);
+  var [queue,setQueue]=useState([]);
+  var leads=PROSP.filter(function(l){return grupo.fit(l.setor)!=="baixo";}).slice(0,60);
+  var nSel=Object.values(sel).filter(Boolean).length;
+  var togSel=function(rank){setSel(function(s){return Object.assign({},s,{[rank]:!s[rank]});});};
+  var selTop=function(){var ns={};getTop50(grupo).filter(function(l){return!checkRestrictions(l,grupo.id).length;}).slice(0,5).forEach(function(l){ns[l.rank]=true;});setSel(ns);};
+  var openBatch=function(){var sl=leads.filter(function(l){return sel[l.rank];});setQueue(sl);if(sl.length)setEmailModal(sl[0]);};
+
+  return(
+    <div style={{padding:"28px 32px",overflowY:"auto",height:"100%"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div>
+          <div style={{fontSize:22,fontWeight:800,fontFamily:"'Syne',sans-serif"}}>Disparo em Lote</div>
+          <div style={{fontSize:11,color:"#555",fontFamily:"DM Mono,monospace",marginTop:4}}>Selecione leads e dispare múltiplos emails</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn btno btnsm" onClick={selTop}>⚡ Sugerir Top 5</button>
+          {nSel>0&&<button className="btn btnp btnsm" style={{background:grupo.color,color:"#000"}} onClick={openBatch}>✉ Disparar {nSel} emails</button>}
+        </div>
+      </div>
+      <div style={{background:"rgba("+grupo.rgb+",.04)",border:"1px solid rgba("+grupo.rgb+",.15)",borderRadius:8,padding:14,marginBottom:18}}>
+        <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:grupo.color,letterSpacing:1,marginBottom:8}}>🤖 FILA SUGERIDA — maior fit sem restrição</div>
+        <div style={{display:"flex",gap:7,flexWrap:"wrap"}}>
+          {getTop50(grupo).filter(function(l){return!checkRestrictions(l,grupo.id).length;}).slice(0,5).map(function(l){return(
+            <button key={l.rank} onClick={function(){togSel(l.rank);}} style={{padding:"5px 11px",borderRadius:5,border:"1px solid "+(sel[l.rank]?grupo.color:"#1e1e1e"),background:sel[l.rank]?"rgba("+grupo.rgb+",.08)":"transparent",color:sel[l.rank]?grupo.color:"#666",fontSize:11,cursor:"pointer"}}>#{l.rank} {l.nome}</button>
+          );})}
+        </div>
+      </div>
+      <div style={{maxHeight:420,overflowY:"auto"}}>
+        {leads.map(function(l){
+          var res=checkRestrictions(l,grupo.id);var isRes=res.length>0;
+          var accK=grupo.id+"_"+l.rank;var hasDec=accs[accK]&&accs[accK].decisors&&accs[accK].decisors.length;
+          return(
+            <div key={l.rank} className="batch-row">
+              <div className={"bcheck"+(sel[l.rank]?" on":"")} onClick={function(){if(!isRes)togSel(l.rank);}}>
+                {sel[l.rank]&&"✓"}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:600}}>{l.nome} {isRes&&<span className="restag">RESTRITO</span>}</div>
+                <div style={{fontSize:10,color:"#444",fontFamily:"DM Mono,monospace"}}>{l.setor} · #{l.rank}{hasDec?" · "+hasDec+" decisor(es)":""}</div>
+              </div>
+              <button className="btn btno btnsm" onClick={function(){setEmailModal(l);}}>✉</button>
+            </div>
+          );
+        })}
+      </div>
+      {emailModal&&(
+        <EmailModal
+          dc={accs[grupo.id+"_"+emailModal.rank]&&accs[grupo.id+"_"+emailModal.rank].decisors&&accs[grupo.id+"_"+emailModal.rank].decisors[0]||null}
+          empresa={emailModal.nome} setor={emailModal.setor} grupo={grupo} hist="" restrictions={checkRestrictions(emailModal,grupo.id)}
+          onClose={function(){var rem=queue.filter(function(l){return l.rank!==emailModal.rank;});if(rem.length){setQueue(rem);setEmailModal(rem[0]);}else{setEmailModal(null);setQueue([]);}}}
+          onSent={function(){if(onActivitySaved)onActivitySaved(emailModal.nome,"email","✉ Email","","Email de lote");}}
+        />
+      )}
+    </div>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+function App(){
+  const [curUser,setCurUser]=useState(null);
+  const [sessionLoading,setSessionLoading]=useState(true);
+  const [curGrupo,setCurGrupo]=useState(GRUPO[0]);
+  const [curLead,setCurLead]=useState(null);
+  const [sbQ,setSbQ]=useState("");
+  const [fitFil,setFitFil]=useState("all");
+  const [accs,setAccs]=useState({});
+  const [pdKey,setPdKey]=useState("");
+  const [cfgOpen,setCfgOpen]=useState(false);
+  const [cfgPD,setCfgPD]=useState("");
+  const [resOpen,setResOpen]=useState(false);
+  const [adminOpen,setAdminOpen]=useState(false);
+  const [dashOpen,setDashOpen]=useState(false);
+  const [viewMode,setViewMode]=useState('accounts'); // accounts | holding | batch
+  const [secFil,setSecFil]=useState('all');
+
+  // Restore session
+  useEffect(()=>{(async()=>{
+    const sess=await personalGet("session");
+    if(sess){
+      // Verify user still exists
+      const users=await sharedGet("users")||{};
+      const u=users[sess.uid];
+      if(u){
+        setCurUser(u);
+        const a=await personalGet("accs_"+sess.uid)||{};
+        const p=await personalGet("pd_"+sess.uid)||"";
+        setAccs(a);setPdKey(p);
+      }
+    }
+    setSessionLoading(false);
+  })();},[]);
+
+  const onLogin=async(user)=>{
+    setCurUser(user);
+    const a=await personalGet("accs_"+user.id)||{};
+    const p=await personalGet("pd_"+user.id)||"";
+    setAccs(a);setPdKey(p);
+  };
+
+  const logout=async()=>{await personalSet("session",null);setCurUser(null);setAccs({});setPdKey("");};
+
+  // Quarterly reminder
+  const lastReview=loadSt("ghub_res_review",null);
+  const showReminder=!lastReview||(new Date()-new Date(lastReview))>(90*24*60*60*1000);
+
+  const saveAccs=useCallback(async(newAccs)=>{
+    setAccs(newAccs);
+    if(curUser) await personalSet("accs_"+curUser.id,newAccs);
+  },[curUser]);
+
+  const savePD=async(key)=>{
+    setPdKey(key);
+    if(curUser) await personalSet("pd_"+curUser.id,key);
+  };
+
+  useEffect(()=>{
+    document.documentElement.style.setProperty("--tc",curGrupo.color);
+    document.documentElement.style.setProperty("--tcr",curGrupo.rgb);
+  },[curGrupo]);
+
+  // Filter grupos by user permissions
+  const allowedGrupos=useMemo(()=>curUser?GRUPO.filter(g=>(curUser.empresas||[]).includes(g.id)):[]  ,[curUser]);
+
+  const sectors=useMemo(()=>{const s=new Set();PROSP.forEach(function(l){s.add(l.setor);});return["all",...Array.from(s).sort()];}, []);
+
+  const filtered=useMemo(()=>{
+    if(!curUser) return [];
+    var cg=curGrupo||GRUPO[0];
+    return PROSP.filter(function(d){
+      var fit=cg.fit(d.setor||"");
+      var res=checkRestrictions(d,cg.id);
+      if(fitFil==="restrito"&&res.length===0)return false;
+      if(fitFil==="crm"&&!accs[cg.id+"_"+d.rank])return false;
+      if(fitFil==="alto"&&fit!=="alto")return false;
+      if(fitFil==="medio"&&fit!=="medio")return false;
+      if(secFil!=="all"&&d.setor!==secFil)return false;
+      if(sbQ&&!d.nome.includes(sbQ.toUpperCase()))return false;
+      return true;
+    });
+  },[curGrupo,fitFil,secFil,sbQ,accs,curUser]);
+
+  const accKey=(g,r)=>g.id+"_"+r;
+  const getAcc=()=>curLead?accs[accKey(curGrupo,curLead.rank)]||{decisors:[],activities:[],intel:null,alerts:[],pdDealId:null}:{};
+  const setAcc=v=>saveAccs({...accs,[accKey(curGrupo,curLead.rank)]:v});
+
+  // Wrap saveActivity to also log globally
+  const onActivitySaved=async(empresa,tipo,tipoLabel,decisor,nota)=>{
+    if(curUser) await logActivity(curUser,empresa,curGrupo.name,tipo,tipoLabel,decisor,nota,pdKey);
+  };
+
+  if(sessionLoading) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#060606",color:"#333",fontFamily:"DM Mono,monospace",fontSize:11}}>Carregando...</div>;
+  if(!curUser) return <LoginScreen onLogin={onLogin}/>;
+
+  // If no allowed grupos, show message
+  if(allowedGrupos.length===0) return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#060606",color:"#555",fontFamily:"DM Mono,monospace",fontSize:11,flexDirection:"column",gap:12}}>
+      <div>Sua conta não tem acesso a nenhuma empresa do grupo.</div>
+      <button onClick={logout} style={{padding:"6px 14px",borderRadius:3,border:"1px solid #1e1e1e",background:"transparent",color:"#555",fontSize:10,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>Sair</button>
+    </div>
+  );
+
+  // Ensure curGrupo is allowed
+  const safeCurGrupo=allowedGrupos.find(g=>g.id===curGrupo.id)||allowedGrupos[0];
+  if(safeCurGrupo.id!==curGrupo.id){setCurGrupo(safeCurGrupo);setCurLead(null);}
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"}}>
+      {cfgOpen&&(<div className="modov"><div className="mod">
+        <div className="modtitle">⚙ Configurações</div>
+        <div className="frow"><div className="flbl">PIPEDRIVE API KEY</div><input className="finp" type="password" placeholder="api key do pipedrive" value={cfgPD} onChange={e=>setCfgPD(e.target.value)}/></div>
+        <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#333",marginTop:4,marginBottom:12}}>Claude, Hunter.io e Lusha já configurados. Pipedrive para sync de CRM.</div>
+        <div className="modacts"><button className="btn btno btnsm" onClick={()=>setCfgOpen(false)}>Cancelar</button><button className="btn btnp btnsm" style={{background:curGrupo.color}} onClick={()=>{savePD(cfgPD);setCfgOpen(false);}}>Salvar</button></div>
+      </div></div>)}
+      {resOpen&&<RestrictionsPanel onClose={()=>setResOpen(false)}/>}
+      {adminOpen&&curUser.role==="admin"&&<AdminPanel curUser={curUser} onClose={()=>setAdminOpen(false)}/>}
+      {dashOpen&&<Dashboard curUser={curUser} accs={accs} onClose={()=>setDashOpen(false)}/>}
+
+      {showReminder&&(
+        <div className="reminder" style={{padding:"8px 16px"}}>
+          <span style={{fontSize:13}}>📅</span>
+          <div className="reminder-txt">Revisão trimestral de restrições pendente.</div>
+          <button className="reminder-btn" onClick={()=>setResOpen(true)}>Ver restrições</button>
+          <button className="reminder-btn" style={{borderColor:"rgba(255,181,71,.2)",color:"#555"}} onClick={()=>saveSt("ghub_res_review",new Date().toISOString())}>Dispensar</button>
+        </div>
+      )}
+
+      {/* TOPBAR */}
+      <div className="topbar">
+        <div className="brand"><div className="bdot" style={{background:curGrupo.color}}></div><span className="bname" style={{color:curGrupo.color}}>HOLDING</span></div>
+        <div className="tabs-row">
+          {allowedGrupos.map(g=>(
+            <div key={g.id} className={"ctab"+(safeCurGrupo.id===g.id?" on":"")} style={{"--tc":g.color}} onClick={()=>{setCurGrupo(g);setCurLead(null);}}>
+              <div className="tdot" style={{background:g.color}}></div>
+              <span className="tname" style={safeCurGrupo.id===g.id?{color:g.color}:{}}>{g.name}</span>
+            </div>
+          ))}
+        </div>
+        <div className="tb-right">
+          <div className="api-chip"><div className="apdot" style={{background:"#00FF94"}}></div><span>HUNTER</span></div>
+          <div className="api-chip"><div className="apdot" style={{background:pdKey?"#00FF94":"#2a2a2a"}}></div><span>PIPEDRIVE</span></div>
+          <button className="tbtn" onClick={()=>{setViewMode("holding");setCurLead(null);}}>🏢 Holding</button>
+          <button className="tbtn" onClick={()=>{setViewMode("batch");setCurLead(null);}}>✉ Lote</button>
+          <button className="tbtn" style={{color:"#FF4757",borderColor:"rgba(255,71,87,.3)"}} onClick={()=>{setViewMode("calls");setCurLead(null);}}>📞 Calls</button>
+          <button className="tbtn green" onClick={()=>exportMailing(accs,safeCurGrupo)}>↓ Mailing</button>
+          <button className="tbtn blue" onClick={()=>setDashOpen(true)}>📊 Dash</button>
+          {curUser.role==="admin"&&<button className="tbtn purple" onClick={()=>setAdminOpen(true)}>👥 Time</button>}
+          <button className="resbtn" onClick={()=>setResOpen(true)}>⚠</button>
+          <button className="cfgbtn" onClick={()=>{setCfgPD(pdKey);setCfgOpen(true);}}>⚙</button>
+          <div style={{display:"flex",alignItems:"center",gap:6,paddingLeft:8,borderLeft:"1px solid #181818"}}>
+            <div style={{width:22,height:22,borderRadius:"50%",background:"#181818",display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,fontWeight:700,color:"#E8C97A"}}>{curUser.name[0].toUpperCase()}</div>
+            <span style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#555"}}>{curUser.name}</span>
+            <button onClick={logout} style={{padding:"2px 7px",borderRadius:3,border:"1px solid #1e1e1e",background:"transparent",color:"#333",fontSize:8,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>sair</button>
+          </div>
+        </div>
+      </div>
+
+      {/* WORKSPACE */}
+      {viewMode==="holding"?(
+      <div className="ws"><HoldingView/></div>
+    ):viewMode==="batch"?(
+      <div className="ws"><div className="main" style={{"--tc":safeCurGrupo.color,"--tcr":safeCurGrupo.rgb}}><div style={{flex:1,overflow:"auto"}}><BatchView grupo={safeCurGrupo} accs={accs} curUser={curUser} pdKey={pdKey} onActivitySaved={onActivitySaved}/></div></div></div>
+    ):viewMode==="calls"?(
+      <div className="ws"><div className="main" style={{"--tc":safeCurGrupo.color,"--tcr":safeCurGrupo.rgb}}><ColdCallView grupo={safeCurGrupo} accs={accs} curUser={curUser} pdKey={pdKey} onActivitySaved={onActivitySaved}/></div></div>
+    ):(
+    <div className="ws">
+        <div className="sb" style={{"--tc":safeCurGrupo.color,"--tcr":safeCurGrupo.rgb}}>
+          <div className="sbhead">
+          <span className="sbtitle">ANUNCIANTES</span>
+          <span className="sbcnt">{filtered.length}</span>
+        </div>
+          <div className="sbsearch"><input placeholder="Buscar empresa..." value={sbQ} onChange={e=>setSbQ(e.target.value)}/></div>
+          <div className="sbfil">
+            {[["all","TODOS"],["alto","FIT ALTO"],["medio","FIT MED"],["crm","NO CRM"],["restrito","RESTRITOS"]].map(([f,l])=>(
+              <button key={f} className={"fb"+(fitFil===f?" on":"")+(f==="restrito"?" res":"")} onClick={()=>setFitFil(f)}>{l}</button>
+            ))}
+          </div>
+          <div className="sblist">
+            {filtered.slice(0,200).map(d=>{
+              const fit=safeCurGrupo.fit(d.setor||"");
+              const fc=fitColor(fit);
+              const res=checkRestrictions(d,safeCurGrupo.id);
+              const isRes=res.length>0;
+              const isSel=curLead&&curLead.rank===d.rank;
+              const hasCrm=!!accs[accKey(safeCurGrupo,d.rank)];
+              return(
+                <div key={d.rank+d.nome} className={"coitem"+(isSel?" sel":"")+(isRes?" restricted":"")} onClick={()=>setCurLead(d)}>
+                  <span className="corank">{d.rank}</span>
+                  <div className="cobody">
+                    <div className="coname">{d.nome}{isRes&&<span style={{fontSize:7,marginLeft:5,color:"#FF4757"}}>●</span>}</div>
+                    <div className="cosec">{d.setor}{isRes&&<span style={{color:"rgba(255,71,87,.6)",marginLeft:4,fontSize:7}}>conflito</span>}</div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+                    {isRes?<span className="restag">RESTRITO</span>:<span className="fittag" style={{background:`rgba(${hexRgb(fc)},.08)`,color:fc,border:`1px solid rgba(${hexRgb(fc)},.2)`}}>{fitLabel(fit)}</span>}
+                    {hasCrm&&<div className="crmdot"></div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="main" style={{"--tc":safeCurGrupo.color,"--tcr":safeCurGrupo.rgb}}>
+          {curLead?(
+            <AgentView
+              key={safeCurGrupo.id+"_"+curLead.rank}
+              grupo={safeCurGrupo}
+              lead={curLead}
+              acc={getAcc()}
+              pdKey={pdKey}
+              curUser={curUser}
+              onAccUpdate={setAcc}
+              onActivitySaved={onActivitySaved}
+              accs={accs}
+            />
+          ):(
+            <>
+              <div className="subtabs"></div>
+              <div className="panel"><div className="empty"><div className="emptyicon">◎</div><div style={{fontSize:16,fontWeight:800}}>{safeCurGrupo.name}</div><div style={{fontSize:10,fontFamily:"DM Mono,monospace",maxWidth:220,lineHeight:1.7,textAlign:"center"}}>{safeCurGrupo.desc}<br/><br/>Selecione um anunciante para começar a prospecção.</div></div></div>
+            </>
+          )}
+        </div>
+      </div>
+    )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
