@@ -1,0 +1,1643 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Galeria Holding — Central Comercial</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Syne',sans-serif;background:#060606;color:#eee;min-height:100vh;overflow:hidden;display:flex;flex-direction:column}
+input,select,button,textarea{font-family:inherit}
+a{text-decoration:none}
+::-webkit-scrollbar{width:3px;height:3px}
+::-webkit-scrollbar-thumb{background:#222;border-radius:2px}
+.topbar{display:flex;align-items:stretch;background:#0a0a0a;border-bottom:1px solid #181818;height:50px;flex-shrink:0;overflow-x:auto}
+.brand{display:flex;align-items:center;gap:9px;padding:0 18px;border-right:1px solid #181818;flex-shrink:0}
+.bdot{width:7px;height:7px;border-radius:50%;animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
+.bname{font-family:'DM Mono',monospace;font-size:10px;letter-spacing:3px;white-space:nowrap}
+.tabs-row{display:flex;align-items:stretch;flex:1}
+.ctab{display:flex;align-items:center;gap:7px;padding:0 15px;border-right:1px solid #181818;cursor:pointer;transition:all .15s;white-space:nowrap;border-bottom:2px solid transparent;flex-shrink:0}
+.ctab:hover{background:rgba(255,255,255,.025)}
+.ctab.on{border-bottom-color:var(--tc)}
+.tdot{width:6px;height:6px;border-radius:50%;background:var(--tc)}
+.tname{font-size:10px;font-family:'DM Mono',monospace;letter-spacing:.5px;color:#555}
+.ctab.on .tname{color:var(--tc)}
+.tb-right{display:flex;align-items:center;gap:10px;padding:0 14px;border-left:1px solid #181818;flex-shrink:0}
+.api-chip{display:flex;align-items:center;gap:4px;font-size:9px;font-family:'DM Mono',monospace;color:#333;letter-spacing:.5px}
+.apdot{width:5px;height:5px;border-radius:50%}
+.cfgbtn{padding:4px 10px;border:1px solid #1e1e1e;border-radius:3px;background:transparent;color:#444;font-size:9px;font-family:'DM Mono',monospace;cursor:pointer;letter-spacing:.5px}
+.cfgbtn:hover{border-color:#555;color:#aaa}
+.resbtn{padding:4px 10px;border:1px solid rgba(255,71,87,.3);border-radius:3px;background:rgba(255,71,87,.06);color:#FF4757;font-size:9px;font-family:'DM Mono',monospace;cursor:pointer;letter-spacing:.5px}
+.resbtn:hover{background:rgba(255,71,87,.12)}
+.ws{display:flex;flex:1;overflow:hidden}
+.sb{width:295px;flex-shrink:0;border-right:1px solid #181818;display:flex;flex-direction:column;background:#080808}
+.sbhead{padding:11px 14px;border-bottom:1px solid #181818;display:flex;align-items:center;justify-content:space-between}
+.sbtitle{font-size:9px;font-family:'DM Mono',monospace;color:#333;letter-spacing:2px;text-transform:uppercase}
+.sbcnt{font-size:9px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:100px;border:1px solid var(--tc);color:var(--tc)}
+.sbsearch{padding:8px 12px;border-bottom:1px solid #181818}
+.sbsearch input{width:100%;background:#060606;border:1px solid #1a1a1a;border-radius:3px;padding:6px 9px;color:#eee;font-family:'DM Mono',monospace;font-size:10px;outline:none}
+.sbsearch input:focus{border-color:var(--tc)}
+.sbsearch input::placeholder{color:#252525}
+.sbfil{display:flex;gap:4px;padding:6px 12px;border-bottom:1px solid #181818;flex-wrap:wrap}
+.fb{padding:3px 8px;border-radius:3px;border:1px solid #1a1a1a;background:transparent;color:#333;font-size:8px;font-family:'DM Mono',monospace;cursor:pointer;letter-spacing:.5px}
+.fb.on{border-color:var(--tc);color:var(--tc)}
+.fb.res{border-color:rgba(255,71,87,.3);color:#FF4757}
+.fb.res.on{background:rgba(255,71,87,.08)}
+.sblist{flex:1;overflow-y:auto}
+.coitem{padding:10px 12px;border-bottom:1px solid #111;cursor:pointer;display:flex;align-items:center;gap:9px;transition:background .1s}
+.coitem:hover{background:rgba(255,255,255,.018)}
+.coitem.sel{border-left:2px solid var(--tc);background:rgba(255,255,255,.02)}
+.coitem.restricted{border-left:2px solid rgba(255,71,87,.4);background:rgba(255,71,87,.025)}
+.corank{font-family:'DM Mono',monospace;font-size:8px;color:#2a2a2a;min-width:24px;text-align:right}
+.cobody{flex:1;min-width:0}
+.coname{font-size:10px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cosec{font-size:8px;font-family:'DM Mono',monospace;color:#333;margin-top:1px}
+.fittag{font-size:7px;font-family:'DM Mono',monospace;padding:2px 5px;border-radius:100px;white-space:nowrap}
+.restag{font-size:7px;font-family:'DM Mono',monospace;padding:2px 6px;border-radius:100px;white-space:nowrap;background:rgba(255,71,87,.1);color:#FF4757;border:1px solid rgba(255,71,87,.25)}
+.crmdot{width:5px;height:5px;border-radius:50%;background:#4B9EFF;flex-shrink:0}
+.main{flex:1;overflow:hidden;display:flex;flex-direction:column}
+.subtabs{display:flex;border-bottom:1px solid #181818;background:#080808;flex-shrink:0}
+.st{padding:10px 16px;font-size:9px;font-family:'DM Mono',monospace;color:#333;cursor:pointer;border-bottom:2px solid transparent;letter-spacing:.5px;transition:all .15s}
+.st:hover{color:#888}
+.st.on{color:var(--tc);border-bottom-color:var(--tc)}
+.panel{flex:1;overflow-y:auto;padding:22px 26px}
+.g3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:18px}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+.card{background:#0e0e0e;border:1px solid #181818;border-radius:5px;padding:14px}
+.clbl{font-size:8px;font-family:'DM Mono',monospace;color:#333;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:6px}
+.cval{font-size:14px;font-weight:700}
+.csub{font-size:9px;font-family:'DM Mono',monospace;color:#333;margin-top:3px}
+.sec{font-size:8px;font-family:'DM Mono',monospace;color:#2a2a2a;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.sec::after{content:'';flex:1;height:1px;background:#181818}
+.tags{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px}
+.tag{font-size:9px;font-family:'DM Mono',monospace;padding:3px 8px;border-radius:3px;background:#0e0e0e;border:1px solid #181818;color:#333}
+.taghl{border-color:rgba(var(--tcr),.25);color:var(--tc);background:rgba(var(--tcr),.05)}
+.btn{padding:7px 13px;border-radius:3px;font-family:'Syne',sans-serif;font-size:10px;font-weight:700;cursor:pointer;transition:all .15s;letter-spacing:.3px}
+.btnp{color:#000;border:none}
+.btno{background:transparent;color:#888;border:1px solid #222}
+.btno:hover{border-color:var(--tc);color:var(--tc)}
+.btnsm{padding:5px 9px;font-size:9px}
+.btnrow{display:flex;gap:6px;flex-wrap:wrap}
+.deccard{background:#0e0e0e;border:1px solid #181818;border-radius:5px;padding:12px 14px;display:flex;align-items:center;gap:12px;margin-bottom:7px}
+.decav{width:34px;height:34px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800;flex-shrink:0;border:1px solid #1e1e1e}
+.decinfo{flex:1;min-width:0}
+.decname{font-size:11px;font-weight:700}
+.deccargo{font-size:9px;font-family:'DM Mono',monospace;color:#444;margin-top:1px}
+.dectags{display:flex;gap:4px;margin-top:5px;flex-wrap:wrap}
+.dt{font-size:8px;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:2px;background:#111;border:1px solid #1a1a1a;color:#333}
+.dtok{color:var(--tc);border-color:rgba(var(--tcr),.2)}
+.decacts{display:flex;gap:4px;flex-wrap:wrap}
+.feeditem{display:flex;gap:10px;padding:10px 0;border-bottom:1px solid #111}
+.fiicon{width:26px;height:26px;border-radius:50%;background:#0e0e0e;border:1px solid #181818;display:flex;align-items:center;justify-content:center;font-size:10px;flex-shrink:0}
+.fibody{flex:1}
+.fititle{font-size:11px;font-weight:600;margin-bottom:2px}
+.fimeta{font-size:8px;font-family:'DM Mono',monospace;color:#333}
+.finote{font-size:10px;color:#444;margin-top:4px;font-family:'DM Mono',monospace;border-left:2px solid #181818;padding-left:7px;line-height:1.5}
+.aiout{background:#0e0e0e;border:1px solid rgba(var(--tcr),.15);border-radius:5px;padding:15px;margin-bottom:14px;font-size:11px;font-family:'DM Mono',monospace;line-height:1.8;color:#888}
+.monitem{background:#0e0e0e;border:1px solid #181818;border-radius:5px;padding:12px 14px;margin-bottom:8px;display:flex;gap:10px;align-items:flex-start}
+.monbody{flex:1}.montitle{font-size:11px;font-weight:700;margin-bottom:3px}
+.mondesc{font-size:10px;font-family:'DM Mono',monospace;color:#444;line-height:1.5}
+.montime{font-size:8px;font-family:'DM Mono',monospace;color:#2a2a2a;margin-top:4px}
+.monbadge{font-size:7px;font-family:'DM Mono',monospace;padding:2px 6px;border-radius:100px;flex-shrink:0;letter-spacing:.5px}
+.frow{display:flex;flex-direction:column;gap:4px;margin-bottom:10px}
+.flbl{font-size:8px;font-family:'DM Mono',monospace;color:#333;letter-spacing:1px;text-transform:uppercase}
+.finp{background:#060606;border:1px solid #1a1a1a;border-radius:3px;padding:7px 9px;color:#eee;font-family:'DM Mono',monospace;font-size:10px;outline:none;width:100%}
+.finp:focus{border-color:var(--tc)}
+.finp::placeholder{color:#222}
+textarea.finp{resize:vertical;min-height:70px;line-height:1.6}
+select.finp{cursor:pointer}
+.modov{position:fixed;inset:0;background:rgba(0,0,0,.92);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px}
+.mod{background:#0e0e0e;border:1px solid #222;border-radius:7px;width:100%;max-width:480px;max-height:86vh;overflow-y:auto;padding:22px}
+.mod-wide{max-width:680px}
+.modtitle{font-size:15px;font-weight:800;margin-bottom:16px;letter-spacing:-.5px}
+.modacts{display:flex;gap:7px;margin-top:16px;justify-content:flex-end}
+.empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:12px;opacity:.2;text-align:center}
+.emptyicon{font-size:44px}
+.lbar{height:1px;background:#181818;overflow:hidden;margin:5px 0}
+.lfill{height:100%;background:var(--tc);animation:la 1.4s ease-in-out infinite}
+@keyframes la{0%{width:0;margin-left:0}50%{width:60%;margin-left:20%}100%{width:0;margin-left:100%}}
+.stxt{font-size:9px;font-family:'DM Mono',monospace;color:var(--tc);padding:4px 0}
+.accname{font-size:24px;font-weight:800;letter-spacing:-1px;line-height:1}
+.accmeta{font-size:9px;font-family:'DM Mono',monospace;color:#333;margin-top:5px}
+.acctop{display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:14px}
+.angtabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px}
+.angtab{padding:4px 9px;border-radius:3px;border:1px solid #1a1a1a;background:transparent;color:#333;font-size:8px;font-family:'DM Mono',monospace;cursor:pointer;letter-spacing:.5px}
+.angtab.on{border-color:var(--tc);color:var(--tc)}
+
+/* RESTRICTION BANNER */
+.res-banner{background:rgba(255,71,87,.06);border:1px solid rgba(255,71,87,.25);border-radius:5px;padding:12px 14px;margin-bottom:16px;display:flex;gap:10px;align-items:flex-start}
+.res-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+.res-body{flex:1}
+.res-title{font-size:11px;font-weight:700;color:#FF4757;margin-bottom:4px}
+.res-desc{font-size:10px;font-family:'DM Mono',monospace;color:#884040;line-height:1.6}
+.res-tags{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.rtag{font-size:8px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:100px;background:rgba(255,71,87,.1);color:#FF4757;border:1px solid rgba(255,71,87,.2)}
+
+/* RESTRICTION PANEL */
+.res-row{display:flex;align-items:center;gap:10px;padding:10px 12px;border-bottom:1px solid #111;border-radius:4px;margin-bottom:4px;background:#0c0c0c}
+.res-co{font-size:11px;font-weight:700;flex:1}
+.res-reason{font-size:9px;font-family:'DM Mono',monospace;color:#444;flex:2}
+.res-agency{font-size:8px;font-family:'DM Mono',monospace;padding:2px 7px;border-radius:100px}
+
+/* REMINDER BANNER */
+.reminder{background:rgba(255,181,71,.05);border:1px solid rgba(255,181,71,.25);border-radius:5px;padding:12px 16px;margin-bottom:0;display:flex;align-items:center;gap:12px;flex-shrink:0}
+.reminder-txt{flex:1;font-size:11px;color:#FFB547;font-family:'DM Mono',monospace}
+.reminder-btn{padding:5px 12px;border-radius:3px;border:1px solid rgba(255,181,71,.4);background:transparent;color:#FFB547;font-size:9px;font-family:'DM Mono',monospace;cursor:pointer;white-space:nowrap}
+/* ENRICH AGENT */
+.enrich-box{background:#0a0a0a;border:1px solid rgba(167,139,250,.2);border-radius:8px;padding:14px;margin-bottom:14px}
+.enrich-step{display:flex;align-items:flex-start;gap:10px;padding:8px 0;border-bottom:1px solid #111}
+.enrich-step:last-child{border-bottom:none}
+.enrich-num{width:20px;height:20px;border-radius:50%;background:rgba(167,139,250,.1);border:1px solid rgba(167,139,250,.25);display:flex;align-items:center;justify-content:center;font-size:9px;color:#A78BFA;font-weight:700;flex-shrink:0;margin-top:2px}
+.enrich-body{flex:1}
+.wa-hist-badge{display:inline-flex;align-items:center;gap:3px;font-size:8px;font-family:'DM Mono',monospace;padding:1px 6px;border-radius:100px;background:rgba(37,211,102,.1);color:#25D366;border:1px solid rgba(37,211,102,.2)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useMemo,useEffect,useCallback} = React;
+
+const HUNTER_KEY = "21466c7f183f70470dbd90ed0a7fd1c1d675d125";
+const LUSHA_KEY  = "e0f6b54f-d280-49ff-a68f-69ad9536c384";
+
+// ─── ASSINATURAS POR EMPRESA ──────────────────────────────────────────────────
+const ASSINATURAS = {
+  galeria: "Pedro Ica\nHead of Growth | Galeria\npedroica@galeria.ag | galeria.ag",
+  mila: "Pedro Ica\nHead of Growth | Milà\npedroica@mila.ag | mila.ag",
+  "404": "Pedro Ica\nHead of Growth | 404\npedroica@404.ag | 404.ag",
+  cccaramelo: "Pedro Ica\nHead of Growth | cccaramelo\npedroica@cccaramelo.com | cccaramelo.com",
+  gaia: "Pedro Ica\nHead of Growth | GAIA\npedroica@gaia.ag | gaia.ag",
+  catalyst: "Pedro Ica\nHead of Growth | Catalyst\npedroica@catalyst.ag | catalyst.ag",
+  mantiqueira: "Pedro Ica\nHead of Growth | Mantiqueira\npedroica@mantiqueira.ag | mantiqueira.ag",
+  agente: "Pedro Ica\nHead of Growth | A.gente\npedroica@agente.ag | agente.ag",
+  vitrine: "Pedro Ica\nHead of Growth | Vitrine\npedroica@vitrine.ag | vitrine.ag",
+  gux: "Pedro Ica\nHead of Growth | GUX\npedroica@gux.ag | gux.ag",
+};
+
+// ─── DOMAIN MAP ──────────────────────────────────────────────────────────────
+const DM={"GLOBO PLAY":"globo.com","AMBEV":"ambev.com.br","MERCADO LIVRE":"mercadolivre.com.br","CLARO":"claro.com.br","AMAZON":"amazon.com.br","MAGAZINE LUIZA":"magazineluiza.com.br","SHOPEE":"shopee.com.br","TIM BRASIL":"tim.com.br","BRADESCO":"bradesco.com.br","SANTANDER":"santander.com.br","NU PAGAMENTOS":"nubank.com.br","BYD DO BRASIL":"byd.com.br","NETFLIX":"netflix.com","LATAM AIRLINES":"latam.com","UBER DO BRASIL":"uber.com","MERCADO PAGO":"mercadopago.com.br","APPLE BRASIL":"apple.com","TIKTOK":"tiktok.com","AIRBNB":"airbnb.com","STONE PAGAMENTOS":"stone.com.br","IFOOD":"ifood.com.br","LOJAS RENNER":"lojasrenner.com.br","CARREFOUR":"carrefour.com.br","ASSAI ATACADISTA":"assai.com.br","VOLKSWAGEN":"vw.com.br","AMERICANAS":"americanas.com.br","PICPAY":"picpay.com","SERASA EXPERIAN":"serasa.com.br","BTG PACTUAL":"btgpactual.com","XP INVESTIMENTOS":"xpi.com.br","INTER":"inter.co","MICROSOFT":"microsoft.com.br","GOOGLE":"google.com.br","TOTVS":"totvs.com","TOYOTA":"toyota.com.br","QUINTO ANDAR":"quintoandar.com","ICARROS":"icarros.com.br","WEBMOTORS":"webmotors.com.br","OLX":"olx.com.br","KABUM":"kabum.com.br","DAFITI":"dafiti.com.br","O BOTICARIO":"boticario.com.br","HAPVIDA":"hapvida.com.br","PORTO SEGURO":"portoseguro.com.br","MASTERCARD":"mastercard.com","VISA DO BRASIL":"visa.com.br","SPOTIFY":"spotify.com","VALE":"vale.com","MOVIDA":"movida.com.br","VIVARA":"vivara.com.br","RAIA DROGASIL":"rd.com.br","AZUL LINHAS AEREAS":"voeazul.com.br","GOL LINHAS AEREAS":"voegol.com.br","MULTIPLAN":"multiplan.com.br","SHEIN":"shein.com","AREZZO":"arezzoco.com.br","LOJAS RIACHUELO":"riachuelo.com.br","HYUNDAI":"hyundai.com.br","FIAT":"fiat.com.br","HONDA AUTOMOVEIS":"honda.com.br","LEROY MERLIN":"leroymerlin.com.br","DECATHLON":"decathlon.com.br","ADOBE SYSTEMS":"adobe.com","MOTOROLA":"motorola.com.br","SAMSUNG":"samsung.com.br","COCA COLA":"cocacola.com.br","BOOKING":"booking.com","DECOLAR":"decolar.com","ADIDAS":"adidas.com.br","NIKE DO BRASIL":"nike.com.br","SEPHORA":"sephora.com.br","CIELO":"cielo.com.br"};
+function getDomain(n){for(const k of Object.keys(DM)){if(n.includes(k))return DM[k];}return null;}
+
+// ─── LEADS DATA ──────────────────────────────────────────────────────────────
+const RAW=[
+  [1,"GLOBO PLAY","Streaming"],[2,"AMBEV","FMCG"],[3,"MERCADO LIVRE","E-commerce"],
+  [5,"EMS FARMACEUTICA","Farma"],[8,"ITAU",null],[9,"CLARO","Telecom"],
+  [10,"AMAZON","E-commerce"],[14,"MAGAZINE LUIZA","E-commerce"],[16,"WALT DISNEY","Streaming"],
+  [18,"SKY BRASIL","Telecom"],[22,"SHOPEE","E-commerce"],[23,"TIM BRASIL","Telecom"],
+  [24,"MC DONALD",null],[25,"GLOBO","Media"],[27,"BRADESCO","Financeiro"],
+  [30,"BRF BRASIL FOODS","FMCG"],[32,"GRUPO CASAS BAHIA","Varejo"],[34,"COLGATE PALMOLIVE","FMCG"],
+  [35,"SANTANDER","Financeiro"],[36,"COCA COLA","FMCG"],[39,"NU PAGAMENTOS","Fintech"],
+  [43,"BYD DO BRASIL","Automotivo"],[44,"SEARA",null],[45,"CAIXA","Financeiro"],
+  [47,"BURGER KING","Food"],[48,"O BOTICARIO","Beleza"],[49,"NATURA",null],
+  [50,"ULTRAFARMA","Farma"],[55,"SAMSUNG","Tech"],[56,"PETROBRAS","Energia"],
+  [60,"SBT","Media"],[63,"LOJAS RENNER","Varejo Moda"],[64,"GENERAL MOTORS","Automotivo"],
+  [67,"VOLKSWAGEN","Automotivo"],[72,"NESTLE","FMCG"],[74,"SICREDI","Financeiro"],
+  [76,"STELLANTIS","Automotivo"],[77,"WARNER BROS","Streaming"],[79,"CARREFOUR","Varejo"],
+  [80,"L OREAL BRASIL","Beleza"],[82,"ASSAI ATACADISTA","Varejo"],[83,"IFOOD","Super App"],
+  [86,"JBS","FMCG"],[89,"NETFLIX",null],[91,"LATAM AIRLINES","Travel"],
+  [94,"DECOLAR","Travel"],[97,"ELECTROLUX","Eletro"],[98,"ATACADAO","Varejo"],
+  [105,"UBER DO BRASIL","Super App"],[106,"HYUNDAI","Automotivo"],[107,"MERCADO PAGO","Fintech"],
+  [109,"APPLE BRASIL","Tech"],[110,"GOL LINHAS AEREAS","Travel"],[112,"TIKTOK","Social Media"],
+  [115,"AIRBNB","Travel"],[120,"STONE PAGAMENTOS","Fintech"],[134,"AMERICANAS","E-commerce"],
+  [135,"PEPSICO","FMCG"],[140,"CIELO","Fintech"],[141,"AZUL LINHAS AEREAS","Travel"],
+  [142,"YDUQS","Educacao"],[144,"MADEIRAMADEIRA","E-commerce"],[145,"PICPAY","Fintech"],
+  [146,"BOOKING","Travel"],[148,"SERASA EXPERIAN","Fintech"],[149,"LEROY MERLIN","Varejo"],
+  [160,"VALE","Mineracao"],[161,"BTG PACTUAL","Financeiro"],[164,"RAIA DROGASIL","Farma"],
+  [165,"HAPVIDA","Saude"],[178,"SHEIN","Varejo Moda"],[186,"GERDAU","Industria"],
+  [187,"MOBLY","E-commerce"],[189,"MRV ENGENHARIA","Construcao"],[192,"FIAT","Automotivo"],
+  [197,"RENAULT DO BRASIL","Automotivo"],[200,"XP INVESTIMENTOS",null],
+  [211,"GRUPO PAO DE ACUCAR","Varejo"],[215,"FACEBOOK BRASIL","Social Media"],
+  [217,"VISA DO BRASIL","Financeiro"],[224,"PEUGEOT CITROEN","Automotivo"],
+  [226,"AMIL","Saude"],[230,"QUINTO ANDAR","Proptech"],[234,"FORD","Automotivo"],
+  [235,"NISSAN DO BRASIL","Automotivo"],[237,"DIAGEO","FMCG"],[238,"MOVIDA","Mobilidade"],
+  [247,"VIVARA","Varejo"],[255,"DAFITI","E-commerce"],[268,"LENOVO","Tech"],
+  [272,"ADOBE SYSTEMS","B2B Tech"],[279,"KABUM","E-commerce"],[281,"MOTOROLA","Tech"],
+  [282,"NOMAD FINTECH","Fintech"],[284,"BCO INTER","Fintech"],[296,"SPOTIFY","Streaming"],
+  [303,"TOYOTA","Automotivo"],[313,"LOJAS RIACHUELO","Varejo Moda"],[315,"LOCALIZA","Mobilidade"],
+  [321,"OUTBACK","Food"],[323,"MASTERCARD","Financeiro"],[325,"GOOGLE",null],
+  [331,"PORTO SEGURO","Seguros"],[338,"NIKE DO BRASIL","Varejo Esporte"],
+  [340,"BELEZA NA WEB","Beleza"],[356,"DELL","B2B Tech"],[382,"HONDA AUTOMOVEIS","Automotivo"],
+  [390,"TOK STOK","Varejo"],[404,"MARISA","Varejo Moda"],[422,"BAYER","Farma"],
+  [429,"MULTIPLAN","Real Estate"],[439,"SEPHORA","Beleza"],[444,"KIMBERLY CLARK","FMCG"],
+  [455,"SONY MUSIC","Entretenimento"],[474,"WEBMOTORS","Marketplace"],
+  [495,"JAGUAR LAND ROVER","Automotivo"],[510,"HOTELARIA ACCOR","Travel"],
+  [547,"ADIDAS","Varejo Esporte"],[553,"AREZZO","Varejo Moda"],[561,"REDE D OR","Saude"],
+  [605,"OLX","Marketplace"],[651,"DECATHLON","Varejo Esporte"],[296,"SPOTIFY","Streaming"],
+  [282,"NOMAD FINTECH","Fintech"],[150,"RED BULL","FMCG"],[136,"BCO PAN","Financeiro"],
+  [169,"CIMED","Farma"],[154,"CRUZEIRO DO SUL","Educacao"],[142,"YDUQS","Educacao"],
+  [181,"GRUPO MADERO","Food"],[199,"CREFISA","Financeiro"],[150,"RED BULL","FMCG"],
+  [321,"OUTBACK","Food"],[47,"BURGER KING","Food"],[296,"SPOTIFY","Streaming"],
+  [325,"GOOGLE",null],[200,"XP INVESTIMENTOS",null],[89,"NETFLIX",null]
+,
+  [270,"LINX","B2B Tech"],[278,"CREDITAS","Fintech"],[283,"NUVEMSHOP","E-commerce"],
+  [285,"OLIST","E-commerce"],[286,"VTEX","B2B Tech"],[288,"EBANX","Fintech"],
+  [289,"DOCK","Fintech"],[293,"NEON","Fintech"],[297,"FLEURY","Saude"],
+  [298,"DASA","Saude"],[302,"UNIMED","Saude"],[304,"SULAMERICA","Saude"],
+  [307,"ALLIANZ","Seguros"],[308,"ZURICH","Seguros"],[310,"HDI","Seguros"],
+  [311,"TOKIO MARINE","Seguros"],[317,"FARM","Varejo Moda"],[318,"HERING","Varejo Moda"],
+  [320,"RESERVA","Varejo Moda"],[328,"ZARA BRASIL","Varejo Moda"],
+  [330,"CENTAURO","Varejo Esporte"],[332,"NETSHOES","Varejo Esporte"],
+  [336,"HEINEKEN BRASIL","FMCG"],[350,"GRUPO M DIAS BRANCO","FMCG"],
+  [351,"BUNGE BRASIL","FMCG"],[357,"MRV","Construcao"],[358,"CYRELA","Construcao"],
+  [368,"IGUATEMI","Real Estate"],[371,"COGNA","Educacao"],[373,"ESTACIO","Educacao"],
+  [376,"FGV","Educacao"],[377,"INSPER","Educacao"],[383,"RECORD TV","Media"],
+  [384,"SBT","Media"],[387,"UOL","Media"],[393,"SPOTIFY BRASIL","Streaming"],
+  [409,"DHL BRASIL","Logistica"],[410,"FEDEX BRASIL","Logistica"],
+  [414,"ENEL BRASIL","Energia"],[415,"CPFL","Energia"],[416,"CEMIG","Energia"],
+  [420,"NEOENERGIA","Energia"],[423,"SABESP","Utilidades"],
+  [426,"SYNGENTA BRASIL","Agro"],[427,"BAYER CROP","Agro"],[435,"YARA BRASIL","Agro"],
+  [436,"WEG","Industria"],[437,"EMBRAER","Industria"],[438,"GERDAU","Industria"],
+  [440,"CSN","Industria"],[448,"TIGRE","Industria"],[450,"NATURA","Beleza"],
+  [451,"AVON BRASIL","Beleza"],[456,"EUDORA","Beleza"],[460,"GRANADO","Beleza"],
+  [462,"PETZ","Pets"],[463,"COBASI","Pets"],[464,"ROYAL CANIN BRASIL","Pets"],
+  [468,"EMBRATEL","Telecom"],[476,"SAP BRASIL","B2B Tech"],[477,"ORACLE BRASIL","B2B Tech"],
+  [478,"SALESFORCE BRASIL","B2B Tech"],[479,"HUBSPOT BRASIL","B2B Tech"],
+  [482,"BANCO ORIGINAL","Financeiro"],[486,"WARREN","Fintech"],[490,"WILL BANK","Fintech"],
+  [492,"LIVELO","Fintech"],[493,"SMILES","Fintech"],[504,"CVC","Travel"],
+  [507,"HURB","Travel"],[517,"LOCALIZA HERTZ","Mobilidade"],[526,"RAPPI BRASIL","Super App"],
+  [528,"LOGGI","Logistica"],[530,"MERCADO ENVIOS","Logistica"]
+];
+// ── NOVAS EMPRESAS: EDUCAÇÃO, FINANCEIRO, INTERNET ──
+const RAW_EXTRA = [
+  [700,"COGNA EDUCACAO","Educacao"],[701,"ANIMA EDUCACAO","Educacao"],
+  [702,"SER EDUCACIONAL","Educacao"],[703,"AFYA","Educacao"],
+  [704,"SOMOS EDUCACAO","Educacao"],[705,"SEB EDUCACAO","Educacao"],
+  [706,"BAHEMA EDUCACAO","Educacao"],[707,"UNINTER","Educacao"],
+  [708,"UNINOVE","Educacao"],[709,"DESCOMPLICA","Educacao"],
+  [710,"WIZARD PEARSON","Educacao"],[711,"SESI SENAI","Educacao"],
+  [712,"PUC SP","Educacao"],[713,"PUC CAMPINAS","Educacao"],
+  [720,"BANCO DO BRASIL","Financeiro"],[721,"BANCO SAFRA","Financeiro"],
+  [722,"BANCO VOTORANTIM BV","Financeiro"],[723,"SICOOB","Financeiro"],
+  [724,"C6 BANK","Fintech"],[725,"BANRISUL","Financeiro"],
+  [726,"CITIBANK BRASIL","Financeiro"],
+  [730,"VIVO TELEFONICA","Telecom"],[731,"LOCAWEB","B2B Tech"],
+  [732,"RAPPI BRASIL","Super App"],[733,"GETNINJAS","Marketplace"],
+  [734,"PAGBANK PAGSEGURO","Fintech"],
+];
+RAW.push(...RAW_EXTRA);
+
+// deduplicate
+const seen=new Set();
+const LEADS_ALL=RAW.filter(x=>{const k=x[0]+x[1];if(seen.has(k))return false;seen.add(k);return true;}).map(x=>({rank:x[0],nome:x[1],setor:x[2],cli:x[2]===null}));
+const PROSP=LEADS_ALL.filter(d=>d.setor!==null);
+
+// ─── RESTRICTIONS MAP ─────────────────────────────────────────────────────────
+// Each entry: { agencies, reason, category, expiresAt (optional ISO date) }
+// category is used to match leads by setor or name keywords
+const RESTRICTIONS = [
+  // ── GALERIA ──
+  {agencies:["galeria"],keywords:["BCO","BANCO","BRADESCO","SANTANDER","CAIXA","SICREDI","SICOOB","BTG","INTER","CREFISA","BCO PAN","BV","BANRISUL","ORIGINAL"],reason:"Conflito com Itaú",category:"Financeiro/Bancos"},
+  {agencies:["galeria"],keywords:["HAVAIANAS","GRENDENE","IPANEMA","RIDER","MELISSA","AREZZO","ANACAPRI","VIZZANO"],reason:"Conflito com Havaianas",category:"Calcados"},
+  {agencies:["galeria"],keywords:["NATURA","O BOTICARIO","AVON","MARY KAY","EUDORA","QUEM DISSE","AMEND","SALON LINE"],reason:"Conflito com Natura (até jun/25)",category:"Beleza",expiresAt:"2025-06-30"},
+  {agencies:["galeria"],keywords:["ITALAC","PIRACANJUBA","BETANIA","VIGOR","EMBARÉ","LATICINIOS","QUATÁ","ITALAC"],reason:"Conflito com Italac (lácteos)",category:"Lacteos"},
+  {agencies:["galeria"],keywords:["CAFÉ 3 CORACOES","NESCAFE","MELITTA","PILAO","TRES CORACOES","CAFÉ DO PONTO","STARBUCKS"],reason:"Conflito com Café 3 Corações",category:"Cafe"},
+  {agencies:["galeria"],keywords:["GALLO","AZEITE","ANDORINHA","CARBONELL","BORGES"],reason:"Conflito com Gallo (azeites)",category:"Azeite"},
+  {agencies:["galeria"],keywords:["BET365","BETFAIR","SPORTINGBET","PIXBET","BETANO","VAIDEBET","ESPORTES DA SORTE","ESTRELA BET","BETNACIONAL","SUPERBET","BLAZE","BETESPORTE","NOVIBET"],reason:"Conflito com Flutter/Betnacional (bets)",category:"Betting"},
+  {agencies:["galeria"],keywords:["BAUDUCCO","VISCONTI","OREO","LACTA","TRAKINAS","CLUB SOCIAL","TRIUNFO","PANCO","WICKBOLD"],reason:"Conflito com Bauducco (biscoitos/panificados)",category:"Panificados"},
+  {agencies:["galeria"],keywords:["DORIANA","QUALY","DELÍCIA","BECEL","PRIMOR","MILA MARG"],reason:"Conflito com Doriana (margarinas)",category:"Margarinas"},
+  {agencies:["galeria"],keywords:["SEARA","SADIA","PERDIGAO","FRIBOI","MARFRIG","MINERVA","JBS","BRF"],reason:"Conflito com Seara Gourmet (carnes/frios)",category:"Carnes"},
+  {agencies:["galeria"],keywords:["VIVO","CLARO","TIM","OI","SKY","NEXTEL","ALGAR TELECOM"],reason:"Conflito com Vivo (telecom)",category:"Telecom"},
+  {agencies:["galeria"],keywords:["BURGER KING","BOB S","SUBWAY","GIRAFFAS","CHINA IN BOX","HABIB","DOMINOS","PIZZA HUT","OUTBACK","KFC","POPEYES"],reason:"Conflito com McDonald's (fast food)",category:"Fast Food"},
+  {agencies:["galeria"],keywords:["KIMBERLY CLARK","SCOTT","NEVE","MILI","PERSONAL","ELSEVE","VEJA","BONI","PAPEL HIGIENE"],reason:"Conflito com Softys (papel/higiene)",category:"Higiene Papel"},
+  {agencies:["galeria"],keywords:["BING","YAHOO","BAIDU","PERPLEXITY","GEMINI","COPILOT","SEARCH","BUSCADOR"],reason:"Conflito com Google Search/Gemini",category:"Busca/IA"},
+
+  // ── MILÀ ──
+  {agencies:["mila"],keywords:["RED BULL","MONSTER","BURN","HELL ENERGY","REIGN","BANG","FUSION"],reason:"Conflito com Energético Sede",category:"Energeticos"},
+  {agencies:["mila"],keywords:["TOTALPASS","GYMPASS","WELLHUB","FLASH BENEFICIOS","SWILE"],reason:"Conflito com TotalPass",category:"Beneficios"},
+  {agencies:["mila"],keywords:["SMART FIT","ACADEMIA","BLUEFIT","BODYTECH","BIORITMO","FITNESS"],reason:"Conflito com SmartFit",category:"Academias"},
+  {agencies:["mila"],keywords:["VERISURE","PROSEGUR","TYCO","ADT","G4S","ALARME","SEGURANCA RESIDENCIAL"],reason:"Conflito com Verisure (alarmes)",category:"Seguranca"},
+  {agencies:["mila"],keywords:["CURAPROX","COLGATE","ORAL-B","SENSODYNE","CLOSE UP","ELGYDIUM","CREST"],reason:"Conflito com Curaprox (higiene oral)",category:"Higiene Oral"},
+  {agencies:["mila"],keywords:["ACHE","EMS","EUROFARMA","HYPERA","ACHÉ","NATULAB","CIMED","MEDLEY","BAYER","NOVARTIS","SANOFI"],reason:"Conflito com Aché Laboratórios",category:"Farmaceutico"},
+  {agencies:["mila"],keywords:["SUZANO","KLABIN","FIBRIA","BRACELL","CENIBRA","PAPEL CELULOSE"],reason:"Conflito com Suzano (papel/celulose)",category:"Papel Celulose"},
+  {agencies:["mila"],keywords:["BCO BMG","BANCO PAN","BMG","AGIBANK","BANQI","CREDITAS","C6"],reason:"Conflito com Banco BMG",category:"Banco"},
+
+  // ── 404 ──
+  {agencies:["404"],keywords:["BANCO","BCO","BRADESCO","SANTANDER","ITAU","CAIXA","SICREDI","SICOOB","BTG","INTER","NUBANK","C6","ORIGINAL","SAFRA","MODAL","MASTER","AGIBANK"],reason:"Conflito com XP + Itaú (financeiro)",category:"Financeiro/Bancos"},
+  {agencies:["404"],keywords:["NETFLIX","PARAMOUNT","HBO","MAX","DISNEY PLUS","APPLE TV","AMAZON PRIME","GLOBOPLAY","TELECINE"],reason:"Conflito com Netflix (streaming)",category:"Streaming"},
+  {agencies:["404"],keywords:["SAMSUNG","MOTOROLA","XIAOMI","HUAWEI","OPPO","ONEPLUS","PIXEL","ANDROID"],reason:"Conflito com Android/Google (tech)",category:"Android/Tech"},
+  {agencies:["404"],keywords:["NATURA","O BOTICARIO","AVON","EUDORA","QUEM DISSE"],reason:"Conflito com Natura (até jun/25)",category:"Beleza",expiresAt:"2025-06-30"},
+];
+
+// ─── CHECK RESTRICTION ────────────────────────────────────────────────────────
+function checkRestrictions(lead, groupId, customRestrictions=[]) {
+  const allRes = [...RESTRICTIONS, ...customRestrictions];
+  const matched = allRes.filter(r => {
+    if (!r.agencies.includes(groupId)) return false;
+    // Check expiry
+    if (r.expiresAt) {
+      const exp = new Date(r.expiresAt);
+      if (exp < new Date()) return false; // expired, no longer restricted
+    }
+    return r.keywords.some(kw => lead.nome.toUpperCase().includes(kw.toUpperCase()));
+  });
+  return matched;
+}
+
+// ─── GRUPO EMPRESAS ───────────────────────────────────────────────────────────
+const GRUPO = [
+  {id:"galeria",name:"Galeria",color:"#E8C97A",rgb:"232,201,122",desc:"Agência integrada de performance e criatividade",
+   angles:["Performance + Criatividade","Resultado de Negócio","Integração de Canais","Data-Driven Creative","ROI de Mídia"],
+   fit:s=>["E-commerce","Varejo","Fintech","FMCG","Telecom","Super App","Social Media"].includes(s)?"alto":["Automotivo","Saude","Educacao"].includes(s)?"medio":"medio",
+   dor:s=>({"E-commerce":"Campanhas com alto CPM mas baixa conversão — criatividade e performance não falam a mesma língua.","Fintech":"CAC elevado por ausência de creative testing sistemático nas campanhas digitais.","FMCG":"Marca presente na mídia mas sem conectar criatividade com dados de performance.","Telecom":"Alta verba de mídia com baixo ROI por falta de integração entre planejamento e execução.","Super App":"Múltiplas campanhas rodando sem unidade criativa — cada canal conta uma história diferente."})[s]||"Investimento em mídia sem atribuição clara de resultado por canal.",
+   prompt:"Você representa a Galeria, agência integrada líder em performance e criatividade. Une dados, mídia e criatividade para gerar resultado real de negócio."},
+  {id:"mila",name:"Milà",color:"#C9A87C",rgb:"201,168,124",desc:"Agência de cases e storytelling de marca",
+   angles:["Construção de Marca","Storytelling","Propósito de Marca","Relevância Cultural","Case de Sucesso"],
+   fit:s=>["FMCG","Beleza","Varejo Moda","Automotivo","Food"].includes(s)?"alto":["Fintech","Streaming"].includes(s)?"medio":"medio",
+   dor:s=>({"FMCG":"Marca com alto investimento em mídia mas sem narrativa que gere amor e preferência no longo prazo.","Beleza":"Presença digital forte mas sem um território de marca que diferencie da concorrência.","Varejo Moda":"Performance de varejo sem construção de desejo — a marca precisa ser mais que o preço.","Automotivo":"Comunicação de produto sem construção de sonho e aspiração junto ao consumidor."})[s]||"Marca com investimento em mídia sem narrativa de longo prazo.",
+   prompt:"Você representa a Milà, agência especializada em construção de marca e storytelling. Cria narrativas que geram amor, preferência e relevância cultural para grandes marcas."},
+  {id:"404",name:"404",color:"#7EB8D4",rgb:"126,184,212",desc:"Agência de inovação, tech e novos modelos",
+   angles:["Inovação Digital","Novos Modelos de Negócio","Tech + Criatividade","Transformação Digital","Futuro da Comunicação"],
+   fit:s=>["Fintech","B2B Tech","Martech","Proptech","Super App","Social Media"].includes(s)?"alto":["Telecom","Saude","Educacao","Streaming"].includes(s)?"medio":"medio",
+   dor:s=>({"Fintech":"Produto inovador mas comunicação ainda no modelo tradicional.","B2B Tech":"Empresa de tecnologia com dificuldade de comunicar valor de forma humana e acessível.","Super App":"Produto com múltiplas features sem posicionamento claro."})[s]||"Empresa inovadora com comunicação ainda no modelo tradicional.",
+   prompt:"Você representa a 404, agência de inovação que une tecnologia e criatividade para marcas que estão construindo o futuro."},
+  {id:"cccaramelo",name:"cccaramelo",color:"#E8916A",rgb:"232,145,106",desc:"Agência de cultura, entretenimento e música",
+   angles:["Cultura e Entretenimento","Branded Music","Comunidade e Fandom","Relevância Jovem","Co-criação com Artistas"],
+   fit:s=>["FMCG","Streaming","Social Media","Food","Beleza","Entretenimento"].includes(s)?"alto":["Varejo","Varejo Moda","Automotivo"].includes(s)?"medio":"medio",
+   dor:s=>({"FMCG":"Marca com grande verba mas sem conexão real com cultura — o consumidor jovem não se identifica.","Streaming":"Plataforma de entretenimento que precisa de presença cultural fora do próprio produto.","Social Media":"Marca que existe no social mas sem território cultural que gere pertencimento."})[s]||"Marca com investimento em mídia sem conexão com a cultura do seu consumidor.",
+   prompt:"Você representa a cccaramelo, agência especializada em cultura, entretenimento e música. Conecta marcas com a cultura brasileira através de música, comunidades e co-criação com artistas."},
+  {id:"gaia",name:"GAIA",color:"#A78BFA",rgb:"167,139,250",desc:"Martech do grupo — CR.IA e BrandSync",
+   angles:["Produção de Peças com IA","BrandSync Franquias","Escala de Criativo","Performance de Conteúdo","Inteligência de Campanha"],
+   fit:s=>"alto",
+   dor:s=>({"E-commerce":"Alto volume de SKUs sem infraestrutura de produção que acompanhe a demanda de peças.","FMCG":"Múltiplas campanhas simultâneas com produtoras lentas que não aprendem com os dados.","Fintech":"Campanha com dezenas de variações necessárias para teste sem capacidade de produção em escala."})[s]||"Alto volume de peças necessárias sem infraestrutura de produção inteligente.",
+   prompt:"Você representa a GAIA, martech com CR.IA (estúdio de criativos com IA) e BrandSync (coordenação de conteúdo para franquias). Cases: McFriday, Natura, iCarros."},
+  {id:"catalyst",name:"Catalyst",color:"#34D399",rgb:"52,211,153",desc:"Mobile growth — compra e otimização de mídia mobile",
+   angles:["Mobile Growth","Apple Ads + In-App","Aquisição de Usuários","Retenção Mobile","CTV e Web Mobile"],
+   fit:s=>["Super App","Fintech","E-commerce","Streaming","Proptech","Marketplace"].includes(s)?"alto":["Saude","Educacao","FMCG"].includes(s)?"medio":"baixo",
+   dor:s=>({"Super App":"App com alto investimento em mídia mobile mas sem especialista em Apple Ads.","Fintech":"CAC de aquisição no app crescendo sem controle por falta de especialização em mobile growth.","E-commerce":"App com bom produto mas aquisição e retenção mobile sem estrutura de otimização."})[s]||"App com potencial de crescimento sem estrutura especializada de mobile growth.",
+   prompt:"Você representa a Catalyst, empresa de mobile growth. Compra e otimiza mídia mobile. Cases: McDonald's, Nomad, Belo, Rentcars."},
+  {id:"mantiqueira",name:"Mantiqueira",color:"#F472B6",rgb:"244,114,182",desc:"Empresa de conteúdo e entretenimento",
+   angles:["Branded Content","Série ou Filme de Marca","Universo Narrativo","Engajamento por Conteúdo","Amor de Marca Durável"],
+   fit:s=>["FMCG","Fintech","E-commerce","Streaming","Food","Beleza"].includes(s)?"alto":["Automotivo","Telecom","Saude"].includes(s)?"medio":"medio",
+   dor:s=>({"FMCG":"Marca com alto investimento em mídia interruptiva sem nenhum ativo de conteúdo duradouro.","Fintech":"Produto racional sem conexão emocional — conteúdo pode humanizar a marca.","E-commerce":"Plataforma que precisa sair da comunicação de oferta e construir território de conteúdo."})[s]||"Marca com investimento em interrupção sem ativo de conteúdo duradouro.",
+   prompt:"Você representa a Mantiqueira, empresa de conteúdo e entretenimento. Cria séries, filmes e roteiros para marcas. Conteúdo que gera relevância por interesse, não por interrupção."},
+  {id:"agente",name:"A.gente",color:"#FB923C",rgb:"251,146,60",desc:"Agência de influência estratégica",
+   angles:["Influência Estratégica","Fit de Audiência","Briefing de Campanha","Creator Economy","Micro e Macro Influência"],
+   fit:s=>["Beleza","FMCG","Varejo Moda","Food","Streaming","Social Media"].includes(s)?"alto":["E-commerce","Fintech","Saude"].includes(s)?"medio":"medio",
+   dor:s=>({"Beleza":"Investimento em influenciadores sem briefing alinhado à campanha — cada creator fala uma coisa diferente.","FMCG":"Influência usada como mídia paga sem estratégia de fit de audiência.","Varejo Moda":"Ações de influência pontuais sem consistência com o brand guide."})[s]||"Investimento em influenciadores sem estratégia ou fit de audiência definido.",
+   prompt:"Você representa a A.gente, agência de influência estratégica com briefing aderente à campanha e fit real com o público do creator."},
+  {id:"vitrine",name:"Vitrine",color:"#60A5FA",rgb:"96,165,250",desc:"Maior comprador de OOH e DOOH do Brasil",
+   angles:["Poder de Compra OOH","Inteligência de Inventário","Projetos Especiais","ROI de OOH","Negociação Sênior"],
+   fit:s=>"alto",
+   dor:s=>({"E-commerce":"Alto investimento em digital mas zero presença física — OOH fecha o loop de awareness.","FMCG":"Compra de OOH feita de forma subjetiva, sem dados quantitativos de potencial de público.","Fintech":"Marca digital que precisa construir presença física e autoridade."})[s]||"Investimento em OOH sem inteligência de dados, poder de negociação ou atendimento sênior.",
+   prompt:"Você representa a Vitrine, maior comprador de OOH e DOOH do Brasil. Inventário diário atualizado, central de inteligência com dados quantitativos, maior poder de negociação e atendimento ultra-sênior."},
+  {id:"gux",name:"GUX",color:"#00FF94",rgb:"0,255,148",desc:"UX estratégico que gera resultado real de negócio",
+   angles:["Conversão e Receita","Retenção e Churn","UX para LLMs e IA","Brand Consistency Digital","Diagnóstico Gratuito"],
+   fit:s=>["Fintech","E-commerce","Super App","Proptech","B2B Tech","Streaming","Social Media","Marketplace"].includes(s)?"alto":["Telecom","Saude","Educacao","Automotivo","Varejo"].includes(s)?"medio":"medio",
+   dor:s=>({"Fintech":"Alta fricção no onboarding digital e CAC elevado por fluxos não otimizados para LLMs.","E-commerce":"Taxa de abandono de carrinho acima da média por inconsistências de UX entre canais.","Super App":"Múltiplos fluxos desalinhados com o brand guide — queda de retenção em sessões recorrentes.","Streaming":"Churn silencioso por experiências de descoberta que não se adaptam ao novo comportamento de busca."})[s]||"Experiência digital com alta fricção impactando diretamente conversão e receita.",
+   prompt:"Você representa a GUX, empresa de UX estratégico que gera resultado real de negócio. Avalia se a experiência digital está preparada para LLMs, garante atribuição conectada à receita, assegura consistência com brand guide. Alto craft em UX + performance."}
+];
+
+// ─── HELPERS ──────────────────────────────────────────────────────────────────
+async function hunterSearch(domain){try{const r=await fetch(`https://api.hunter.io/v2/domain-search?domain=${domain}&api_key=${HUNTER_KEY}&limit=10`);const d=await r.json();return(d.data&&d.data.emails)||[];}catch{return[];}}
+async function hunterVerify(email){try{const r=await fetch(`https://api.hunter.io/v2/email-verifier?email=${email}&api_key=${HUNTER_KEY}`);const d=await r.json();return d.data||null;}catch{return null;}}
+async function lushaSearch(fn,ln,company){try{const r=await fetch(`https://api.lusha.com/v2/person?firstName=${encodeURIComponent(fn)}&lastName=${encodeURIComponent(ln)}&company=${encodeURIComponent(company)}`,{headers:{"api_key":LUSHA_KEY}});const d=await r.json();const p=(d.data&&d.data.phoneNumbers)||[];return p.length>0?p[0].internationalNumber||"":" ";}catch{return "";}}
+async function lushaEnrich(fn,ln,company){try{const r=await fetch(`https://api.lusha.com/v2/person?firstName=${encodeURIComponent(fn)}&lastName=${encodeURIComponent(ln)}&company=${encodeURIComponent(company)}`,{headers:{"api_key":LUSHA_KEY}});const d=await r.json();const phones=(d.data&&d.data.phoneNumbers)||[];const emails=(d.data&&d.data.emails)||[];return{phone:phones.length>0?phones[0].internationalNumber||"":"",email:emails.length>0?emails[0].emailAddress||"":""};}catch{return{phone:"",email:""};}}
+async function pipedriveSearch(email,key){try{const r=await fetch(`https://api.pipedrive.com/v1/persons/search?term=${encodeURIComponent(email)}&api_token=${key}`);const d=await r.json();return d.data&&d.data.items&&d.data.items.length>0?d.data.items[0].item:null;}catch{return null;}}
+async function pipedriveCreate(contact,empresa,key){try{const r=await fetch(`https://api.pipedrive.com/v1/persons?api_token=${key}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:contact.nome,email:[{value:contact.email,primary:true}],phone:[{value:contact.wa||"",primary:true}],org_name:empresa,job_title:contact.cargo||""})});const d=await r.json();return d.data||null;}catch{return null;}}
+async function createDeal(empresa,nomeCo,key){try{const r=await fetch(`https://api.pipedrive.com/v1/deals?api_token=${key}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({title:nomeCo+" — "+empresa,status:"open"})});const d=await r.json();return d.data||null;}catch{return null;}}
+async function createActivity(dealId,label,note,key){try{await fetch(`https://api.pipedrive.com/v1/activities?api_token=${key}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({subject:label,type:"task",note,done:0,...(dealId?{deal_id:dealId}:{})})});}catch{}}
+async function gerarEmail(nome,empresa,setor,grupo,angulo,tom,hist){
+  const assinatura=ASSINATURAS[grupo.id]||("Pedro Ica\nHead of Growth | "+grupo.name);
+  const prompt=`${grupo.prompt}\n\nEscreva um email de prospecção B2B para ${empresa} do setor ${setor}.\nÂNGULO: ${angulo}\nTOM: ${tom}\n${nome?"DESTINATÁRIO: "+nome+"\n":""}${hist?"HISTÓRICO: "+hist+"\n":""}DOR IDENTIFICADA: ${grupo.dor(setor)}\n\nREGRAS: primeira linha específica sobre ${empresa}, conectar a dor ao que ${grupo.name} faz, benchmark do setor ${setor}, CTA de 20 min, máximo 180 palavras.\nUSE OBRIGATORIAMENTE esta assinatura no final:\n${assinatura}\nRetorne APENAS JSON sem markdown: {"assunto":"...","corpo":"..."}`;
+  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:900,messages:[{role:"user",content:prompt}]})});
+  const d=await r.json();
+  const txt=(d.content&&d.content[0]&&d.content[0].text)||"{}";
+  return JSON.parse(txt.replace(/```json|```/g,"").trim());
+}
+async function gerarIntel(empresa,setor,grupo,decs,hist){
+  const prompt=`Você é analista de inteligência comercial para ${grupo.name} (${grupo.desc}).\nEMPRESA: ${empresa} | SETOR: ${setor}\nDECISORES: ${decs||"nenhum"}\nHISTÓRICO: ${hist||"nenhuma atividade"}\n\nGere análise estratégica em parágrafos fluidos (sem bullets) cobrindo: diagnóstico de fit com ${grupo.name}, recomendação baseada no histórico, serviço com maior chance de abrir porta e insight de timing do setor ${setor}. Máximo 200 palavras.`;
+  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:700,messages:[{role:"user",content:prompt}]})});
+  const d=await r.json();
+  return(d.content&&d.content[0]&&d.content[0].text)||"";
+}
+async function gerarAlertas(empresa,setor,grupo){
+  const prompt=`Simule 3 alertas de inteligência de mercado sobre ${empresa} (setor ${setor}) relevantes para ${grupo.name}. JSON sem markdown: [{"title":"...","desc":"...","urgency":"new"}]`;
+  const r=await fetch("https://api.anthropic.com/v1/messages",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model:"claude-sonnet-4-20250514",max_tokens:500,messages:[{role:"user",content:prompt}]})});
+  const d=await r.json();
+  try{return JSON.parse((d.content&&d.content[0]&&d.content[0].text||"[]").replace(/```json|```/g,"").trim());}catch{return[];}
+}
+
+function fitColor(f){return f==="alto"?"#00FF94":f==="medio"?"#FFB547":"#FF4757";}
+function fitLabel(f){return f==="alto"?"FIT ALTO":f==="medio"?"FIT MED":"SEM FIT";}
+function initials(name){return(name||"?").split(" ").slice(0,2).map(w=>w[0]).join("").toUpperCase();}
+function loadSt(k,def){try{const v=localStorage.getItem(k);return v?JSON.parse(v):def;}catch{return def;}}
+function saveSt(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+function hexRgb(h){const m=h.replace("#","").match(/.{2}/g);return m?m.map(x=>parseInt(x,16)).join(","):"255,255,255";}
+
+// ─── AGENTE DE ENRIQUECIMENTO ─────────────────────────────────────────────────
+function EnrichAgent({empresa,grupo,acc,onAccUpdate,onClose}){
+  const [nomeCMO,setNomeCMO]=useState("");
+  const [cargoCMO,setCargoCMO]=useState("CMO");
+  const [lushaResult,setLushaResult]=useState(null);
+  const [lushaLoading,setLushaLoading]=useState(false);
+  const [lushaMsg,setLushaMsg]=useState("");
+  const [done,setDone]=useState(false);
+
+  const openGoogle=()=>{
+    const q=encodeURIComponent('"'+empresa+'" CMO OR "Head de Mídia" OR "Head de Marketing" site:linkedin.com');
+    window.open("https://www.google.com/search?q="+q,"_blank");
+  };
+  const runLusha=async()=>{
+    if(!nomeCMO.trim())return;
+    setLushaLoading(true);setLushaMsg("");
+    const parts=nomeCMO.trim().split(" ");
+    const fn=parts[0];const ln=parts.slice(1).join(" ")||parts[0];
+    const res=await lushaEnrich(fn,ln,empresa);
+    setLushaLoading(false);
+    if(!res.phone&&!res.email){setLushaMsg("Lusha não encontrou dados — adicione manualmente após salvar.");}
+    else{setLushaMsg("");}
+    setLushaResult(res);setDone(true);
+  };
+  const salvar=()=>{
+    if(!nomeCMO.trim())return;
+    const d={nome:nomeCMO.trim(),cargo:cargoCMO,email:lushaResult?lushaResult.email||"":"",wa:lushaResult?lushaResult.phone||"":"",li:"",aiSuggested:true,addedAt:new Date().toLocaleDateString("pt-BR")};
+    const existing=acc.decisors||[];
+    if(!existing.find(x=>x.nome===d.nome)){onAccUpdate({...acc,decisors:[...existing,d]});}
+    onClose();
+  };
+  return(
+    <div className="modov"><div className="mod">
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+        <div className="modtitle" style={{marginBottom:0}}>⚡ Agente de Enriquecimento</div>
+        <button onClick={onClose} style={{background:"none",border:"none",color:"#444",cursor:"pointer",fontSize:20}}>×</button>
+      </div>
+      <div style={{fontSize:11,fontFamily:"DM Mono,monospace",color:"#555",marginBottom:14}}>Empresa: <span style={{color:"#eee",fontWeight:700}}>{empresa}</span></div>
+      <div className="enrich-box">
+        <div className="enrich-step">
+          <div className="enrich-num">1</div>
+          <div className="enrich-body">
+            <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>Buscar CMO/Head de Mídia no Google</div>
+            <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#555",marginBottom:8}}>Abre busca no Google para encontrar o responsável por mídia/marketing no LinkedIn.</div>
+            <button className="btn btno btnsm" onClick={openGoogle} style={{color:"#A78BFA",borderColor:"rgba(167,139,250,.3)"}}>🔍 Abrir Google + LinkedIn</button>
+          </div>
+        </div>
+        <div className="enrich-step">
+          <div className="enrich-num">2</div>
+          <div className="enrich-body">
+            <div style={{fontSize:11,fontWeight:700,marginBottom:6}}>Informar nome encontrado</div>
+            <div className="g2" style={{marginBottom:0}}>
+              <div className="frow"><div className="flbl">NOME COMPLETO</div><input className="finp" placeholder="Ex: Ana Paula Silva" value={nomeCMO} onChange={e=>setNomeCMO(e.target.value)}/></div>
+              <div className="frow"><div className="flbl">CARGO</div><input className="finp" placeholder="CMO, Head de Mídia..." value={cargoCMO} onChange={e=>setCargoCMO(e.target.value)}/></div>
+            </div>
+          </div>
+        </div>
+        <div className="enrich-step">
+          <div className="enrich-num">3</div>
+          <div className="enrich-body">
+            <div style={{fontSize:11,fontWeight:700,marginBottom:4}}>Enriquecer com Lusha</div>
+            <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#555",marginBottom:8}}>Busca telefone e email corporativo automaticamente.</div>
+            <button className="btn btno btnsm" onClick={runLusha} disabled={!nomeCMO||lushaLoading} style={{color:"#A78BFA",borderColor:"rgba(167,139,250,.3)"}}>{lushaLoading?"Buscando...":"⚡ Enriquecer com Lusha"}</button>
+            {lushaMsg&&<div style={{fontSize:9,color:"#FFB547",fontFamily:"DM Mono,monospace",marginTop:6}}>{lushaMsg}</div>}
+          </div>
+        </div>
+        {done&&(
+          <div className="enrich-step">
+            <div className="enrich-num" style={{background:"rgba(52,211,153,.2)",borderColor:"rgba(52,211,153,.4)",color:"#34D399"}}>✓</div>
+            <div className="enrich-body">
+              <div style={{fontSize:11,fontWeight:700,color:"#34D399",marginBottom:4}}>Resultado Lusha</div>
+              {lushaResult&&(lushaResult.email||lushaResult.phone)?(
+                <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                  {lushaResult.email&&<div style={{fontSize:10,fontFamily:"DM Mono,monospace",color:"#60A5FA"}}>✉ {lushaResult.email}</div>}
+                  {lushaResult.phone&&<div style={{fontSize:10,fontFamily:"DM Mono,monospace",color:"#25D366"}}>💬 {lushaResult.phone}</div>}
+                </div>
+              ):<div style={{fontSize:10,fontFamily:"DM Mono,monospace",color:"#555"}}>Dados não encontrados — preencha manualmente após salvar.</div>}
+            </div>
+          </div>
+        )}
+      </div>
+      <div className="modacts">
+        <button className="btn btno btnsm" onClick={onClose}>Cancelar</button>
+        {nomeCMO&&<button className="btn btnp btnsm" style={{background:grupo.color}} onClick={salvar}>✓ Salvar Decisor</button>}
+      </div>
+    </div></div>
+  );
+}
+
+// ─── EMAIL MODAL ──────────────────────────────────────────────────────────────
+function EmailModal({dc,empresa,setor,grupo,angulo,hist,restrictions,onClose}){
+  const [email,setEmail]=useState(null);
+  const [loading,setLoading]=useState(true);
+  const [copied,setCopied]=useState("");
+  const [tom,setTom]=useState("Direto e estratégico");
+  const gerar=()=>{setLoading(true);gerarEmail(dc&&dc.nome,empresa,setor,grupo,angulo,tom,hist).then(e=>{setEmail(e);setLoading(false);}).catch(()=>{setEmail({assunto:"Erro — configure a Claude API.",corpo:""});setLoading(false);});};
+  useEffect(()=>{gerar();},[]);
+  const cp=(txt,k)=>{navigator.clipboard.writeText(txt);setCopied(k);setTimeout(()=>setCopied(""),2500);};
+  const oo=()=>email&&window.open(`https://outlook.office.com/mail/deeplink/compose?${dc&&dc.email?"to="+dc.email+"&":""}subject=${encodeURIComponent(email.assunto)}&body=${encodeURIComponent(email.corpo)}`,"_blank");
+  const og=()=>email&&window.open(`https://mail.google.com/mail/?view=cm&${dc&&dc.email?"to="+dc.email+"&":""}su=${encodeURIComponent(email.assunto)}&body=${encodeURIComponent(email.corpo)}`,"_blank");
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:1000,padding:16}}>
+      <div style={{background:"#0e0e0e",borderRadius:10,width:"100%",maxWidth:560,border:"1px solid #222",maxHeight:"92vh",overflowY:"auto"}}>
+        <div style={{padding:"16px 20px",borderBottom:"1px solid #1a1a1a",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontWeight:700,fontSize:14,color:grupo.color}}>Email IA — {grupo.name}</div>
+            <div style={{fontSize:11,color:"#444",marginTop:2,fontFamily:"DM Mono,monospace"}}>{empresa}{dc&&dc.nome?" · "+dc.nome:""}</div>
+          </div>
+          <button onClick={onClose} style={{background:"none",border:"none",color:"#444",cursor:"pointer",fontSize:20}}>×</button>
+        </div>
+        {restrictions&&restrictions.length>0&&(
+          <div style={{margin:"12px 20px 0",background:"rgba(255,71,87,.06)",border:"1px solid rgba(255,71,87,.25)",borderRadius:5,padding:"10px 12px"}}>
+            <div style={{fontSize:10,color:"#FF4757",fontWeight:700,marginBottom:4}}>⚠ ATENÇÃO — Lead com restrição de conflito</div>
+            {restrictions.map((r,i)=><div key={i} style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#884040",marginTop:2}}>{r.reason} · {r.category}</div>)}
+          </div>
+        )}
+        <div style={{padding:"16px 20px"}}>
+          <div style={{display:"flex",gap:6,marginBottom:12,flexWrap:"wrap"}}>
+            {["Direto e estratégico","Provocativo","Consultivo","Follow-up"].map(t=>(
+              <button key={t} onClick={()=>setTom(t)} style={{padding:"4px 9px",borderRadius:3,border:"1px solid "+(tom===t?grupo.color:"#1e1e1e"),background:"transparent",color:tom===t?grupo.color:"#444",fontSize:9,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>{t}</button>
+            ))}
+            <button onClick={gerar} style={{padding:"4px 9px",borderRadius:3,border:"1px solid #1e1e1e",background:"transparent",color:"#444",fontSize:9,fontFamily:"DM Mono,monospace",cursor:"pointer",marginLeft:"auto"}}>↺ Regerar</button>
+          </div>
+          {loading?<div style={{textAlign:"center",padding:40,color:"#333",fontFamily:"DM Mono,monospace",fontSize:11}}>Gerando email personalizado...</div>:(
+            <>
+              <div style={{marginBottom:10}}>
+                <div style={{fontSize:8,color:"#333",fontFamily:"DM Mono,monospace",letterSpacing:"1px",textTransform:"uppercase",marginBottom:4}}>ASSUNTO</div>
+                <input style={{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:3,padding:"8px 10px",color:"#eee",fontFamily:"DM Mono,monospace",fontSize:12,outline:"none"}} value={email.assunto} onChange={e=>setEmail(em=>({...em,assunto:e.target.value}))}/>
+              </div>
+              <div style={{marginBottom:14}}>
+                <div style={{fontSize:8,color:"#333",fontFamily:"DM Mono,monospace",letterSpacing:"1px",textTransform:"uppercase",marginBottom:4}}>CORPO</div>
+                <textarea style={{width:"100%",background:"#111",border:"1px solid #1e1e1e",borderRadius:3,padding:"8px 10px",color:"#eee",fontFamily:"DM Mono,monospace",fontSize:11,outline:"none",minHeight:180,resize:"vertical",lineHeight:1.7}} value={email.corpo} onChange={e=>setEmail(em=>({...em,corpo:e.target.value}))}/>
+              </div>
+              <div style={{background:"#fff",borderRadius:5,overflow:"hidden",marginBottom:12}}>
+                <div style={{background:"#f1f3f4",padding:"6px 12px",display:"flex",gap:5}}><div style={{width:8,height:8,borderRadius:"50%",background:"#ff5f57"}}></div><div style={{width:8,height:8,borderRadius:"50%",background:"#febc2e"}}></div><div style={{width:8,height:8,borderRadius:"50%",background:"#28c840"}}></div></div>
+                <div style={{padding:"10px 16px 6px",fontFamily:"Arial,sans-serif",fontSize:14,fontWeight:700,color:"#000",borderBottom:"1px solid #e0e0e0"}}>{email.assunto}</div>
+                <div style={{padding:"10px 16px 14px",fontFamily:"Arial,sans-serif",fontSize:12.5,color:"#111",lineHeight:1.75,whiteSpace:"pre-wrap"}}>{email.corpo}</div>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:6}}>
+                <button onClick={oo} style={{padding:"10px 0",borderRadius:4,border:"none",background:"#0078d4",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>Abrir no Outlook</button>
+                <button onClick={og} style={{padding:"10px 0",borderRadius:4,border:"none",background:"#ea4335",color:"#fff",fontWeight:700,fontSize:12,cursor:"pointer"}}>Abrir no Gmail</button>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                <button onClick={()=>cp(email.corpo,"corpo")} style={{padding:"8px 0",borderRadius:4,border:"1px solid #1e1e1e",background:copied==="corpo"?"#16a34a":"#111",color:copied==="corpo"?"#fff":"#555",fontSize:11,cursor:"pointer"}}>{copied==="corpo"?"Copiado!":"Copiar corpo"}</button>
+                <button onClick={()=>cp("Assunto: "+email.assunto+"\n\n"+email.corpo,"tudo")} style={{padding:"8px 0",borderRadius:4,border:"1px solid #1e1e1e",background:copied==="tudo"?"#16a34a":"#111",color:copied==="tudo"?"#fff":"#555",fontSize:11,cursor:"pointer"}}>{copied==="tudo"?"Copiado!":"Copiar tudo"}</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── DEC CARD ─────────────────────────────────────────────────────────────────
+function DecCard({dc,empresa,setor,grupo,isEditing,onToggleEdit,onUpdate,onRemove,pdKey,restrictions,onWALog}){
+  const [pdStatus,setPdStatus]=useState(null);
+  const [pdLoading,setPdLoading]=useState(false);
+  const [showEmail,setShowEmail]=useState(false);
+  const [verifying,setVerifying]=useState(false);
+  const verifyEmail=async()=>{if(!dc.email)return;setVerifying(true);const v=await hunterVerify(dc.email);if(v)onUpdate("emailStatus",v.result);setVerifying(false);};
+  const syncPD=async()=>{if(!pdKey||!dc.email)return;setPdLoading(true);const ex=await pipedriveSearch(dc.email,pdKey);setPdStatus(ex?"exists":(await pipedriveCreate(dc,empresa,pdKey))?"ok":"error");setPdLoading(false);};
+  const handleWA=()=>{window.open("https://wa.me/"+dc.wa.replace(/\D/g,""),"_blank");if(onWALog)onWALog(dc.nome);};
+  const stC={"ok":"#34D399","invalid":"#FF4757","risky":"#FFB547","unknown":"#555","exists":"#A78BFA"};
+  return(
+    <>
+      {showEmail&&<EmailModal dc={dc} empresa={empresa} setor={setor} grupo={grupo} angulo={grupo.angles[0]} hist="" restrictions={restrictions} onClose={()=>setShowEmail(false)}/>}
+      <div className="deccard">
+        <div className="decav" style={{background:`rgba(${grupo.rgb},.1)`,color:grupo.color}}>{initials(dc.nome||"?")}</div>
+        <div className="decinfo">
+          <div className="decname">{dc.nome||"Nome não informado"}{dc.aiSuggested&&<span style={{fontSize:7,marginLeft:5,padding:"1px 4px",borderRadius:3,background:"rgba(167,139,250,.12)",color:"#A78BFA"}}>IA</span>}</div>
+          <div className="deccargo">{dc.cargo||"Cargo não informado"}</div>
+          <div className="dectags">
+            <span className={"dt"+(dc.email?" dtok":"")}>✉ {dc.email||"sem email"}{dc.emailStatus&&<span style={{fontSize:8,padding:"1px 4px",borderRadius:8,background:stC[dc.emailStatus]||"#222",color:"#000",marginLeft:4}}>{dc.emailStatus}</span>}</span>
+            <span className={"dt"+(dc.wa?" dtok":"")}>💬 {dc.wa||"sem WA"}</span>
+          </div>
+        </div>
+        <div className="decacts">
+          {dc.email&&<button className="btn btno btnsm" onClick={()=>setShowEmail(true)}>✉ Email IA</button>}
+          {dc.wa&&<button className="btn btno btnsm" style={{color:"#25D366",borderColor:"rgba(37,211,102,.3)"}} onClick={handleWA}>💬 WA</button>}
+          {dc.li&&<button className="btn btno btnsm" onClick={()=>window.open(dc.li.startsWith("http")?dc.li:"https://"+dc.li,"_blank")}>in</button>}
+          {dc.email&&!dc.emailStatus&&<button className="btn btno btnsm" onClick={verifyEmail} disabled={verifying}>{verifying?"...":"Validar"}</button>}
+          {pdKey&&dc.email&&<button className="btn btno btnsm" onClick={syncPD} disabled={pdLoading} style={{color:"#A78BFA",borderColor:"rgba(167,139,250,.3)"}}>{pdLoading?"...":pdStatus==="exists"?"No Pipe":pdStatus==="ok"?"Criado!":"Pipedrive"}</button>}
+          <button className="btn btno btnsm" onClick={onToggleEdit}>{isEditing?"Fechar":"Editar"}</button>
+          <button className="btn btnsm" onClick={onRemove} style={{background:"rgba(255,71,87,.08)",color:"#FF4757",border:"1px solid rgba(255,71,87,.2)"}}>✕</button>
+        </div>
+      </div>
+      {isEditing&&(
+        <div style={{background:"#0a0a0a",border:"1px solid #181818",borderRadius:4,padding:12,marginBottom:8}}>
+          <div className="g2">{[["nome","Nome"],["cargo","Cargo"],["email","Email"],["wa","WhatsApp"]].map(([f,pl])=>(
+            <div className="frow" key={f}><div className="flbl">{pl}</div><input className="finp" placeholder={pl} value={dc[f]||""} onChange={e=>onUpdate(f,e.target.value)}/></div>
+          ))}</div>
+          <div className="frow"><div className="flbl">LinkedIn URL</div><input className="finp" placeholder="linkedin.com/in/..." value={dc.li||""} onChange={e=>onUpdate("li",e.target.value)}/></div>
+        </div>
+      )}
+    </>
+  );
+}
+
+// ─── RESTRICTIONS PANEL ───────────────────────────────────────────────────────
+function RestrictionsPanel({onClose}){
+  const byAgency={};
+  RESTRICTIONS.forEach(r=>{
+    r.agencies.forEach(ag=>{
+      if(!byAgency[ag]) byAgency[ag]=[];
+      byAgency[ag].push(r);
+    });
+  });
+  const agMap={"galeria":"Galeria","mila":"Milà","404":"404","cccaramelo":"cccaramelo"};
+  const agColor={"galeria":"#E8C97A","mila":"#C9A87C","404":"#7EB8D4","cccaramelo":"#E8916A"};
+
+  // Find restricted leads
+  const resLeads=PROSP.filter(l=>{
+    return GRUPO.some(g=>checkRestrictions(l,g.id).length>0);
+  });
+
+  return(
+    <div className="modov"><div className="mod mod-wide">
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div>
+          <div className="modtitle" style={{marginBottom:4}}>⚠ Painel de Restrições de Conflito</div>
+          <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#444"}}>Revisão trimestral recomendada · Última atualização: {new Date().toLocaleDateString("pt-BR")}</div>
+        </div>
+        <button onClick={onClose} style={{background:"none",border:"none",color:"#444",cursor:"pointer",fontSize:20}}>×</button>
+      </div>
+
+      <div style={{background:"rgba(255,181,71,.05)",border:"1px solid rgba(255,181,71,.2)",borderRadius:5,padding:"10px 14px",marginBottom:18}}>
+        <div style={{fontSize:10,color:"#FFB547",fontWeight:700,marginBottom:4}}>📅 LEMBRETE TRIMESTRAL</div>
+        <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#887040",lineHeight:1.6}}>Revise estas restrições a cada 3 meses para confirmar se os clientes e contratos ainda estão ativos. Restrições expiradas são removidas automaticamente quando a data vence.</div>
+      </div>
+
+      <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#444",marginBottom:12}}>
+        {resLeads.length} leads restritos identificados na base
+      </div>
+
+      {Object.keys(byAgency).sort().map(ag=>(
+        <div key={ag} style={{marginBottom:18}}>
+          <div style={{fontSize:10,fontWeight:700,color:agColor[ag]||"#888",fontFamily:"DM Mono,monospace",letterSpacing:1,marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:agColor[ag]||"#888",display:"inline-block"}}></span>
+            {(agMap[ag]||ag).toUpperCase()} — {byAgency[ag].length} RESTRIÇÕES
+          </div>
+          {byAgency[ag].map((r,i)=>(
+            <div key={i} className="res-row">
+              <div style={{flex:2}}>
+                <div style={{fontSize:10,fontWeight:700}}>{r.reason}</div>
+                <div style={{fontSize:8,fontFamily:"DM Mono,monospace",color:"#444",marginTop:2}}>{r.category}</div>
+              </div>
+              <div style={{flex:3}}>
+                <div style={{display:"flex",flexWrap:"wrap",gap:3}}>
+                  {r.keywords.slice(0,6).map((k,ki)=><span key={ki} style={{fontSize:7,fontFamily:"DM Mono,monospace",padding:"1px 5px",borderRadius:100,background:"rgba(255,71,87,.08)",color:"#FF4757",border:"1px solid rgba(255,71,87,.18)"}}>{k}</span>)}
+                  {r.keywords.length>6&&<span style={{fontSize:7,fontFamily:"DM Mono,monospace",color:"#444"}}>+{r.keywords.length-6}</span>}
+                </div>
+              </div>
+              {r.expiresAt&&<div style={{fontSize:8,fontFamily:"DM Mono,monospace",color:"#FFB547",whiteSpace:"nowrap",marginLeft:8}}>até {new Date(r.expiresAt).toLocaleDateString("pt-BR")}</div>}
+            </div>
+          ))}
+        </div>
+      ))}
+
+      <div className="modacts">
+        <button className="btn btno btnsm" onClick={onClose}>Fechar</button>
+        <button className="btn btnsm" style={{background:"rgba(255,181,71,.15)",color:"#FFB547",border:"1px solid rgba(255,181,71,.3)"}} onClick={()=>{saveSt("ghub_res_review",new Date().toISOString());onClose();}}>✓ Confirmar revisão trimestral</button>
+      </div>
+    </div></div>
+  );
+}
+
+// ─── AGENT VIEW ───────────────────────────────────────────────────────────────
+// ─── SEQUENCE ENGINE ─────────────────────────────────────────────────────────
+function getSequenceStatus(acc,grupo){
+  var acts=acc.activities||[];
+  var decs=acc.decisors||[];
+  var channels=["email","whatsapp","linkedin"];
+  return decs.map(function(d){
+    var decActs=acts.filter(function(a){return a.decisor===d.nome;});
+    var usedCh=new Set(decActs.map(function(a){return a.type;}));
+    var hasReply=decActs.some(function(a){return a.type==="response";});
+    var nextCh=channels.find(function(ch){return!usedCh.has(ch);})||null;
+    return{dec:d,contacted:decActs.length>0,hasReply:hasReply,nextChannel:nextCh,attempts:decActs.length,lastDate:decActs.length>0?decActs[decActs.length-1].date:null};
+  });
+}
+
+function getNextAction(acc,grupo){
+  if(!acc||!grupo)return{dec:null,channel:null,reason:"Configure a conta primeiro"};
+  var seq=getSequenceStatus(acc,grupo);
+  var uncontacted=seq.find(function(s){return!s.contacted;});
+  if(uncontacted)return{dec:uncontacted.dec,channel:"email",reason:"Primeiro contato"};
+  var noReply=seq.find(function(s){return s.contacted&&!s.hasReply&&s.nextChannel;});
+  if(noReply)return{dec:noReply.dec,channel:noReply.nextChannel,reason:"Sem resposta — tentando "+noReply.nextChannel};
+  return{dec:null,channel:null,reason:"Todos os canais usados — buscar novos decisores"};
+}
+
+function NextActionPanel({acc,grupo,onEmail,onEnrich}){
+  var nextAct=getNextAction(acc,grupo);
+  if(!nextAct||(!nextAct.dec&&!nextAct.reason))return null;
+  return(
+    <div style={{background:"rgba("+grupo.rgb+",.04)",border:"1px solid rgba("+grupo.rgb+",.15)",borderRadius:8,padding:14,marginBottom:16}}>
+      <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:grupo.color,letterSpacing:1,marginBottom:6}}>🎯 PRÓXIMA AÇÃO</div>
+      <div style={{fontSize:12,fontWeight:600,marginBottom:4}}>
+        {nextAct.dec?nextAct.dec.nome+" — "+(nextAct.channel||"").toUpperCase():"Buscar novos decisores"}
+      </div>
+      <div style={{fontSize:10,color:"#666",fontFamily:"DM Mono,monospace",marginBottom:8}}>{nextAct.reason}</div>
+      {nextAct.channel==="email"&&nextAct.dec&&(
+        <button className="btn btnp btnsm" style={{background:grupo.color,color:"#000"}} onClick={onEmail}>✉ Enviar agora</button>
+      )}
+      {nextAct.channel==="whatsapp"&&nextAct.dec&&nextAct.dec.wa&&(
+        <button className="btn btno btnsm" style={{color:"#25D366",borderColor:"rgba(37,211,102,.3)"}} onClick={function(){window.open("https://wa.me/"+(nextAct.dec.wa||"").replace(/[^0-9]/g,""),"_blank");}}>💬 WhatsApp</button>
+      )}
+      {nextAct.channel==="linkedin"&&nextAct.dec&&(
+        <button className="btn btno btnsm" style={{color:"#0077B5",borderColor:"rgba(0,119,181,.3)"}} onClick={function(){window.open(nextAct.dec.li&&nextAct.dec.li.startsWith("http")?nextAct.dec.li:"https://www.linkedin.com","_blank");}}>in LinkedIn</button>
+      )}
+      {!nextAct.dec&&<button className="btn btno btnsm" style={{color:"#FFB547",borderColor:"rgba(255,181,71,.3)"}} onClick={onEnrich}>⚡ Enriquecer</button>}
+    </div>
+  );
+}
+
+function AgentView({grupo,lead,acc,pdKey,onAccUpdate,restricao}){
+  const [tab,setTab]=useState("overview");
+  const [curAngle,setCurAngle]=useState(0);
+  const [emailModal,setEmailModal]=useState(false);
+  const [intelLoading,setIntelLoading]=useState(false);
+  const [monLoading,setMonLoading]=useState(false);
+  const [actModal,setActModal]=useState(false);
+  const [decModal,setDecModal]=useState(false);
+  const [enrichModal,setEnrichModal]=useState(false);
+  const [editDec,setEditDec]=useState({});
+  const [actType,setActType]=useState("email");
+  const [actDec,setActDec]=useState("");
+  const [actNote,setActNote]=useState("");
+  const [newDec,setNewDec]=useState({nome:"",cargo:"",email:"",wa:"",li:""});
+
+  const setor=lead.setor||"";
+  const fit=grupo.fit(setor);
+  const dor=grupo.dor(setor);
+  const restrictions=checkRestrictions(lead,grupo.id);
+  const isRestricted=restrictions.length>0;
+  const hist=(acc.activities||[]).map(a=>a.typeLabel+" "+a.date+(a.note?": "+a.note:"")).join("; ");
+  const decStr=(acc.decisors||[]).map(d=>d.nome+" ("+d.cargo+")").join(", ");
+
+  const tabs=[["overview","VISÃO GERAL"],["decisores","DECISORES"],["historico","HISTÓRICO"],["email","EMAIL"],["intel","INTELIGÊNCIA"],["pipeline","TOP 50"],["comunidade","COMUNIDADE"]];
+
+  const genIntel=async()=>{setIntelLoading(true);const t=await gerarIntel(lead.nome,setor,grupo,decStr,hist);onAccUpdate({...acc,intel:t});setIntelLoading(false);};
+  const runMon=async()=>{setMonLoading(true);const al=await gerarAlertas(lead.nome,setor,grupo);onAccUpdate({...acc,alerts:[...(acc.alerts||[]),...al.map(a=>({...a,date:new Date().toLocaleDateString("pt-BR")})) ]});setMonLoading(false);};
+  const saveAct=async()=>{const tmap={email:"✉ Email",call:"📞 Ligação",whatsapp:"💬 WhatsApp",linkedin:"in LinkedIn",meeting:"🤝 Reunião",response:"↩ Resposta"};const a={type:actType,typeLabel:tmap[actType]||actType,decisor:actDec,note:actNote,date:new Date().toLocaleDateString("pt-BR"),synced:false};const newActs=[...(acc.activities||[]),a];onAccUpdate({...acc,activities:newActs});if(pdKey){await createActivity(acc.pdDealId,tmap[actType]+" — "+lead.nome,actNote,pdKey);a.synced=true;}setActModal(false);setActNote("");if(newActs.length>=3&&newActs.length%3===0)setTimeout(genIntel,800);};
+  const logWA=(nomeDec)=>{
+    const a={type:"whatsapp",typeLabel:"💬 WhatsApp",decisor:nomeDec||"",note:"Mensagem enviada via WhatsApp",date:new Date().toLocaleDateString("pt-BR"),synced:false};
+    onAccUpdate({...acc,activities:[...(acc.activities||[]),a]});
+  };
+  const saveDec=async()=>{if(!newDec.nome)return;const d={...newDec,addedAt:new Date().toLocaleDateString("pt-BR")};onAccUpdate({...acc,decisors:[...(acc.decisors||[]),d]});if(pdKey)await pipedriveCreate(d,lead.nome,pdKey);setDecModal(false);setNewDec({nome:"",cargo:"",email:"",wa:"",li:""});};
+  const syncDeal=async()=>{if(!pdKey)return;const deal=await createDeal(lead.nome,grupo.name,pdKey);if(deal)onAccUpdate({...acc,pdDealId:deal.id});};
+  const updDec=(i,f,v)=>{const a=[...(acc.decisors||[])];a[i]={...a[i],[f]:v};onAccUpdate({...acc,decisors:a});};
+  const rmDec=i=>{const a=[...(acc.decisors||[])];a.splice(i,1);onAccUpdate({...acc,decisors:a});};
+
+  const ResBanner=()=>isRestricted?(
+    <div className="res-banner">
+      <div className="res-icon">⚠</div>
+      <div className="res-body">
+        <div className="res-title">LEAD RESTRITO — Conflito de cliente</div>
+        <div className="res-desc">Este anunciante é concorrente direto de um cliente ativo de {grupo.name}. Prossiga com cautela e valide com liderança antes de qualquer abordagem.</div>
+        <div className="res-tags">{restrictions.map((r,i)=><span key={i} className="rtag">{r.reason}</span>)}</div>
+      </div>
+    </div>
+  ):null;
+
+  const renderTab=()=>{
+    if(tab==="overview") return(
+      <div>
+        <ResBanner/>
+        <div className="acctop">
+          <div><div className="accname">{lead.nome}</div><div className="accmeta">Rank #{lead.rank} · {setor} · <span style={{color:fitColor(fit),fontSize:8,background:`rgba(${hexRgb(fitColor(fit))},.08)`,border:`1px solid rgba(${hexRgb(fitColor(fit))},.2)`,padding:"1px 6px",borderRadius:100}}>{fitLabel(fit)}</span>{isRestricted&&<span className="restag" style={{marginLeft:6}}>RESTRITO</span>}</div></div>
+          <div className="btnrow">
+            <button className="btn btno btnsm" onClick={runMon} disabled={monLoading}>{monLoading?"...":"◉ Monitorar"}</button>
+            <button className="btn btnp btnsm" style={{background:grupo.color}} onClick={()=>setTab("decisores")}>+ Decisor</button>
+          </div>
+        </div>
+        <div className="g3">
+          <div className="card"><div className="clbl">DECISORES</div><div className="cval">{(acc.decisors||[]).length}</div><div className="csub">cadastrados</div></div>
+          <div className="card"><div className="clbl">ATIVIDADES</div><div className="cval">{(acc.activities||[]).length}</div><div className="csub">registradas</div></div>
+          <div className="card"><div className="clbl">ÚLTIMO CONTATO</div><div className="cval" style={{fontSize:12}}>{acc.activities&&acc.activities.length>0?acc.activities[acc.activities.length-1].date:"—"}</div><div className="csub">{acc.activities&&acc.activities.length>0?acc.activities[acc.activities.length-1].typeLabel:"sem contato"}</div></div>
+        </div>
+        <div className="sec">POSICIONAMENTO {grupo.name.toUpperCase()}</div>
+        <div className="aiout" style={{fontSize:10,padding:12,marginBottom:14}}>{dor}</div>
+        <div className="sec">SERVIÇOS RECOMENDADOS</div>
+        <div className="tags">{grupo.angles.map(a=><span key={a} className="tag taghl">{a}</span>)}</div>
+        {acc.intel&&<><div className="sec">ÚLTIMA ANÁLISE DE IA</div><div className="aiout">{acc.intel}</div></>}
+        <NextActionPanel acc={acc} grupo={grupo} onEmail={()=>setEmailModal(true)} onEnrich={()=>{setTab("decisores");doEnrich();}}/>
+        <div className="sec">AÇÕES RÁPIDAS</div>
+        <div className="btnrow">
+          <button className="btn btno btnsm" onClick={()=>setTab("email")}>✉ Gerar Email</button>
+          <button className="btn btno btnsm" onClick={()=>setActModal(true)}>+ Registrar Atividade</button>
+          <button className="btn btno btnsm" onClick={()=>setTab("intel")}>◈ Análise IA</button>
+          <button className="btn btno btnsm" style={{color:"#A78BFA",borderColor:"rgba(167,139,250,.3)"}} onClick={()=>setEnrichModal(true)}>⚡ Enriquecer CMO</button>
+          {pdKey&&<button className="btn btno btnsm" onClick={syncDeal} style={{color:"#A78BFA",borderColor:"rgba(167,139,250,.3)"}}>↑ Criar Deal</button>}
+        </div>
+      </div>
+    );
+
+    if(tab==="decisores") return(
+      <div>
+        <ResBanner/>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div className="sec" style={{margin:0,flex:1}}>DECISORES DE MARKETING</div>
+          <button className="btn btnp btnsm" style={{background:grupo.color,marginLeft:12}} onClick={()=>setDecModal(true)}>+ Adicionar</button>
+        </div>
+        {!(acc.decisors&&acc.decisors.length)?<div className="empty" style={{height:220}}><div className="emptyicon" style={{fontSize:28}}>◌</div><div style={{fontSize:12,fontWeight:700}}>Nenhum decisor</div></div>:(
+          acc.decisors.map((d,i)=><DecCard key={i} dc={d} empresa={lead.nome} setor={setor} grupo={grupo} isEditing={!!editDec[i]} onToggleEdit={()=>setEditDec(e=>({...e,[i]:!e[i]}))} onUpdate={(f,v)=>updDec(i,f,v)} onRemove={()=>rmDec(i)} pdKey={pdKey} restrictions={restrictions} onWALog={logWA}/>)
+        )}
+      </div>
+    );
+
+    if(tab==="historico") return(
+      <div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+          <div className="sec" style={{margin:0,flex:1}}>HISTÓRICO DE ATIVIDADES</div>
+          <button className="btn btnp btnsm" style={{background:grupo.color,marginLeft:12}} onClick={()=>setActModal(true)}>+ Registrar</button>
+        </div>
+        {!(acc.activities&&acc.activities.length)?<div className="empty" style={{height:220}}><div className="emptyicon" style={{fontSize:28}}>◌</div><div style={{fontSize:12,fontWeight:700}}>Nenhuma atividade</div></div>:(
+          <div>{[...(acc.activities||[])].reverse().map((a,i)=>{
+            const icons={email:"✉",call:"📞",whatsapp:"💬",linkedin:"in",meeting:"🤝",response:"↩"};
+            const isWA=a.type==="whatsapp";
+            return(<div className="feeditem" key={i} style={{background:isWA?"rgba(37,211,102,.04)":"transparent",borderRadius:isWA?4:0,padding:"10px 0"}}><div className="fiicon" style={{background:isWA?"rgba(37,211,102,.1)":"#0e0e0e",borderColor:isWA?"rgba(37,211,102,.3)":"#181818"}}>{icons[a.type]||"◎"}</div><div className="fibody"><div className="fititle">{a.typeLabel}{a.decisor?" — "+a.decisor:""}</div><div className="fimeta">{a.date}{a.synced&&<span style={{color:"#4B9EFF",marginLeft:6}}>· sync Pipedrive</span>}{isWA&&<span className="wa-hist-badge" style={{marginLeft:6}}>WA registrado</span>}</div>{a.note&&<div className="finote">{a.note}</div>}</div></div>);
+          })}</div>
+        )}
+      </div>
+    );
+
+    if(tab==="email") return(
+      <div>
+        <ResBanner/>
+        <div className="sec">EMAIL IA — {grupo.name.toUpperCase()}</div>
+        <div className="angtabs">{grupo.angles.map((a,i)=><button key={i} className={"angtab"+(curAngle===i?" on":"")} onClick={()=>setCurAngle(i)}>{a}</button>)}</div>
+        {hist&&<div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#333",marginBottom:12,padding:"8px 10px",background:"#0e0e0e",border:"1px solid #181818",borderRadius:3}}>◉ {(acc.activities||[]).length} atividade(s) no histórico — IA personaliza o follow-up.</div>}
+        <button className="btn btnp" style={{background:grupo.color,marginBottom:16}} onClick={()=>setEmailModal(true)}>Gerar Email com IA</button>
+        {emailModal&&<EmailModal dc={(acc.decisors||[])[0]} empresa={lead.nome} setor={setor} grupo={grupo} angulo={grupo.angles[curAngle]} hist={hist} restrictions={restrictions} onClose={()=>setEmailModal(false)}/>}
+      </div>
+    );
+
+    if(tab==="intel") return(
+      <div>
+        <div className="sec">INTELIGÊNCIA DE CONTA — {grupo.name.toUpperCase()}</div>
+        {acc.intel&&<div className="aiout">{acc.intel}</div>}
+        <div className="btnrow" style={{marginBottom:20}}>
+          <button className="btn btnp" style={{background:grupo.color}} onClick={genIntel} disabled={intelLoading}>{intelLoading?"Analisando...":"◈ Gerar Análise"}</button>
+          <button className="btn btno" onClick={runMon} disabled={monLoading}>{monLoading?"Monitorando...":"◉ Monitorar empresa"}</button>
+        </div>
+        {acc.alerts&&acc.alerts.length>0&&(
+          <><div className="sec">ALERTAS</div>
+          {[...(acc.alerts||[])].reverse().slice(0,5).map((a,i)=>{
+            const ug=a.urgency==="change"?"🔄":a.urgency==="risk"?"⚠️":"📌";
+            const bc=a.urgency==="change"?"rgba(255,181,71,.08)":"rgba(0,255,148,.04)";
+            const tc=a.urgency==="change"?"#FFB547":"#00FF94";
+            return(<div className="monitem" key={i} style={{borderColor:bc}}><div style={{fontSize:16,flexShrink:0}}>{ug}</div><div className="monbody"><div className="montitle">{a.title}</div><div className="mondesc">{a.desc}</div><div className="montime">{a.date}</div></div><span className="monbadge" style={{color:tc,border:`1px solid ${bc}`,background:bc}}>{a.urgency==="change"?"MUDANÇA":"NOVO"}</span></div>);
+          })}</>
+        )}
+      </div>
+    );
+
+    if(tab==="comunidade"){
+      var noReplyDecs=(acc.decisors||[]).filter(function(d){
+        var acts=(acc.activities||[]).filter(function(a){return a.decisor===d.nome;});
+        return acts.length>0&&!acts.some(function(a){return a.type==="response";});
+      });
+      var contentIdeas=[
+        {tipo:"📊",titulo:"Ranking das marcas brasileiras com melhor performance em mídia paga",canal:"LinkedIn"},
+        {tipo:"🎯",titulo:"Por que o CPM no Brasil subiu 40% — e o que fazer sobre isso",canal:"Email"},
+        {tipo:"🏆",titulo:"Case: como a Galeria aumentou ROAS em 3x em 90 dias",canal:"WhatsApp"},
+        {tipo:"📱",titulo:"Creator economy B2B: como CMOs usam LinkedIn creators em 2025",canal:"LinkedIn"},
+        {tipo:"💡",titulo:"Estudo exclusivo: o que os 50 maiores anunciantes planejam para 2025",canal:"Email"},
+        {tipo:"🔥",titulo:"Galeria Holding está contratando: Head de Performance e mais",canal:"LinkedIn"},
+        {tipo:"🌍",titulo:"O que agências globais fazem que o Brasil ainda não copiou",canal:"Email"},
+        {tipo:"🎬",titulo:"Vídeo: como integrar performance e criatividade em 5 minutos",canal:"WhatsApp"},
+      ];
+      return(
+        <div>
+          <div style={{marginBottom:18}}>
+            <div style={{fontSize:20,fontWeight:800,fontFamily:"Syne,sans-serif",letterSpacing:-1}}>🌐 Comunidade</div>
+            <div style={{fontSize:11,color:"#555",fontFamily:"DM Mono,monospace",marginTop:4}}>Engaje decisores sem resposta com conteúdo relevante</div>
+          </div>
+          {noReplyDecs.length>0?(
+            <div style={{marginBottom:20}}>
+              <div className="sec">SEM RESPOSTA — {noReplyDecs.length} decisor(es)</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(180px,1fr))",gap:10,marginBottom:12}}>
+                {noReplyDecs.map(function(d,i){
+                  var decActs=(acc.activities||[]).filter(function(a){return a.decisor===d.nome;});
+                  var lastAct=decActs.length>0?decActs[decActs.length-1]:null;
+                  return(
+                    <div key={i} style={{background:"var(--s2)",border:"1px solid var(--border)",borderRadius:8,padding:12}}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                        <AvatarIA nome={d.nome} color={grupo.color} rgb={grupo.rgb} size={32}/>
+                        <div>
+                          <div style={{fontSize:11,fontWeight:700}}>{d.nome}</div>
+                          <div style={{fontSize:9,color:"#555",fontFamily:"DM Mono,monospace"}}>{d.cargo}</div>
+                        </div>
+                      </div>
+                      <div style={{fontSize:9,color:"#FF4757",fontFamily:"DM Mono,monospace"}}>
+                        {decActs.length} tentativa(s) sem retorno
+                      </div>
+                      {lastAct&&<div style={{fontSize:9,color:"#444",fontFamily:"DM Mono,monospace",marginTop:2}}>Último: {lastAct.date}</div>}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ):(
+            <div style={{background:"rgba(52,211,153,.05)",border:"1px solid rgba(52,211,153,.2)",borderRadius:8,padding:14,marginBottom:18,fontSize:12,color:"#34D399"}}>
+              ✓ Todos os decisores contatados — nenhum aguardando engajamento.
+            </div>
+          )}
+          <div className="sec">CONTEÚDOS PARA ENGAJAR</div>
+          <div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {contentIdeas.map(function(idea,i){
+              return(
+                <div key={i} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 14px",background:"var(--s2)",border:"1px solid var(--border)",borderRadius:7}}>
+                  <div style={{fontSize:20,flexShrink:0}}>{idea.tipo}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,fontWeight:600,marginBottom:2}}>{idea.titulo}</div>
+                    <div style={{fontSize:9,color:"#555",fontFamily:"DM Mono,monospace"}}>Canal: {idea.canal}</div>
+                  </div>
+                  <button className="btn btno btnsm" style={{flexShrink:0,fontSize:9}} onClick={function(){
+                    var nome=noReplyDecs.length>0?noReplyDecs[0].nome.split(" ")[0]:"contato";
+                    var msg="Olá, "+nome+"! "+idea.titulo+" — Pensei que poderia ser relevante para você. Pedro Ica, Sócio — Galeria Holding.";
+                    navigator.clipboard.writeText(msg);
+                  }}>Copiar</button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      );
+    }
+  };
+
+  return(
+    <>
+      {actModal&&(<div className="modov"><div className="mod">
+        <div className="modtitle">+ Registrar Atividade</div>
+        <div className="frow"><div className="flbl">TIPO</div><select className="finp" value={actType} onChange={e=>setActType(e.target.value)}>{[["email","✉ Email enviado"],["call","📞 Ligação"],["whatsapp","💬 WhatsApp"],["linkedin","in LinkedIn DM"],["meeting","🤝 Reunião"],["response","↩ Resposta recebida"]].map(([v,l])=><option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="frow"><div className="flbl">DECISOR</div><select className="finp" value={actDec} onChange={e=>setActDec(e.target.value)}><option value="">— Geral / Empresa —</option>{(acc.decisors||[]).map((d,i)=><option key={i}>{d.nome}</option>)}</select></div>
+        <div className="frow"><div className="flbl">NOTA</div><textarea className="finp" placeholder="O que aconteceu? Próximo passo..." value={actNote} onChange={e=>setActNote(e.target.value)}/></div>
+        <div className="modacts"><button className="btn btno btnsm" onClick={()=>setActModal(false)}>Cancelar</button><button className="btn btnp btnsm" style={{background:grupo.color}} onClick={saveAct}>Registrar + Sync CRM</button></div>
+      </div></div>)}
+      {enrichModal&&<EnrichAgent empresa={lead.nome} grupo={grupo} acc={acc} onAccUpdate={onAccUpdate} onClose={()=>setEnrichModal(false)}/>}
+      {decModal&&(<div className="modov"><div className="mod">
+        <div className="modtitle">+ Adicionar Decisor</div>
+        <div className="g2"><div className="frow"><div className="flbl">NOME</div><input className="finp" placeholder="Nome completo" value={newDec.nome} onChange={e=>setNewDec(d=>({...d,nome:e.target.value}))}/></div><div className="frow"><div className="flbl">CARGO</div><input className="finp" placeholder="CMO, VP Marketing..." value={newDec.cargo} onChange={e=>setNewDec(d=>({...d,cargo:e.target.value}))}/></div></div>
+        <div className="g2"><div className="frow"><div className="flbl">EMAIL</div><input className="finp" placeholder="nome@empresa.com" value={newDec.email} onChange={e=>setNewDec(d=>({...d,email:e.target.value}))}/></div><div className="frow"><div className="flbl">WHATSAPP</div><input className="finp" placeholder="+55 11 99999-9999" value={newDec.wa} onChange={e=>setNewDec(d=>({...d,wa:e.target.value}))}/></div></div>
+        <div className="frow"><div className="flbl">LINKEDIN URL</div><input className="finp" placeholder="linkedin.com/in/..." value={newDec.li} onChange={e=>setNewDec(d=>({...d,li:e.target.value}))}/></div>
+        <div className="modacts"><button className="btn btno btnsm" onClick={()=>setDecModal(false)}>Cancelar</button><button className="btn btnp btnsm" style={{background:grupo.color}} onClick={saveDec}>Salvar + Pipedrive</button></div>
+      </div></div>)}
+      <div className="subtabs">{tabs.map(([id,lbl])=><div key={id} className={"st"+(tab===id?" on":"")} onClick={()=>setTab(id)}>{lbl}</div>)}</div>
+      <div className="panel">{renderTab()}</div>
+    </>
+  );
+}
+
+// ─── MAIN APP ─────────────────────────────────────────────────────────────────
+
+// ─── NULL-SAFE UTILS ──────────────────────────────────────────────────────────
+function fitScore(lead,grupo){
+  if(!lead||!grupo||typeof grupo.fit!=="function") return 0;
+  const f=grupo.fit(lead.setor||"");
+  const base=f==="alto"?100:f==="medio"?60:20;
+  const boost=lead.rank<=50?30:lead.rank<=100?20:lead.rank<=200?10:0;
+  const res=checkRestrictions(lead,grupo.id);
+  return base+boost+(res.length>0?-50:0);
+}
+function getTop50(grupo){
+  if(!grupo||!grupo.id||typeof grupo.fit!=="function") return [];
+  return (typeof PROSP!=="undefined"?PROSP:[])
+    .filter(l=>l&&l.nome&&l.setor)
+    .map(l=>({...l,score:fitScore(l,grupo)}))
+    .sort((a,b)=>b.score-a.score)
+    .slice(0,50);
+}
+
+
+// ─── STORAGE (multi-user) ─────────────────────────────────────────────────────
+function uid(){return Math.random().toString(36).slice(2,10);}
+function today(){return new Date().toISOString().slice(0,10);}
+function nowStr(){return new Date().toLocaleString("pt-BR");}
+async function sharedGet(k){try{const v=localStorage.getItem("ghub_sh_"+k);return v?JSON.parse(v):null;}catch(e){return null;}}
+async function sharedSet(k,v){try{localStorage.setItem("ghub_sh_"+k,JSON.stringify(v));}catch(e){}}
+async function personalGet(k){try{const v=localStorage.getItem("ghub_me_"+k);return v?JSON.parse(v):null;}catch(e){return null;}}
+async function personalSet(k,v){try{if(v===null){localStorage.removeItem("ghub_me_"+k);}else{localStorage.setItem("ghub_me_"+k,JSON.stringify(v));}}catch(e){}}
+async function logActivity(curUser,empresa,grupoName,tipo,tipoLabel,decisor,nota){
+  const entry={id:uid(),isoDate:today(),time:new Date().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),
+    userId:curUser?curUser.id:"pedro",userName:curUser?curUser.name:"Pedro Ica",
+    empresa,grupoName,tipo,tipoLabel,decisor:decisor||"",nota:nota||""};
+  const log=await sharedGet("activities_log")||[];
+  log.push(entry);
+  if(log.length>3000)log.splice(0,log.length-3000);
+  await sharedSet("activities_log",log);
+  return entry;
+}
+
+// ─── AVATAR IA ────────────────────────────────────────────────────────────────
+function AvatarIA({nome,size}){
+  const ini=initials(nome||"?");
+  const s=size||64;
+  const grads=[["#E8C97A","#C9A87C"],["#A78BFA","#7C3AED"],["#34D399","#059669"],
+    ["#60A5FA","#2563EB"],["#F472B6","#DB2777"],["#FB923C","#EA580C"],
+    ["#7EB8D4","#0369A1"],["#00FF94","#00C570"]];
+  const g=grads[((nome||"A").charCodeAt(0))%grads.length];
+  return(
+    <div style={{width:s,height:s,borderRadius:"50%",flexShrink:0,
+      background:"linear-gradient(135deg,"+g[0]+","+g[1]+")",
+      display:"flex",alignItems:"center",justifyContent:"center",
+      fontSize:Math.round(s*.32),fontWeight:800,color:"#fff",fontFamily:"Syne,sans-serif",
+      letterSpacing:-1,boxShadow:"0 4px 14px rgba(0,0,0,.4)"}}>
+      {ini}
+    </div>
+  );
+}
+
+// ─── FIGURINHA CARD ───────────────────────────────────────────────────────────
+function FigurinhaCard({dc,grupo,contacted,level,onEmail,onWhatsApp,onLinkedIn,onVCard,onUpdate,onRemove}){
+  const [editing,setEditing]=useState(false);
+  if(!dc||!grupo) return null;
+  const isDecisao=level==="decisao";
+  return(
+    <div style={{background:"#0e0e0e",border:"1px solid "+(isDecisao?"rgba("+grupo.rgb+",.35)":"#1a1a1a"),
+      borderRadius:10,overflow:"hidden",position:"relative",display:"flex",flexDirection:"column"}}>
+      <div style={{position:"absolute",inset:0,background:"linear-gradient(135deg,rgba(255,255,255,.03),transparent)",pointerEvents:"none"}}></div>
+      {contacted&&<div style={{position:"absolute",top:7,right:7,fontSize:8,fontFamily:"DM Mono,monospace",
+        padding:"2px 6px",borderRadius:100,background:"rgba(52,211,153,.2)",color:"#34D399",
+        border:"1px solid rgba(52,211,153,.35)"}}>✓ Contatado</div>}
+      {dc.aiSuggested&&!contacted&&<div style={{position:"absolute",top:7,right:7,fontSize:8,fontFamily:"DM Mono,monospace",
+        padding:"2px 6px",borderRadius:100,background:"rgba(167,139,250,.2)",color:"#A78BFA",
+        border:"1px solid rgba(167,139,250,.35)"}}>✨ IA</div>}
+      <div style={{height:100,background:"linear-gradient(135deg,rgba("+grupo.rgb+",.12),rgba("+grupo.rgb+",.04))",
+        display:"flex",alignItems:"center",justifyContent:"center",position:"relative"}}>
+        <AvatarIA nome={dc.nome} size={68}/>
+        {dc.li&&<a href={dc.li.startsWith("http")?dc.li:"https://"+dc.li} target="_blank"
+          style={{position:"absolute",bottom:6,right:8,width:22,height:22,borderRadius:"50%",
+            background:"#0077B5",display:"flex",alignItems:"center",justifyContent:"center",
+            fontSize:11,color:"#fff",fontWeight:700,textDecoration:"none"}}>in</a>}
+      </div>
+      <div style={{padding:"10px 12px",flex:1}}>
+        {editing?(
+          <div>
+            {[["nome","Nome"],["cargo","Cargo"],["email","Email"],["wa","WhatsApp"],["li","LinkedIn"]].map(([f,p])=>(
+              <input key={f} className="finp" style={{fontSize:10,padding:"5px 7px",marginBottom:4}}
+                placeholder={p} value={dc[f]||""} onChange={e=>onUpdate&&onUpdate(f,e.target.value)}/>
+            ))}
+            <button onClick={()=>setEditing(false)} style={{width:"100%",padding:"6px",borderRadius:4,
+              border:"none",background:grupo.color,color:"#000",fontWeight:700,fontSize:10,cursor:"pointer",marginTop:2}}>✓ Salvar</button>
+            {onRemove&&<button onClick={onRemove} style={{width:"100%",marginTop:4,padding:"4px",
+              border:"1px solid rgba(255,71,87,.3)",borderRadius:4,background:"transparent",
+              color:"#FF4757",fontSize:9,cursor:"pointer"}}>Remover</button>}
+          </div>
+        ):(
+          <div>
+            <div style={{fontWeight:700,fontSize:12,marginBottom:2,cursor:"pointer",lineHeight:1.3}}
+              onClick={()=>setEditing(true)} title="Clique para editar">{dc.nome||"Sem nome"}</div>
+            <div style={{fontSize:9,color:"#666",fontFamily:"DM Mono,monospace",marginBottom:6,cursor:"pointer"}}
+              onClick={()=>setEditing(true)}>{dc.cargo||"Cargo"}</div>
+            {dc.lastContact&&<div style={{fontSize:8,fontFamily:"DM Mono,monospace",marginBottom:6,
+              padding:"3px 6px",background:"rgba("+grupo.rgb+",.06)",borderRadius:3,color:grupo.color}}>
+              📅 {dc.lastContact}{dc.lastTema?<span style={{color:"#555"}}> · {String(dc.lastTema).slice(0,25)}</span>:null}
+            </div>}
+            <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+              {dc.email&&<button onClick={e=>{e.stopPropagation();onEmail&&onEmail(dc);}}
+                title={"✉ "+dc.email} style={{flex:1,minWidth:28,height:32,borderRadius:5,
+                  border:"1px solid rgba(96,165,250,.35)",background:"rgba(96,165,250,.08)",
+                  color:"#60A5FA",cursor:"pointer",fontSize:15}}>✉</button>}
+              {dc.wa&&<button onClick={e=>{e.stopPropagation();onWhatsApp&&onWhatsApp(dc);}}
+                title={"💬 "+dc.wa} style={{flex:1,minWidth:28,height:32,borderRadius:5,
+                  border:"1px solid rgba(37,211,102,.35)",background:"rgba(37,211,102,.08)",
+                  color:"#25D366",cursor:"pointer",fontSize:15}}>💬</button>}
+              {dc.li&&<button onClick={e=>{e.stopPropagation();onLinkedIn&&onLinkedIn(dc);}}
+                style={{flex:1,minWidth:28,height:32,borderRadius:5,
+                  border:"1px solid rgba(0,119,181,.35)",background:"rgba(0,119,181,.08)",
+                  color:"#0077B5",cursor:"pointer",fontWeight:800,fontSize:12}}>in</button>}
+              <button onClick={e=>{e.stopPropagation();onVCard&&onVCard(dc);}}
+                style={{flex:1,minWidth:28,height:32,borderRadius:5,
+                  border:"1px solid rgba(52,211,153,.35)",background:"rgba(52,211,153,.08)",
+                  color:"#34D399",cursor:"pointer",fontSize:14}}>📱</button>
+              <button onClick={e=>{e.stopPropagation();setEditing(true);}}
+                style={{flex:1,minWidth:28,height:32,borderRadius:5,
+                  border:"1px solid rgba(255,181,71,.35)",background:"rgba(255,181,71,.08)",
+                  color:"#FFB547",cursor:"pointer",fontSize:14}}>✎</button>
+            </div>
+            {dc.email&&<div style={{fontSize:8,color:"#444",fontFamily:"DM Mono,monospace",marginTop:4,
+              overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={dc.email}>✉ {dc.email}</div>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── SMART BATCH ─────────────────────────────────────────────────────────────
+function SmartBatch({grupo,accs,pdKey,onActivitySaved}){
+  const [sel,setSel]=useState({});
+  const [emailModal,setEmailModal]=useState(null);
+  const [queue,setQueue]=useState([]);
+  const [sentCount,setSentCount]=useState(0);
+  const today3=new Date(Date.now()-3*24*60*60*1000).toISOString().slice(0,10);
+  const candidates=useMemo(()=>{
+    if(!grupo||!grupo.id) return [];
+    return getTop50(grupo)
+      .filter(l=>l&&l.nome&&checkRestrictions(l,grupo.id).length===0)
+      .map(l=>{
+        const k=grupo.id+"_"+l.rank;
+        const a2=accs[k]||{};
+        const acts=a2.activities||[];
+        const lastE=acts.filter(a=>a.type==="email").slice(-1)[0];
+        let lastISO="";
+        if(lastE&&lastE.date){const p=lastE.date.split("/");if(p.length===3)lastISO=p[2]+"-"+p[1]+"-"+p[0];}
+        const contacted=new Set(acts.map(a=>a.decisor).filter(Boolean));
+        const decs=a2.decisors||[];
+        const nextDec=decs.find(d=>!contacted.has(d.nome))||decs[0]||null;
+        return {...l,lastEmailDate:lastE?lastE.date:null,lastTema:lastE?lastE.note||"":"",
+          contactedRecently:lastISO>today3,nextDec,ndecs:decs.length};
+      })
+      .filter(l=>!l.contactedRecently).slice(0,80);
+  },[grupo,accs]);
+  const nSel=Object.values(sel).filter(Boolean).length;
+  const autoSelect=()=>{
+    const sectors={};const chosen={};let count=0;
+    for(const l of candidates){
+      if(count>=50) break;
+      const sec=l.setor||"other";
+      if(!sectors[sec]) sectors[sec]=0;
+      if(sectors[sec]>=6) continue;
+      chosen[l.rank]=true;sectors[sec]++;count++;
+    }
+    setSel(chosen);
+  };
+  const openQueue=()=>{
+    const sl=candidates.filter(l=>sel[l.rank]);
+    setQueue(sl);if(sl.length>0)setEmailModal(sl[0]);
+  };
+  const advance=(lead)=>{
+    setSentCount(n=>n+1);
+    if(onActivitySaved)onActivitySaved(lead.nome,"email","✉ Email",lead.nextDec?lead.nextDec.nome:"","Lote");
+    const rem=queue.filter(l=>l.rank!==lead.rank);
+    if(rem.length>0){setQueue(rem);setEmailModal(rem[0]);}
+    else{setEmailModal(null);setQueue([]);}
+  };
+  const gc=grupo?grupo.color:"#E8C97A";
+  const gr=grupo?grupo.rgb:"232,201,122";
+  return(
+    <div style={{padding:"28px 32px",overflowY:"auto",height:"100%"}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:20,flexWrap:"wrap",gap:12}}>
+        <div>
+          <div style={{fontSize:22,fontWeight:800,fontFamily:"Syne,sans-serif",letterSpacing:-1}}>✉ Disparo Inteligente — 50/dia</div>
+          <div style={{fontSize:11,color:"#555",fontFamily:"DM Mono,monospace",marginTop:4}}>Máx 6/setor · Anti-duplicata 3 dias · Prioriza decisores não contatados</div>
+        </div>
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn btno btnsm" onClick={autoSelect}>⚡ Selecionar 50</button>
+          {nSel>0&&<button className="btn btnp btnsm" style={{background:gc,color:"#000"}} onClick={openQueue}>✉ Disparar {nSel}</button>}
+        </div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
+        {[["SELECIONADOS",nSel,gc],["DISPONÍVEIS",candidates.length,"#eee"],["ENVIADOS HOJE",sentCount,"#34D399"],["TOTAL BASE",PROSP.length,"#60A5FA"]].map(([l,v,col])=>(
+          <div key={l} style={{background:"#0e0e0e",border:"1px solid #1a1a1a",borderRadius:8,padding:16,textAlign:"center"}}>
+            <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#444",letterSpacing:1,marginBottom:6}}>{l}</div>
+            <div style={{fontSize:24,fontWeight:800,color:col,fontFamily:"Syne,sans-serif"}}>{v}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+        {candidates.slice(0,60).map(l=>{
+          const isSel=!!sel[l.rank];
+          const fit=grupo?grupo.fit(l.setor||""):"medio";
+          const fc=fitColor(fit);
+          return(
+            <div key={l.rank} onClick={()=>setSel(s=>({...s,[l.rank]:!s[l.rank]}))}
+              style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",cursor:"pointer",
+                background:isSel?"rgba("+gr+",.06)":"#0e0e0e",
+                border:"1px solid "+(isSel?"rgba("+gr+",.3)":"#1a1a1a"),borderRadius:7,transition:"all .15s"}}>
+              <div style={{width:20,height:20,borderRadius:4,flexShrink:0,
+                border:"2px solid "+(isSel?gc:"#2a2a2a"),background:isSel?gc:"transparent",
+                display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#000"}}>
+                {isSel&&"✓"}
+              </div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,fontWeight:700,display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                  #{l.rank} {l.nome}
+                  <span style={{fontSize:9,fontFamily:"DM Mono,monospace",padding:"1px 6px",borderRadius:100,
+                    background:"rgba("+hexRgb(fc)+",.1)",color:fc,border:"1px solid rgba("+hexRgb(fc)+",.25)"}}>{fitLabel(fit)}</span>
+                </div>
+                <div style={{fontSize:10,color:"#555",fontFamily:"DM Mono,monospace",marginTop:2}}>
+                  {l.setor}
+                  {l.lastEmailDate?<span style={{color:"#444"}}> · {l.lastEmailDate}{l.lastTema?" — "+String(l.lastTema).slice(0,28):""}</span>:
+                    <span style={{color:"#34D399"}}> · nunca contatado</span>}
+                </div>
+                {l.nextDec&&<div style={{fontSize:9,color:gc,fontFamily:"DM Mono,monospace",marginTop:2}}>→ {l.nextDec.nome} · {l.nextDec.cargo}</div>}
+              </div>
+              <button className="btn btno btnsm" onClick={e=>{e.stopPropagation();setEmailModal(l);}} style={{flexShrink:0}}>✉</button>
+            </div>
+          );
+        })}
+      </div>
+      {emailModal&&grupo&&(
+        <EmailModal dc={emailModal.nextDec||null} empresa={emailModal.nome} setor={emailModal.setor||""} grupo={grupo}
+          angulo={grupo.angles[0]} hist="" restrictions={checkRestrictions(emailModal,grupo.id)}
+          onClose={()=>advance(emailModal)}/>
+      )}
+    </div>
+  );
+}
+
+// ─── COLD CALL DIÁRIO ─────────────────────────────────────────────────────────
+function ColdCallView({grupo,accs,onActivitySaved}){
+  const [done,setDone]=useState({});
+  const [noteMap,setNoteMap]=useState({});
+  const dateStr=new Date().toLocaleDateString("pt-BR",{weekday:"long",day:"numeric",month:"long"});
+  const callList=useMemo(()=>{
+    if(!grupo||!grupo.id) return [];
+    return getTop50(grupo)
+      .filter(l=>l&&l.nome&&checkRestrictions(l,grupo.id).length===0)
+      .map(l=>{
+        const a2=accs[grupo.id+"_"+l.rank]||{};
+        const lastC=(a2.activities||[]).filter(a=>a.type==="call").slice(-1)[0];
+        let ds=999;
+        if(lastC&&lastC.date){const p=lastC.date.split("/");if(p.length===3){const d=new Date(p[2],p[1]-1,p[0]);ds=Math.floor((Date.now()-d.getTime())/86400000);}}
+        return {...l,daysSince:ds,ndecs:(a2.decisors||[]).length};
+      })
+      .sort((a,b)=>b.daysSince-a.daysSince).slice(0,15);
+  },[grupo,accs]);
+  const gc=grupo?grupo.color:"#E8C97A";
+  const todayDone=Object.values(done).filter(Boolean).length;
+  const logCall=async(lead,tipo)=>{
+    setDone(d=>({...d,[lead.rank]:tipo}));
+    if(onActivitySaved)await onActivitySaved(lead.nome,tipo,tipo==="call"?"📞 Cold Call":"✉ Email","",noteMap[lead.rank]||"");
+  };
+  return(
+    <div style={{padding:"28px 32px",overflowY:"auto",height:"100%"}}>
+      <div style={{marginBottom:20}}>
+        <div style={{fontSize:22,fontWeight:800,fontFamily:"Syne,sans-serif",letterSpacing:-1}}>📞 Cold Calls — Hoje</div>
+        <div style={{fontSize:11,color:"#555",fontFamily:"DM Mono,monospace",marginTop:4,textTransform:"capitalize"}}>{dateStr} · {grupo?grupo.name:""}</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:20}}>
+        {[["FEITOS",todayDone,gc],["LISTA",callList.length,"#eee"],["RESTAM",Math.max(0,callList.length-todayDone),"#FFB547"]].map(([l,v,col])=>(
+          <div key={l} style={{background:"#0e0e0e",border:"1px solid #1a1a1a",borderRadius:8,padding:16,textAlign:"center"}}>
+            <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#444",letterSpacing:1,marginBottom:6}}>{l}</div>
+            <div style={{fontSize:28,fontWeight:800,color:col,fontFamily:"Syne,sans-serif"}}>{v}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {callList.map(l=>{
+          const isDone=!!done[l.rank];
+          const dotC=isDone?"#34D399":l.daysSince<3?"#FF4757":l.daysSince<7?"#FFB547":"#2a2a2a";
+          return(
+            <div key={l.rank} style={{display:"flex",alignItems:"center",gap:12,padding:"14px 16px",
+              background:isDone?"rgba(52,211,153,.04)":"#0e0e0e",
+              border:"1px solid "+(isDone?"rgba(52,211,153,.25)":"#1a1a1a"),borderRadius:8,opacity:isDone?.65:1}}>
+              <div style={{width:10,height:10,borderRadius:"50%",background:dotC,flexShrink:0}}></div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:700,display:"flex",alignItems:"center",gap:7}}>
+                  {l.nome}
+                  {l.ndecs>0&&<span style={{fontSize:9,color:"#4B9EFF",border:"1px solid rgba(75,158,255,.3)",padding:"1px 6px",borderRadius:100,fontFamily:"DM Mono,monospace"}}>{l.ndecs} dec.</span>}
+                </div>
+                <div style={{fontSize:10,color:"#555",fontFamily:"DM Mono,monospace",marginTop:2}}>
+                  {l.setor} · #{l.rank} · {l.daysSince===999?"nunca contatado":l.daysSince===0?"hoje":"há "+l.daysSince+" dias"}
+                </div>
+                {!isDone&&<input placeholder="Nota rápida..." value={noteMap[l.rank]||""}
+                  onChange={e=>setNoteMap(n=>({...n,[l.rank]:e.target.value}))}
+                  style={{marginTop:6,width:"100%",maxWidth:280,background:"#060606",border:"1px solid #1e1e1e",
+                    borderRadius:4,padding:"4px 8px",color:"#eee",fontSize:10,fontFamily:"DM Mono,monospace",outline:"none"}}/>}
+              </div>
+              {!isDone?(
+                <div style={{display:"flex",gap:6,flexShrink:0}}>
+                  <button onClick={()=>logCall(l,"call")} style={{padding:"7px 14px",borderRadius:5,border:"none",background:gc,color:"#000",fontWeight:700,fontSize:11,cursor:"pointer"}}>📞 Ligar</button>
+                  <button onClick={()=>logCall(l,"email")} style={{padding:"7px 12px",borderRadius:5,border:"1px solid #1e1e1e",background:"transparent",color:"#aaa",fontSize:11,cursor:"pointer"}}>✉</button>
+                </div>
+              ):<div style={{fontSize:11,color:"#34D399",fontFamily:"DM Mono,monospace",flexShrink:0}}>✓ {done[l.rank]==="call"?"ligado":"enviado"}</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── HOLDING VIEW ─────────────────────────────────────────────────────────────
+function HoldingView(){
+  const [sel,setSel]=useState(null);
+  const RESTR=typeof RESTRICTIONS!=="undefined"?RESTRICTIONS:[];
+  return(
+    <div style={{flex:1,overflow:"auto",padding:"28px 32px"}}>
+      <div style={{marginBottom:24}}>
+        <div style={{fontSize:26,fontWeight:800,letterSpacing:"-1px",fontFamily:"Syne,sans-serif"}}>Galeria Holding</div>
+        <div style={{fontSize:11,color:"#555",fontFamily:"DM Mono,monospace",marginTop:5}}>Todas as empresas — clique para ver conflitos de cliente</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(210px,1fr))",gap:12}}>
+        {GRUPO.map(g=>{
+          const myRes=RESTR.filter(r=>r.agencies&&r.agencies.includes(g.id));
+          const isOpen=sel===g.id;
+          return(
+            <div key={g.id} onClick={()=>setSel(isOpen?null:g.id)}
+              style={{background:"#0e0e0e",border:"1px solid "+(isOpen?g.color:"#1a1a1a"),
+                borderRadius:10,padding:18,cursor:"pointer",transition:"all .2s"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                <div style={{width:9,height:9,borderRadius:"50%",background:g.color}}></div>
+                <div style={{fontSize:15,fontWeight:800,fontFamily:"Syne,sans-serif",color:g.color}}>{g.name}</div>
+              </div>
+              <div style={{fontSize:10,color:"#444",fontFamily:"DM Mono,monospace",lineHeight:1.5,marginBottom:10}}>{g.desc}</div>
+              {isOpen&&(myRes.length>0?(
+                <div>
+                  <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#FF4757",marginBottom:7,letterSpacing:1}}>⚠ CONFLITOS</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+                    {myRes.map((r,i)=><span key={i} style={{fontSize:8,fontFamily:"DM Mono,monospace",padding:"2px 6px",borderRadius:3,background:"rgba(255,71,87,.1)",color:"#FF4757",border:"1px solid rgba(255,71,87,.2)"}}>{r.category}</span>)}
+                  </div>
+                </div>
+              ):<div style={{fontSize:10,fontFamily:"DM Mono,monospace",color:"#34D399"}}>✓ Sem restrições</div>)}
+              {!isOpen&&myRes.length>0&&<div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"rgba(255,71,87,.5)",marginTop:5}}>{myRes.length} conflito(s)</div>}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─── DASHBOARD ────────────────────────────────────────────────────────────────
+function Dashboard({curUser,onClose}){
+  const [log,setLog]=useState([]);
+  const [loading,setLoading]=useState(true);
+  const [period,setPeriod]=useState("today");
+  useEffect(()=>{(async()=>{const l=await sharedGet("activities_log")||[];setLog(l);setLoading(false);})();},[]);
+  const todayStr=today();
+  const weekAgo=new Date(Date.now()-7*24*60*60*1000).toISOString().slice(0,10);
+  const filtered=log.filter(e=>{
+    if(period==="today")return e.isoDate===todayStr;
+    if(period==="week")return e.isoDate>=weekAgo;
+    return true;
+  });
+  const todayCount=log.filter(e=>e.isoDate===todayStr).length;
+  const weekCount=log.filter(e=>e.isoDate>=weekAgo).length;
+  const callCount=filtered.filter(e=>e.tipo==="call").length;
+  const meetCount=filtered.filter(e=>e.tipo==="meeting").length;
+  const ratio=callCount>0?(meetCount/callCount*100).toFixed(0)+"%":"—";
+  const byEmpresa={};filtered.forEach(e=>{byEmpresa[e.empresa]=(byEmpresa[e.empresa]||0)+1;});
+  const maxE=Math.max(...Object.values(byEmpresa),1);
+  const exportCSV=()=>{
+    const rows=["data,hora,usuario,empresa,decisor,tipo,nota"];
+    filtered.forEach(e=>{rows.push([e.isoDate,e.time,e.userName,e.empresa,e.decisor,e.tipo,e.nota].join(","));});
+    const blob=new Blob([rows.join("\n")],{type:"text/csv"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="dashboard_"+period+".csv";a.click();
+  };
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.92)",zIndex:9999,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:20,overflowY:"auto"}}>
+      <div style={{background:"#0e0e0e",border:"1px solid #1e1e1e",borderRadius:10,width:"100%",maxWidth:700,padding:28}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:22}}>
+          <div><div style={{fontSize:20,fontWeight:800,fontFamily:"Syne,sans-serif"}}>📊 Dashboard Comercial</div></div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={exportCSV} style={{padding:"5px 12px",border:"1px solid #1e1e1e",borderRadius:3,background:"transparent",color:"#34D399",fontSize:9,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>↓ CSV</button>
+            <button onClick={onClose} style={{background:"none",border:"none",color:"#555",cursor:"pointer",fontSize:22}}>×</button>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
+          {[["HOJE",todayCount,"#E8C97A"],["7 DIAS",weekCount,"#eee"],["COLD CALLS",callCount,"#60A5FA"],["RATIO REUNIÃO",ratio,"#34D399"]].map(([l,v,col])=>(
+            <div key={l} style={{background:"#111",border:"1px solid #1a1a1a",borderRadius:8,padding:16,textAlign:"center"}}>
+              <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#444",letterSpacing:1,marginBottom:6}}>{l}</div>
+              <div style={{fontSize:22,fontWeight:800,color:col,fontFamily:"Syne,sans-serif"}}>{v}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{display:"flex",gap:6,marginBottom:16}}>
+          {[["today","Hoje"],["week","7 dias"],["all","Tudo"]].map(([v,l])=>(
+            <button key={v} onClick={()=>setPeriod(v)} style={{padding:"4px 10px",borderRadius:3,
+              border:"1px solid "+(period===v?"#E8C97A":"#1e1e1e"),background:period===v?"rgba(232,201,122,.08)":"transparent",
+              color:period===v?"#E8C97A":"#555",fontSize:9,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>{l}</button>
+          ))}
+        </div>
+        <div style={{marginBottom:16}}>
+          <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#444",letterSpacing:1,marginBottom:10,textTransform:"uppercase"}}>Top Empresas</div>
+          {Object.entries(byEmpresa).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([e,n])=>(
+            <div key={e} style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+              <div style={{flex:1,fontSize:11,color:"#888",fontFamily:"DM Mono,monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e}</div>
+              <div style={{width:n/maxE*80,height:4,background:"#E8C97A",borderRadius:2,opacity:.7}}></div>
+              <div style={{fontSize:10,color:"#E8C97A",minWidth:20,textAlign:"right",fontFamily:"DM Mono,monospace"}}>{n}</div>
+            </div>
+          ))}
+        </div>
+        {loading?<div style={{textAlign:"center",padding:20,color:"#333",fontSize:11}}>Carregando...</div>:
+          filtered.length===0?<div style={{textAlign:"center",padding:20,color:"#333",fontSize:11}}>Nenhuma atividade no período</div>:(
+            <div style={{maxHeight:280,overflowY:"auto"}}>
+              {[...filtered].reverse().map((e,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"flex-start",gap:10,padding:"10px 0",borderBottom:"1px solid #111"}}>
+                  <div style={{width:28,height:28,borderRadius:"50%",background:"#111",border:"1px solid #1a1a1a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,flexShrink:0}}>
+                    {{email:"✉",call:"📞",whatsapp:"💬",linkedin:"in",meeting:"🤝",response:"↩"}[e.tipo]||"◎"}
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:12,fontWeight:600}}>{e.empresa}{e.decisor?" → "+e.decisor:""}</div>
+                    <div style={{fontSize:9,color:"#555",fontFamily:"DM Mono,monospace",marginTop:2}}>{e.isoDate} {e.time} · {e.userName}</div>
+                    {e.nota&&<div style={{fontSize:10,color:"#666",marginTop:3,borderLeft:"2px solid #1a1a1a",paddingLeft:8}}>{e.nota}</div>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        }
+      </div>
+    </div>
+  );
+}
+
+// ─── LOGIN ────────────────────────────────────────────────────────────────────
+function ModalPortal({children}){
+  var el=typeof document!=="undefined"?document.getElementById("modal-root"):null;
+  if(!el||!ReactDOM.createPortal)return children;
+  return ReactDOM.createPortal(children,el);
+}
+
+function LoginScreen({onLogin}){
+  const [name,setName]=useState("");
+  const [pass,setPass]=useState("");
+  const [err,setErr]=useState("");
+  const [loading,setLoading]=useState(false);
+  const doLogin=async()=>{
+    setErr("");setLoading(true);
+    let users=await sharedGet("users")||{};
+    if(Object.keys(users).length===0){
+      const id=uid();
+      users[id]={id,name:"Pedro Ica",pass:"galeria2024",role:"admin"};
+      await sharedSet("users",users);
+    }
+    const u=Object.values(users).find(u=>u.name.toLowerCase()===name.toLowerCase()&&u.pass===pass);
+    if(!u){setErr("Nome ou senha incorretos.");setLoading(false);return;}
+    await personalSet("session",{uid:u.id,name:u.name,role:u.role});
+    onLogin(u);setLoading(false);
+  };
+  return(
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#060606"}}>
+      <div style={{width:"100%",maxWidth:360,padding:36,background:"#0e0e0e",border:"1px solid #1e1e1e",borderRadius:12}}>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{fontSize:24,fontWeight:800,fontFamily:"Syne,sans-serif",letterSpacing:-1}}>GALERIA HOLDING</div>
+          <div style={{fontSize:10,fontFamily:"DM Mono,monospace",color:"#333",letterSpacing:3,marginTop:4}}>CENTRAL COMERCIAL</div>
+        </div>
+        <div className="frow"><div className="flbl">NOME</div><input className="finp" placeholder="Seu nome" value={name} onChange={e=>setName(e.target.value)}/></div>
+        <div className="frow"><div className="flbl">SENHA</div><input className="finp" type="password" placeholder="Senha" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&doLogin()}/></div>
+        {err&&<div style={{fontSize:11,color:"#FF4757",fontFamily:"DM Mono,monospace",marginBottom:12,padding:"8px 12px",background:"rgba(255,71,87,.06)",border:"1px solid rgba(255,71,87,.2)",borderRadius:5}}>{err}</div>}
+        <button onClick={doLogin} disabled={loading} style={{width:"100%",padding:"11px 0",borderRadius:5,border:"none",background:"#E8C97A",color:"#000",fontWeight:800,fontSize:13,cursor:"pointer",marginTop:8}}>
+          {loading?"Entrando...":"Entrar"}
+        </button>
+        <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#222",textAlign:"center",marginTop:12}}>Pedro Ica / galeria2024</div>
+      </div>
+    </div>
+  );
+}
+
+function App(){
+  const [curGrupo,setCurGrupo]=useState(GRUPO[0]);
+  const [curLead,setCurLead]=useState(null);
+  const [sbQ,setSbQ]=useState("");
+  const [fitFil,setFitFil]=useState("all");
+  const [accs,setAccs]=useState(()=>loadSt("ghub_accs",{}));
+  const [pdKey,setPdKey]=useState(()=>loadSt("ghub_pd",""));
+  const [cfgOpen,setCfgOpen]=useState(false);
+  const [cfgPD,setCfgPD]=useState("");
+  const [resOpen,setResOpen]=useState(false);
+  const [dashOpen,setDashOpen]=useState(false);
+  const [viewMode,setViewMode]=useState("main");
+  const [curUser,setCurUser]=useState(null);
+  const [sessLoading,setSessLoading]=useState(true);
+
+  // Quarterly reminder
+  const lastReview=loadSt("ghub_res_review",null);
+  const showReminder=!lastReview||(new Date()-new Date(lastReview))>(90*24*60*60*1000);
+
+  // Session restore
+  useEffect(()=>{(async()=>{
+    const sess=await personalGet("session");
+    if(sess){setCurUser({id:sess.uid||"pedro",name:sess.name||"Pedro Ica",role:sess.role||"admin"});}
+    setSessLoading(false);
+  })();},[]);
+
+  const onLogin=async(user)=>{
+    setCurUser(user);
+    await personalSet("session",{uid:user.id,name:user.name,role:user.role});
+  };
+  const logout=async()=>{await personalSet("session",null);setCurUser(null);};
+  const onActivitySaved=async(empresa,tipo,tipoLabel,decisor,nota)=>{
+    if(curUser) await logActivity(curUser,empresa,curGrupo.name,tipo,tipoLabel,decisor,nota);
+  };
+
+  useEffect(()=>{saveSt("ghub_accs",accs);},[accs]);
+  useEffect(()=>{saveSt("ghub_pd",pdKey);},[pdKey]);
+  useEffect(()=>{
+    document.documentElement.style.setProperty("--tc",curGrupo.color);
+    document.documentElement.style.setProperty("--tcr",curGrupo.rgb);
+  },[curGrupo]);
+
+  const filtered=useMemo(()=>PROSP.filter(d=>{
+    const fit=curGrupo.fit(d.setor||"");
+    const res=checkRestrictions(d,curGrupo.id);
+    if(fitFil==="restrito"&&res.length===0)return false;
+    if(fitFil==="crm"&&!accs[curGrupo.id+"_"+d.rank])return false;
+    if(fitFil==="alto"&&fit!=="alto")return false;
+    if(fitFil==="medio"&&fit!=="medio")return false;
+    if(sbQ&&!d.nome.includes(sbQ.toUpperCase()))return false;
+    return true;
+  }),[curGrupo,fitFil,sbQ,accs]);
+
+  const accKey=(g,r)=>g.id+"_"+r;
+  const getAcc=()=>curLead?accs[accKey(curGrupo,curLead.rank)]||{decisors:[],activities:[],intel:null,alerts:[],pdDealId:null}:{};
+  const setAcc=v=>setAccs(a=>({...a,[accKey(curGrupo,curLead.rank)]:v}));
+
+  if(sessLoading) return <div style={{display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#060606",color:"#333",fontFamily:"DM Mono,monospace",fontSize:12}}>Carregando...</div>;
+  if(!curUser) return <LoginScreen onLogin={onLogin}/>;
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100vh",overflow:"hidden"}}>
+      {cfgOpen&&(<div className="modov"><div className="mod">
+        <div className="modtitle">⚙ Configurações</div>
+        <div className="frow"><div className="flbl">PIPEDRIVE API KEY</div><input className="finp" type="password" placeholder="api key do pipedrive" value={cfgPD} onChange={e=>setCfgPD(e.target.value)}/></div>
+        <div style={{fontSize:9,fontFamily:"DM Mono,monospace",color:"#333",marginTop:4,marginBottom:12}}>Hunter.io e Lusha já configurados. Pipedrive opcional para sync de CRM.</div>
+        <div className="modacts"><button className="btn btno btnsm" onClick={()=>setCfgOpen(false)}>Cancelar</button><button className="btn btnp btnsm" style={{background:curGrupo.color}} onClick={()=>{setPdKey(cfgPD);setCfgOpen(false);}}>Salvar</button></div>
+      </div></div>)}
+      {resOpen&&<RestrictionsPanel onClose={()=>setResOpen(false)}/>}
+
+      {/* QUARTERLY REMINDER BANNER */}
+      {showReminder&&(
+        <div className="reminder" style={{padding:"10px 18px"}}>
+          <span style={{fontSize:14}}>📅</span>
+          <div className="reminder-txt">Revisão trimestral de restrições pendente — confirme se os clientes e conflitos ainda estão ativos.</div>
+          <button className="reminder-btn" onClick={()=>setResOpen(true)}>Ver restrições</button>
+          <button className="reminder-btn" style={{borderColor:"rgba(255,181,71,.2)",color:"#555"}} onClick={()=>saveSt("ghub_res_review",new Date().toISOString())}>Dispensar</button>
+        </div>
+      )}
+
+      {/* TOPBAR */}
+      <div className="topbar">
+        <div className="brand"><div className="bdot" style={{background:curGrupo.color}}></div><span className="bname" style={{color:curGrupo.color}}>HOLDING</span></div>
+        <div className="tabs-row">
+          {GRUPO.map(g=>(
+            <div key={g.id} className={"ctab"+(curGrupo.id===g.id?" on":"")} style={{"--tc":g.color}} onClick={()=>{setCurGrupo(g);setCurLead(null);}}>
+              <div className="tdot" style={{background:g.color}}></div>
+              <span className="tname" style={curGrupo.id===g.id?{color:g.color}:{}}>{g.name}</span>
+            </div>
+          ))}
+        </div>
+        <div className="tb-right">
+          <div className="api-chip"><div className="apdot" style={{background:"#00FF94"}}></div><span>HUNTER</span></div>
+          <div className="api-chip"><div className="apdot" style={{background:pdKey?"#00FF94":"#2a2a2a"}}></div><span>PIPEDRIVE</span></div>
+          <button onClick={()=>{setViewMode("holding");setCurLead(null);}} style={{padding:"4px 10px",border:"1px solid #1e1e1e",borderRadius:3,background:"transparent",color:"#555",fontSize:9,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>🏢 Holding</button>
+          <button onClick={()=>{setViewMode("batch");setCurLead(null);}} style={{padding:"4px 10px",border:"1px solid #1e1e1e",borderRadius:3,background:"transparent",color:"#555",fontSize:9,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>✉ Lote</button>
+          <button onClick={()=>{setViewMode("calls");setCurLead(null);}} style={{padding:"4px 10px",border:"1px solid rgba(255,71,87,.3)",borderRadius:3,background:"transparent",color:"#FF4757",fontSize:9,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>📞 Calls</button>
+          <button onClick={()=>setDashOpen(true)} style={{padding:"4px 10px",border:"1px solid rgba(96,165,250,.3)",borderRadius:3,background:"transparent",color:"#60A5FA",fontSize:9,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>📊 Dash</button>
+          <button className="resbtn" onClick={()=>setResOpen(true)}>⚠ Restrições</button>
+          <button className="cfgbtn" onClick={()=>{setCfgPD(pdKey);setCfgOpen(true);}}>⚙ Config</button>
+        </div>
+      </div>
+
+      {/* WORKSPACE */}
+      {dashOpen&&<Dashboard curUser={curUser} onClose={()=>setDashOpen(false)}/>}
+      {viewMode==="holding"?(
+        <div className="ws"><HoldingView/></div>
+      ):viewMode==="batch"?(
+        <div className="ws" style={{flex:1,overflow:"hidden",display:"flex"}}><SmartBatch grupo={curGrupo} accs={accs} pdKey={pdKey} onActivitySaved={onActivitySaved}/></div>
+      ):viewMode==="calls"?(
+        <div className="ws" style={{flex:1,overflow:"hidden",display:"flex"}}><ColdCallView grupo={curGrupo} accs={accs} onActivitySaved={onActivitySaved}/></div>
+      ):(
+      <div className="ws">
+        <div className="sb" style={{"--tc":curGrupo.color,"--tcr":curGrupo.rgb}}>
+          <div className="sbhead"><span className="sbtitle">ANUNCIANTES</span><span className="sbcnt">{filtered.length}</span></div>
+          <div className="sbsearch"><input placeholder="Buscar empresa..." value={sbQ} onChange={e=>setSbQ(e.target.value)}/></div>
+          <div className="sbfil">
+            {[["all","TODOS"],["alto","FIT ALTO"],["medio","FIT MED"],["crm","NO CRM"],["restrito","RESTRITOS"]].map(([f,l])=>(
+              <button key={f} className={"fb"+(fitFil===f?" on":"")+(f==="restrito"?" res":"")} onClick={()=>setFitFil(f)}>{l}</button>
+            ))}
+          </div>
+          <div className="sblist">
+            {filtered.slice(0,200).map(d=>{
+              const fit=curGrupo.fit(d.setor||"");
+              const fc=fitColor(fit);
+              const res=checkRestrictions(d,curGrupo.id);
+              const isRes=res.length>0;
+              const isSel=curLead&&curLead.rank===d.rank;
+              const hasCrm=!!accs[accKey(curGrupo,d.rank)];
+              return(
+                <div key={d.rank+d.nome} className={"coitem"+(isSel?" sel":"")+(isRes?" restricted":"")} onClick={()=>setCurLead(d)}>
+                  <span className="corank">{d.rank}</span>
+                  <div className="cobody">
+                    <div className="coname">{d.nome}{isRes&&<span style={{fontSize:7,marginLeft:5,color:"#FF4757"}}>●</span>}</div>
+                    <div className="cosec">{d.setor}{isRes&&<span style={{color:"rgba(255,71,87,.6)",marginLeft:4,fontSize:7}}>conflito</span>}</div>
+                  </div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+                    {isRes?<span className="restag">RESTRITO</span>:<span className="fittag" style={{background:`rgba(${hexRgb(fc)},.08)`,color:fc,border:`1px solid rgba(${hexRgb(fc)},.2)`}}>{fitLabel(fit)}</span>}
+                    {hasCrm&&<div className="crmdot"></div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="main" style={{"--tc":curGrupo.color,"--tcr":curGrupo.rgb}}>
+          {curLead?(
+            <AgentView key={curGrupo.id+"_"+curLead.rank} grupo={curGrupo} lead={curLead} acc={getAcc()} pdKey={pdKey} onAccUpdate={setAcc}/>
+          ):(
+            <>
+              <div className="subtabs"></div>
+              <div className="panel"><div className="empty"><div className="emptyicon">◎</div><div style={{fontSize:16,fontWeight:800}}>{curGrupo.name}</div><div style={{fontSize:10,fontFamily:"DM Mono,monospace",maxWidth:220,lineHeight:1.7,textAlign:"center"}}>{curGrupo.desc}<br/><br/>Selecione um anunciante para começar a prospecção.</div></div></div>
+            </>
+          )}
+        </div>
+      </div>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>
