@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <title>CRM Galeria — Test Suite</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0D0D0D; color: #F5F5F5; font-family: "IBM Plex Mono", monospace; font-size: 12px; padding: 24px; }
+    h1 { font-family: Inter, sans-serif; font-size: 18px; color: #FF6B2B; margin-bottom: 4px; }
+    .subtitle { color: #9B9BB4; font-size: 10px; margin-bottom: 24px; }
+    .summary { padding: 12px 16px; border-radius: 6px; margin-bottom: 24px; font-size: 13px; font-weight: 600; }
+    .summary.ok  { background: rgba(0,255,148,.08); border: 1px solid rgba(0,255,148,.3); color: #00FF94; }
+    .summary.err { background: rgba(255,75,75,.08); border: 1px solid rgba(255,75,75,.3); color: #FF4B4B; }
+    .suite { margin-bottom: 20px; }
+    .suite-title { font-family: Inter, sans-serif; font-size: 12px; font-weight: 700; color: #9B9BB4; text-transform: uppercase; letter-spacing: .08em; margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px solid #1A1A2E; }
+    .test { padding: 5px 10px; border-radius: 3px; margin-bottom: 2px; display: flex; align-items: flex-start; gap: 8px; }
+    .test.pass { color: #00FF94; }
+    .test.fail { color: #FF4B4B; background: rgba(255,75,75,.06); }
+    .test .icon { flex-shrink: 0; width: 14px; }
+    .test .label { flex: 1; }
+    .test .err-msg { color: #FF7070; font-size: 10px; margin-top: 3px; opacity: .85; }
+    .loading { color: #9B9BB4; font-size: 11px; padding: 8px 0; }
+    .section-err { color: #FF4B4B; background: rgba(255,75,75,.06); border: 1px solid rgba(255,75,75,.3); border-radius: 4px; padding: 8px 12px; margin-bottom: 12px; font-size: 10px; }
+  </style>
+</head>
+<body>
+  <h1>CRM Galeria — Test Suite</h1>
+  <p class="subtitle">Fase 3 · Harness leve · abre direto no browser, sem build</p>
+  <div id="load-status" class="loading">Carregando scripts…</div>
+  <div id="results"></div>
+
+  <!-- ① React stub (deve vir ANTES dos block*.js) -->
+  <script>
+    window.React = {
+      createElement: function() { return null; },
+      Fragment: "fragment",
+      useState:    function(v)  { return [v, function() {}]; },
+      useEffect:   function()   {},
+      useCallback: function(fn) { return fn; },
+      useMemo:     function(fn) { try { return fn(); } catch(e) { return undefined; } },
+      useRef:      function(v)  { return { current: v }; },
+      useContext:  function()   { return undefined; },
+      memo:        function(c)  { return c; },
+      createContext: function(d){ return { Provider: null, Consumer: null, _currentValue: d }; },
+    };
+    window.ReactDOM = {
+      render: function() {},
+      createRoot: function() { return { render: function() {} }; },
+    };
+    // Evita erros de autobackup que tentam setTimeout num contexto minimizado
+    var _origSetInterval = window.setInterval;
+    window.setInterval = function(fn, ms) {
+      try { return _origSetInterval(fn, ms); } catch(e) { return -1; }
+    };
+  </script>
+
+  <!-- ② Scripts do app (ordem de carga do index.html) -->
+  <script src="gh-core.js" onerror="window.__ghCoreErr=true"></script>
+  <script src="block0_util.js" onerror="window.__b0Err=true"></script>
+  <script src="block6.js" onerror="window.__b6Err=true"></script>
+
+  <!-- ③ Runner + testes -->
+  <script>
+  (function() {
+    // ── Runner minimalista ─────────────────────────────────────────────────
+    var SUITES = [];
+    var current;
+    function describe(label, fn) {
+      current = { label: label, tests: [], loadErr: null };
+      SUITES.push(current);
+      try { fn(); } catch(e) { current.loadErr = e.message || String(e); }
+    }
+    function it(label, fn) {
+      var t = { label: label, err: null };
+      try { fn(); } catch(e) { t.err = e.message || String(e); }
+      current.tests.push(t);
+    }
+    function assert(cond, msg) {
+      if (!cond) throw new Error(msg || "Assertion failed");
+    }
+    function assertEqual(a, b, msg) {
+      if (a !== b) throw new Error((msg || "") + " — esperado " + JSON.stringify(b) + ", recebeu " + JSON.stringify(a));
+    }
+    function assertInRange(v, lo, hi, msg) {
+      if (v < lo || v > hi) throw new Error((msg || "") + " — " + v + " fora de [" + lo + ", " + hi + "]");
+    }
+
+    // ── T1 · normalizarSetor ──────────────────────────────────────────────
+    describe("T1 — normalizarSetor", function() {
+      it("'Beleza/Cosméticos' → 'Beleza'", function() {
+        assertEqual(normalizarSetor("Beleza/Cosméticos"), "Beleza");
+      });
+      it("'BELEZA' (caps) → 'Beleza'", function() {
+        assertEqual(normalizarSetor("BELEZA"), "Beleza");
+      });
+      it("'Perfumaria' → 'Beleza'", function() {
+        assertEqual(normalizarSetor("Perfumaria"), "Beleza");
+      });
+      it("'Chocolates/Alimentos' → 'Food'", function() {
+        assertEqual(normalizarSetor("Chocolates/Alimentos"), "Food");
+      });
+      it("'Varejo' → 'Varejo'", function() {
+        assertEqual(normalizarSetor("Varejo"), "Varejo");
+      });
+      it("'FMCG' → 'FMCG'", function() {
+        assertEqual(normalizarSetor("FMCG"), "FMCG");
+      });
+      it("'Suplementos Alimentares' → 'FMCG' ou 'Nutrição'", function() {
+        var r = normalizarSetor("Suplementos Alimentares");
+        assert(r === "FMCG" || r === "Nutrição" || r === "Suplementos Alimentares",
+          "Esperado FMCG, Nutrição ou passthrough — recebeu: " + r);
+      });
+      it("string vazia → string vazia", function() {
+        assertEqual(normalizarSetor(""), "");
+      });
+      it("undefined → string vazia", function() {
+        assertEqual(normalizarSetor(undefined), "");
+      });
+    });
+
+    // ── T2 · checkRestrictions (word-boundary) ────────────────────────────
+    describe("T2 — checkRestrictions (word-boundary)", function() {
+      // Testar a lógica de split/token diretamente (não depende de restrições específicas)
+      function wordMatch(kw, nome) {
+        var kwUp  = kw.toUpperCase();
+        var nameUp = nome.toUpperCase();
+        if (kwUp.indexOf(" ") >= 0) return nameUp.indexOf(kwUp) >= 0;
+        return nameUp.split(/[\s\/\-\.&,]+/).indexOf(kwUp) >= 0;
+      }
+
+      it('"AVON" bate em "Avon Brasil"', function() {
+        assert(wordMatch("AVON", "Avon Brasil"));
+      });
+      it('"AVON" não bate em "AVONDALE"', function() {
+        assert(!wordMatch("AVON", "AVONDALE"), '"AVON" não deve bater em "AVONDALE"');
+      });
+      it('"NATURA" bate em "Natura"', function() {
+        assert(wordMatch("NATURA", "Natura"));
+      });
+      it('"NATURA" não bate em "NATURAIS"', function() {
+        assert(!wordMatch("NATURA", "Produtos Naturais"), '"NATURA" não deve bater em "Produtos Naturais" (palavra diferente)');
+      });
+      it('"NATURA" bate em "Natura&Co" (split por &)', function() {
+        assert(wordMatch("NATURA", "Natura&Co"));
+      });
+      it('"MARY KAY" (multi-word) bate por substring', function() {
+        assert(wordMatch("MARY KAY", "Mary Kay Brasil"));
+      });
+      it('"BCO" não bate em "ItauBCO" sem separador', function() {
+        assert(!wordMatch("BCO", "ItauBCO"), '"BCO" não deve bater em "ItauBCO" sem separador');
+      });
+      it("checkRestrictions retorna array", function() {
+        var r = checkRestrictions({ nome: "EmpresaQualquer", setor: "Tech" }, "galeria");
+        assert(Array.isArray(r), "checkRestrictions deve retornar array");
+      });
+      it("empresa sem match retorna array vazio", function() {
+        var r = checkRestrictions({ nome: "TechStartupXYZ", setor: "SaaS" }, "galeria");
+        assertEqual(r.length, 0, "TechStartupXYZ não deve ter restrições");
+      });
+      it("restrição expirada (Natura/galeria em 2025-06-30) não retorna match", function() {
+        // A restrição Natura/Avon/MaryKay da galeria expirou em 2025-06-30
+        // Hoje (2026-07-06) deve retornar vazio
+        var r = checkRestrictions({ nome: "NATURA SA", setor: "Beleza" }, "galeria");
+        assert(Array.isArray(r), "deve retornar array");
+        var natRes = r.filter(function(x) { return x.category === "Beleza"; });
+        assertEqual(natRes.length, 0, "Restrição Natura/galeria expirou — não deve aparecer");
+      });
+      it("restrição ativa (Banco/galeria) retorna match para 'BRADESCO'", function() {
+        var r = checkRestrictions({ nome: "BRADESCO FINANCEIRO", setor: "Financeiro" }, "galeria");
+        assert(r.length > 0, "BRADESCO deve ter restrição ativa em galeria");
+      });
+    });
+
+    // ── T3 · calcularTemperatura ──────────────────────────────────────────
+    describe("T3 — calcularTemperatura", function() {
+      it("account vazio retorna objeto com 'nivel' e 'pontos'", function() {
+        var t = calcularTemperatura({ decisors: [], sugeridos: [], activities: [] });
+        assert(typeof t === "object" && t !== null, "deve retornar objeto");
+        assert("pontos" in t, "objeto deve ter 'pontos'");
+        assert("nivel"  in t, "objeto deve ter 'nivel'");
+      });
+      it("pontos de account vazio é 0", function() {
+        var t = calcularTemperatura({ decisors: [], sugeridos: [], activities: [] });
+        assertEqual(t.pontos, 0, "sem atividades deve ter pontos=0");
+      });
+      it("nivel de account vazio é 0 (Congelado)", function() {
+        var t = calcularTemperatura({ decisors: [], sugeridos: [], activities: [] });
+        assertEqual(t.nivel, 0);
+      });
+      it("atividade de reunião hoje → nivel >= 1", function() {
+        var t = calcularTemperatura({
+          decisors: [], sugeridos: [],
+          activities: [{ type: "reuniao", isoDate: new Date().toISOString() }]
+        });
+        assert(t.nivel >= 1, "reunião recente deve elevar o nível. nivel=" + t.nivel);
+      });
+      it("atividade de reunião hoje → pontos >= 30 (peso=40, decay≈1)", function() {
+        var t = calcularTemperatura({
+          decisors: [], sugeridos: [],
+          activities: [{ type: "reuniao", isoDate: new Date().toISOString() }]
+        });
+        assert(t.pontos >= 30, "reunião hoje deve gerar >=30 pontos. pontos=" + t.pontos);
+      });
+      it("atividade com mais de 90 dias não pontua", function() {
+        var dt = new Date(Date.now() - 95 * 86400000).toISOString();
+        var t = calcularTemperatura({
+          decisors: [], sugeridos: [],
+          activities: [{ type: "reuniao", isoDate: dt }]
+        });
+        assertEqual(t.pontos, 0, "atividade >90 dias não deve pontuar");
+      });
+      it("acc undefined não lança erro", function() {
+        var t = calcularTemperatura(undefined);
+        assert(typeof t === "object", "deve retornar objeto mesmo com acc undefined");
+      });
+      it("acc sem activities não lança erro", function() {
+        var t = calcularTemperatura({});
+        assert(typeof t === "object");
+      });
+    });
+
+    // ── T4 · buildProsp ───────────────────────────────────────────────────
+    describe("T4 — buildProsp", function() {
+      it("sem customLeads retorna PROSP_BASE (>0 itens)", function() {
+        var p = buildProsp([]);
+        assert(Array.isArray(p) && p.length > 0, "buildProsp([]) deve retornar array não-vazio");
+      });
+      it("cada item tem rank, nome e setor", function() {
+        var p = buildProsp([]);
+        var sample = p[0];
+        assert(typeof sample.rank === "number", "rank deve ser número");
+        assert(typeof sample.nome === "string", "nome deve ser string");
+      });
+      it("customLeads novo aparece no resultado", function() {
+        var p = buildProsp([{ rank: 99999, nome: "TesteCo Nova", setor: "Tech" }]);
+        assert(p.some(function(x) { return x.rank === 99999; }), "empresa custom deve aparecer");
+      });
+      it("dedup por rank: empresa do seed com rank duplicado não dobra", function() {
+        var base = buildProsp([]);
+        var first = base[0];
+        var withDup = buildProsp([{ rank: first.rank, nome: first.nome, setor: first.setor }]);
+        var count = withDup.filter(function(x) { return x.rank === first.rank; }).length;
+        assertEqual(count, 1, "rank " + first.rank + " deve aparecer exatamente 1x");
+      });
+      it("dedup por rank|nome: nome idêntico ao seed não dobra", function() {
+        var base = buildProsp([]);
+        var first = base[0];
+        var withDup = buildProsp([{ rank: first.rank, nome: first.nome, setor: "OutroSetor" }]);
+        var byRank = withDup.filter(function(x) { return x.rank === first.rank; }).length;
+        assertEqual(byRank, 1);
+      });
+      it("dois custom com ranks distintos ambos aparecem", function() {
+        var p = buildProsp([
+          { rank: 91001, nome: "EmpresaA", setor: "Tech" },
+          { rank: 91002, nome: "EmpresaB", setor: "Saude" },
+        ]);
+        assert(p.some(function(x) { return x.rank === 91001; }));
+        assert(p.some(function(x) { return x.rank === 91002; }));
+      });
+    });
+
+    // ── T5 · nextRank logic ───────────────────────────────────────────────
+    describe("T5 — nextRank logic", function() {
+      function nextRank(customLeads) {
+        return Math.max(9000, ...(customLeads.length
+          ? customLeads.map(function(c) { return c.rank || 9000; })
+          : [9000])) + 1;
+      }
+
+      it("lista vazia → 9001", function() {
+        assertEqual(nextRank([]), 9001);
+      });
+      it("max rank 9005 → próximo é 9006", function() {
+        assertEqual(nextRank([{ rank: 9005 }]), 9006);
+      });
+      it("sempre ≥ 9001 mesmo com ranks baixos", function() {
+        assert(nextRank([{ rank: 1 }, { rank: 2 }]) >= 9001);
+      });
+      it("pega o maior: [9010, 9020, 9015] → 9021", function() {
+        assertEqual(nextRank([{ rank: 9010 }, { rank: 9020 }, { rank: 9015 }]), 9021);
+      });
+      it("item sem rank → usa fallback 9000", function() {
+        assert(nextRank([{ nome: "SemRank" }]) >= 9001);
+      });
+    });
+
+    // ── T6 · lógica de merge do processCSV ───────────────────────────────
+    // processCSV está dentro de closure — testamos a lógica equivalente inline
+    describe("T6 — lógica de merge CSV (equivalente a processCSV)", function() {
+      function normStrTest(s) {
+        return (s || "").normalize("NFD").replace(/[̀-ͯ]/g, "")
+          .toUpperCase().trim().replace(/\s+/g, " ");
+      }
+
+      // Simula o core do merge: agrupa por empresa, deduplica decisores
+      function mergeCSVGroups(rows, existingCustomLeads, existingDecisores) {
+        var customLeads = JSON.parse(JSON.stringify(existingCustomLeads));
+        var decisores   = JSON.parse(JSON.stringify(existingDecisores));
+        var lookup = {};
+        customLeads.forEach(function(l) { lookup[normStrTest(l.nome)] = l.rank; });
+        var nextRk = Math.max(9000, ...(customLeads.length
+          ? customLeads.map(function(c) { return c.rank || 9000; })
+          : [9000])) + 1;
+        var report = { novas: 0, atualizadas: 0, decisoresAdicionados: 0 };
+
+        rows.forEach(function(grp) {
+          var key = normStrTest(grp.nome);
+          var rank = lookup[key];
+          if (!rank) {
+            rank = nextRk++;
+            customLeads.push({ rank: rank, nome: grp.nome.toUpperCase(), setor: grp.setor || "", custom: true });
+            lookup[key] = rank;
+            report.novas++;
+          } else {
+            report.atualizadas++;
+          }
+          var accKey = "galeria_" + rank;
+          var ex = decisores[accKey] || { decisors: [], sugeridos: [], activities: [] };
+          var ckNC = new Set((ex.decisors || []).concat(ex.sugeridos || []).map(function(d) {
+            return normStrTest(d.nome) + "|" + (d.cargo || "").toLowerCase();
+          }));
+          (grp.decisores || []).forEach(function(dec) {
+            var nc = normStrTest(dec.nome) + "|" + (dec.cargo || "").toLowerCase();
+            if (ckNC.has(nc)) return;
+            ckNC.add(nc);
+            ex.sugeridos = (ex.sugeridos || []).concat([{ nome: dec.nome, cargo: dec.cargo, addedAt: "import" }]);
+            report.decisoresAdicionados++;
+          });
+          decisores[accKey] = ex;
+        });
+        return { report: report, customLeads: customLeads, decisores: decisores };
+      }
+
+      it("empresa nova cria entrada em customLeads", function() {
+        var r = mergeCSVGroups(
+          [{ nome: "TechCo Nova", setor: "Tech", decisores: [] }],
+          [], {}
+        );
+        assertEqual(r.report.novas, 1);
+        assert(r.customLeads.some(function(l) { return l.nome === "TECHCO NOVA"; }));
+      });
+      it("empresa nova recebe rank >= 9001", function() {
+        var r = mergeCSVGroups([{ nome: "StartupX", setor: "Fintech", decisores: [] }], [], {});
+        var created = r.customLeads.find(function(l) { return l.nome === "STARTUPX"; });
+        assert(created && created.rank >= 9001, "rank deve ser >=9001, recebeu " + (created && created.rank));
+      });
+      it("re-import da mesma empresa → 0 novas", function() {
+        var first = mergeCSVGroups([{ nome: "DedupCo", setor: "Tech", decisores: [] }], [], {});
+        var second = mergeCSVGroups([{ nome: "DedupCo", setor: "Tech", decisores: [] }], first.customLeads, first.decisores);
+        assertEqual(second.report.novas, 0, "re-import não deve criar nova empresa");
+        assertEqual(second.report.atualizadas, 1);
+      });
+      it("deduplicação de decisor por nome+cargo", function() {
+        var dec = [{ nome: "João Silva", cargo: "CEO" }];
+        var first  = mergeCSVGroups([{ nome: "EmpresaDec", setor: "Tech", decisores: dec }], [], {});
+        var second = mergeCSVGroups([{ nome: "EmpresaDec", setor: "Tech", decisores: dec }], first.customLeads, first.decisores);
+        assertEqual(second.report.decisoresAdicionados, 0, "decisor duplicado não deve ser adicionado");
+      });
+      it("decisor novo em empresa existente é adicionado", function() {
+        var first  = mergeCSVGroups([{ nome: "EmpresaDec2", setor: "Tech", decisores: [{ nome: "Ana", cargo: "CFO" }] }], [], {});
+        var second = mergeCSVGroups([{ nome: "EmpresaDec2", setor: "Tech", decisores: [{ nome: "Carlos", cargo: "CMO" }] }], first.customLeads, first.decisores);
+        assertEqual(second.report.decisoresAdicionados, 1);
+      });
+      it("dois ranks distintos para empresas com nomes diferentes", function() {
+        var r = mergeCSVGroups([
+          { nome: "Alpha Co", setor: "Tech", decisores: [] },
+          { nome: "Beta Co",  setor: "Tech", decisores: [] },
+        ], [], {});
+        var ranks = r.customLeads.map(function(l) { return l.rank; });
+        assertEqual(new Set(ranks).size, ranks.length, "ranks devem ser únicos");
+      });
+    });
+
+    // ── Render ────────────────────────────────────────────────────────────
+    var totalPass = 0, totalFail = 0;
+    var html = SUITES.map(function(suite) {
+      var testsHtml = "";
+      if (suite.loadErr) {
+        totalFail++;
+        testsHtml = '<div class="test fail"><span class="icon">✗</span><span class="label">Suite falhou ao carregar<div class="err-msg">' + suite.loadErr + '</div></span></div>';
+      } else {
+        testsHtml = suite.tests.map(function(t) {
+          var ok = !t.err;
+          if (ok) totalPass++; else totalFail++;
+          return '<div class="test ' + (ok ? "pass" : "fail") + '">'
+            + '<span class="icon">' + (ok ? "✓" : "✗") + '</span>'
+            + '<span class="label">' + t.label
+            + (t.err ? '<div class="err-msg">' + t.err + '</div>' : '')
+            + '</span></div>';
+        }).join("");
+      }
+      return '<div class="suite"><div class="suite-title">' + suite.label + '</div>' + testsHtml + '</div>';
+    }).join("");
+
+    var scriptErrs = [];
+    if (window.__ghCoreErr) scriptErrs.push("gh-core.js não carregou");
+    if (window.__b0Err)     scriptErrs.push("block0_util.js não carregou");
+    if (window.__b6Err)     scriptErrs.push("block6.js não carregou");
+
+    var errBanner = scriptErrs.length
+      ? '<div class="section-err">⚠ ' + scriptErrs.join(" · ") + ' — abra em servidor local (não via file://)</div>'
+      : "";
+
+    var summaryClass = totalFail === 0 ? "ok" : "err";
+    var summaryText  = (totalPass + totalFail) + " testes — ✓ " + totalPass + " passaram"
+      + (totalFail > 0 ? " · ✗ " + totalFail + " falharam" : " · 0 falhas");
+
+    document.getElementById("load-status").style.display = "none";
+    document.getElementById("results").innerHTML =
+      errBanner
+      + '<div class="summary ' + summaryClass + '">' + summaryText + '</div>'
+      + html;
+
+  })();
+  </script>
+</body>
+</html>
