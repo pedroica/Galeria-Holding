@@ -642,6 +642,10 @@ function FerramentasModal({
 /* ─── AUTO-IMPORT MMN (roda 1× na primeira carga, remove-se via flag) ─── */
 (function mmnImportOnce() {
   if (localStorage.getItem('ghub_mmn_import_v1')) return;
+  if (typeof window.LEADS_ALL === 'undefined' || !window.LEADS_ALL.length) {
+    window.addEventListener('DOMContentLoaded', mmnImportOnce, { once: true });
+    return;
+  }
 
   function nS(n) {
     if (!n) return '';
