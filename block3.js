@@ -4031,13 +4031,16 @@ function App() {
     onClick: () => setFitFil(f)
   }, l))), /*#__PURE__*/React.createElement("div", {
     className: "sblist"
-  }, filtered.slice(0, visLimit).map(d => {
+  }, filtered.length === 0 && /*#__PURE__*/React.createElement("div", {
+    style: { textAlign: "center", padding: "32px 16px", color: "#3d3d5c", fontSize: 10, fontFamily: "IBM Plex Mono,monospace", lineHeight: 1.7, whiteSpace: "pre-line" }
+  }, sbQ ? ("Nenhum resultado para\n\"" + sbQ + "\"") : fitFil === "crm" ? "Nenhuma empresa\nno CRM deste grupo ainda" : "Nenhuma empresa\nneste filtro"), filtered.slice(0, visLimit).map(d => {
     const fit = curGrupo.fit(d.setor || "");
     const fc = fitColor(fit);
     const res = checkRestrictions(d, curGrupo.id);
     const isRes = res.length > 0;
     const isSel = curLead && curLead.rank === d.rank;
     const hasCrm = !!accs[accKey(curGrupo, d.rank)];
+    const tempData = hasCrm ? calcularTemperatura(accs[accKey(curGrupo, d.rank)]) : null;
     return /*#__PURE__*/React.createElement("div", {
       key: d.rank + d.nome,
       className: "coitem" + (isSel ? " sel" : "") + (isRes ? " restricted" : ""),
@@ -4089,7 +4092,8 @@ function App() {
         border: `1px solid rgba(${hexRgb(fc)},.2)`
       }
     }, fitLabel(fit)), hasCrm && /*#__PURE__*/React.createElement("div", {
-      className: "crmdot"
+      title: tempData ? (tempData.emoji + " " + tempData.status + " · " + tempData.pontos + "pts") : "CRM",
+      style: { width: 6, height: 6, borderRadius: "50%", background: (tempData && tempData.nivel > 0) ? tempData.cor : "#3d3d5c", flexShrink: 0, transition: "background .3s" }
     }), d.custom && /*#__PURE__*/React.createElement("button", {
       onClick: e => {
         e.stopPropagation();
