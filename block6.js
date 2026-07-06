@@ -3,6 +3,49 @@
    Componentes globais consumidos pelo App (bloco 3).
    ═══════════════════════════════════════════════════════════════ */
 
+/* ── utilidades de normalização compartilhadas (processCSV + IIFE MMN) ── */
+function _b6NormStr(n) {
+  return (n || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
+}
+function normalizarSetor(s) {
+  const SMAP = {
+    "beleza": "Beleza", "cosmeticos": "Beleza", "cosméticos": "Beleza", "beleza cosméticos": "Beleza", "beleza e cosméticos": "Beleza", "beleza/cosméticos": "Beleza",
+    "nutricao": "FMCG", "nutrição": "FMCG", "bem estar": "FMCG", "bens de consumo": "FMCG", "fmcg": "FMCG", "nutricao bem estar": "FMCG",
+    "alimentos": "Food", "food": "Food", "chocolates": "Food", "alimenticio": "Food", "alimentício": "Food", "food beverage": "Food",
+    "varejo": "Varejo", "e commerce": "E-commerce", "ecommerce": "E-commerce", "e-commerce": "E-commerce",
+    "moda": "Varejo Moda", "varejo moda": "Varejo Moda", "fashion": "Varejo Moda",
+    "fintech": "Fintech", "financeiro": "Financeiro", "servicos financeiros": "Fintech", "servicosfinanceiros": "Fintech",
+    "saude": "Saude", "saúde": "Saude", "health": "Saude",
+    "farma": "Farma", "farmaceutico": "Farma", "farmacêutico": "Farma", "pharma": "Farma",
+    "tech": "Tech", "tecnologia": "Tech", "technology": "Tech",
+    "b2b tech": "B2B Tech", "software": "B2B Tech", "saas": "B2B Tech",
+    "telecom": "Telecom", "telecomunicacoes": "Telecom", "telecomunicações": "Telecom",
+    "streaming": "Streaming", "media": "Media", "midia": "Media", "social media": "Social Media",
+    "automotivo": "Automotivo", "automotive": "Automotivo",
+    "educacao": "Educacao", "educação": "Educacao", "education": "Educacao", "edtech": "Educacao",
+    "travel": "Travel", "viagem": "Travel", "turismo": "Travel",
+    "energia": "Energia", "energy": "Energia",
+    "mineracao": "Mineracao", "mineração": "Mineracao",
+    "construcao": "Construcao", "construção": "Construcao",
+    "real estate": "Real Estate", "imobiliario": "Real Estate", "imobiliário": "Real Estate",
+    "proptech": "Proptech", "pets": "Pets", "pet": "Pets",
+    "seguros": "Seguros", "insurance": "Seguros",
+    "logistica": "Logistica", "logística": "Logistica", "logistics": "Logistica",
+    "mobilidade": "Mobilidade", "marketplace": "Marketplace", "super app": "Super App",
+    "agro": "Agro", "agronegocio": "Agro", "agronegócio": "Agro",
+    "industria": "Industria", "indústria": "Industria", "manufacturing": "Industria",
+    "utilidades": "Utilidades", "entretenimento": "Entretenimento",
+    "mmn": "Beleza", "venda direta": "Varejo", "mlm": "Varejo",
+    "perfumaria": "Beleza", "suplementos": "FMCG", "oleo": "FMCG", "utensilios": "Varejo", "vestuario": "Varejo"
+  };
+  const k = _b6NormStr(s || "");
+  if (SMAP[k]) return SMAP[k];
+  for (const [key, val] of Object.entries(SMAP)) {
+    if (k && (k.includes(key) || key.includes(k))) return val;
+  }
+  return s ? (s.charAt(0).toUpperCase() + s.slice(1)) : "Outros";
+}
+
 function TemperaturaView({
   accs,
   curGrupo,
@@ -333,47 +376,7 @@ function FerramentasModal({
     return result;
   }
 
-  function normStr(n) {
-    return (n || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]/g, " ").replace(/\s+/g, " ").trim();
-  }
-
-  function normSetor(s) {
-    const SMAP = {
-      "beleza": "Beleza", "cosmeticos": "Beleza", "cosméticos": "Beleza", "beleza cosméticos": "Beleza", "beleza e cosméticos": "Beleza", "beleza/cosméticos": "Beleza",
-      "nutricao": "FMCG", "nutrição": "FMCG", "bem estar": "FMCG", "bens de consumo": "FMCG", "fmcg": "FMCG", "nutricao bem estar": "FMCG",
-      "alimentos": "Food", "food": "Food", "chocolates": "Food", "alimenticio": "Food", "alimentício": "Food", "food beverage": "Food",
-      "varejo": "Varejo", "e commerce": "E-commerce", "ecommerce": "E-commerce", "e-commerce": "E-commerce",
-      "moda": "Varejo Moda", "varejo moda": "Varejo Moda", "fashion": "Varejo Moda",
-      "fintech": "Fintech", "financeiro": "Financeiro",
-      "saude": "Saude", "saúde": "Saude", "health": "Saude",
-      "farma": "Farma", "farmaceutico": "Farma", "farmacêutico": "Farma", "pharma": "Farma",
-      "tech": "Tech", "tecnologia": "Tech", "technology": "Tech",
-      "b2b tech": "B2B Tech", "software": "B2B Tech", "saas": "B2B Tech",
-      "telecom": "Telecom", "telecomunicacoes": "Telecom", "telecomunicações": "Telecom",
-      "streaming": "Streaming", "media": "Media", "midia": "Media", "social media": "Social Media",
-      "automotivo": "Automotivo", "automotive": "Automotivo",
-      "educacao": "Educacao", "educação": "Educacao", "education": "Educacao", "edtech": "Educacao",
-      "travel": "Travel", "viagem": "Travel", "turismo": "Travel",
-      "energia": "Energia", "energy": "Energia",
-      "mineracao": "Mineracao", "mineração": "Mineracao",
-      "construcao": "Construcao", "construção": "Construcao",
-      "real estate": "Real Estate", "imobiliario": "Real Estate", "imobiliário": "Real Estate",
-      "proptech": "Proptech", "pets": "Pets", "pet": "Pets",
-      "seguros": "Seguros", "insurance": "Seguros",
-      "logistica": "Logistica", "logística": "Logistica", "logistics": "Logistica",
-      "mobilidade": "Mobilidade", "marketplace": "Marketplace", "super app": "Super App",
-      "agro": "Agro", "agronegocio": "Agro", "agronegócio": "Agro",
-      "industria": "Industria", "indústria": "Industria", "manufacturing": "Industria",
-      "utilidades": "Utilidades", "entretenimento": "Entretenimento",
-      "mmn": "Beleza", "venda direta": "Varejo", "mlm": "Varejo"
-    };
-    const k = normStr(s || "");
-    if (SMAP[k]) return SMAP[k];
-    for (const [key, val] of Object.entries(SMAP)) {
-      if (k && (k.includes(key) || key.includes(k))) return val;
-    }
-    return s ? (s.charAt(0).toUpperCase() + s.slice(1)) : "Outros";
-  }
+  const normStr = _b6NormStr;
 
   function mapKanbanCol(est) {
     const e = normStr(est || "");
@@ -467,7 +470,7 @@ function FerramentasModal({
         // nova empresa
         rank = nextRk++;
         customLeads.push({
-          rank, nome: grp.nome.toUpperCase(), setor: normSetor(grp.setor),
+          rank, nome: grp.nome.toUpperCase(), setor: normalizarSetor(grp.setor),
           segmento_detalhe: grp.setor, website: grp.website,
           tier: grp.tier, porte: grp.porte, cnpj: grp.cnpj,
           cli: false, custom: true
@@ -651,18 +654,7 @@ function FerramentasModal({
     if (!n) return '';
     return n.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '').toLowerCase();
   }
-  const SM = { belezacosmeticos:'Beleza', cosmeticos:'Beleza', beleza:'Beleza', perfumaria:'Beleza',
-    nutricaobemestar:'FMCG', nutricao:'FMCG', bemestar:'FMCG', suplementos:'FMCG', oleo:'FMCG',
-    chocolatesalimentos:'Food', chocolates:'Food', alimentos:'Food', alimenticio:'Food',
-    utensilios:'Varejo', utensilioscasa:'Varejo', vestuario:'Varejo',
-    servicosfinanceiros:'Fintech', financeiro:'Fintech', energia:'Energia' };
-  function nSetor(s) {
-    if (!s) return 'Outros';
-    const k = nS(s);
-    if (SM[k]) return SM[k];
-    for (const [key, val] of Object.entries(SM)) { if (k.startsWith(key) || key.startsWith(k)) return val; }
-    return s.split('/')[0].trim().replace(/^\w/, c => c.toUpperCase());
-  }
+  const nSetor = normalizarSetor;
   function mCol(est) {
     const e = nS(est || '');
     if (e.includes('email')) return 'email';
