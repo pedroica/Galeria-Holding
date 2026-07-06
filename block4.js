@@ -4,6 +4,129 @@ const {
   useEffect,
   useCallback
 } = React;
+
+// ─── E-mail 3 cliques: helpers ────────────────────────────────────────────────
+function _bestAgForSetor(setor) {
+  var s = (setor || '').toLowerCase();
+  if (['educacao','farma','automotivo','super app','games','grande varejo','cerveja'].some(function(x){ return s.includes(x); })) return 'galeria';
+  if (['beleza','fmcg','varejo moda','food','alimentos','varejo','lacteo','sorvete'].some(function(x){ return s.includes(x); })) return 'mila';
+  if (['fintech','b2b','tech','luxo','proptech','servicos financeiros','financeiro'].some(function(x){ return s.includes(x); })) return '404';
+  if (['streaming','entretenimento','social media','musica'].some(function(x){ return s.includes(x); })) return 'cccaramelo';
+  return 'galeria_holding';
+}
+function _getAgTpl(agId, setor) {
+  var TPLS = (typeof AGENCY_TEMPLATES !== 'undefined') ? AGENCY_TEMPLATES : {};
+  var ag = TPLS[agId]; if (!ag) return null;
+  var ps = ag.porSetor || {}, s = (setor || '').toLowerCase(), matched = null;
+  Object.keys(ps).some(function(k){
+    if (k.toLowerCase() === s || s.includes(k.toLowerCase()) || k.toLowerCase().includes(s)){
+      matched = Object.assign({}, ps[k], { assinatura: ag.assinatura }); return true;
+    }
+  });
+  return matched || Object.assign({}, ag.default || {}, { assinatura: ag.assinatura });
+}
+function _fillVars(str, vars) {
+  return (str || '').replace(/\{nome\}/g, vars.nome||'').replace(/\{empresa\}/g, vars.empresa||'').replace(/\{site\}/g, vars.site||'');
+}
+var _POP_AGS = [
+  { id:'galeria_holding', label:'Galeria Holding' },
+  { id:'galeria',         label:'Galeria'         },
+  { id:'mila',            label:'Milà'            },
+  { id:'404',             label:'404'             },
+  { id:'cccaramelo',      label:'Caramelo'        },
+];
+
+function EmailPopover({ empresa, accs, setAccs, curGrupoId, onClose }) {
+  var MC = (typeof MICROCOPY !== 'undefined') ? MICROCOPY : { titulo:function(e){return'✉️ E-mail pra '+e;}, setorDetectado:function(s){return'Setor: '+s;}, agenciaLabel:'Agência', agenciaHint:'sugerida pelo fit do setor', badgeMelhorFit:'★ melhor fit', decisores:function(n){return n+' decisores com e-mail';}, semDecisor:'Nenhum decisor com e-mail.', conflito:function(m){return'⚠️ '+m;}, gerarBtn:function(n){return'Gerar e abrir e-mails';}, sucessoMulti:function(n){return'✅ '+n+' e-mails abertos.';}, sucessoUm:function(n){return'✅ E-mail aberto pro '+n+'.';}, statusOk:function(n){return'✓ '+n+' — aberto';}, statusPulado:function(n){return'— '+n+' (sem e-mail, pulado)';} };
+  var TPLS = (typeof AGENCY_TEMPLATES !== 'undefined') ? AGENCY_TEMPLATES : {};
+  var [selAg, setSelAg] = useState(function(){ return _bestAgForSetor(empresa.setor); });
+  var [results, setResults] = useState([]);
+  var [done, setDone] = useState(false);
+
+  var dbKey = curGrupoId + '_' + empresa.rank;
+  var acc = (accs||{})[dbKey] || { decisors:[], sugeridos:[], activities:[] };
+  var withEmail = (acc.decisors||[]).filter(function(d){ return d.email && d.email.includes('@'); });
+  var site = empresa.website || empresa.site || (withEmail.length > 0 ? (withEmail[0].email.split('@')[1]||'') : '');
+  var bestAg = _bestAgForSetor(empresa.setor);
+
+  var conflicts = (typeof checkRestrictions === 'function') ? checkRestrictions({ nome: empresa.nome, setor: empresa.setor }, selAg) : [];
+  var activeConflict = conflicts.filter(function(c){ return !c.expiresAt || new Date(c.expiresAt) > new Date(); });
+
+  var gerar = function() {
+    var tpl = _getAgTpl(selAg, empresa.setor);
+    if (!tpl || withEmail.length === 0) return;
+    var res = [];
+    withEmail.forEach(function(d) {
+      var pn = (d.nome||'').split(' ')[0];
+      var vars = { nome: pn, empresa: empresa.nome, site: site };
+      var assunto = _fillVars(tpl.assunto, vars);
+      var corpo = _fillVars(tpl.corpo, vars) + '\n\n' + (tpl.assinatura||'');
+      try { window.open('mailto:' + encodeURIComponent(d.email) + '?subject=' + encodeURIComponent(assunto) + '&body=' + encodeURIComponent(corpo), '_blank'); res.push({ nome: d.nome, ok: true }); }
+      catch(err) { res.push({ nome: d.nome, ok: false }); }
+    });
+    var prev = lsGet('gh_decisores_v3', {});
+    var curAcc = prev[dbKey] || { decisors:[], sugeridos:[], activities:[] };
+    var agNome = (TPLS[selAg]||{}).nome || selAg;
+    var newActs = res.filter(function(r){ return r.ok; }).map(function(r){ return { type:'email', typeLabel:'✉ Email', decisor:r.nome, note:'E-mail gerado — agência '+agNome, date:new Date().toLocaleDateString('pt-BR'), isoDate:new Date().toISOString(), synced:false }; });
+    var updatedAcc = Object.assign({}, curAcc, { activities:(curAcc.activities||[]).concat(newActs) });
+    var updated = Object.assign({}, prev, { [dbKey]: updatedAcc });
+    setAccs(updated); lsSet('gh_decisores_v3', updated);
+    setResults(res); setDone(true);
+  };
+
+  var btnAg = function(ag) {
+    var sel = selAg === ag.id, best = ag.id === bestAg;
+    return React.createElement('button', { key: ag.id, onClick: function(){ setSelAg(ag.id); }, style: { padding:'6px 12px', borderRadius:20, border:'.5px solid', borderColor:sel?'#FF6B2B':'#2D2D44', background:sel?'rgba(255,107,43,.15)':'transparent', color:sel?'#FF6B2B':'#9B9BB4', fontSize:11, cursor:'pointer', fontWeight:sel?700:400, display:'inline-flex', alignItems:'center', gap:4 } },
+      ag.label, best && React.createElement('span', { style:{ fontSize:9, color:'#EF9F27' } }, ' '+MC.badgeMelhorFit));
+  };
+
+  return React.createElement('div', { style:{ position:'fixed', inset:0, background:'rgba(0,0,0,.9)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center', padding:20 }, onClick: onClose },
+    React.createElement('div', { style:{ background:'#111827', border:'.5px solid #2D2D44', borderRadius:14, width:'100%', maxWidth:460, padding:24, display:'flex', flexDirection:'column', gap:14 }, onClick:function(ev){ ev.stopPropagation(); } },
+      // cabeçalho
+      React.createElement('div', { style:{ display:'flex', alignItems:'flex-start', justifyContent:'space-between' } },
+        React.createElement('div', null,
+          React.createElement('div', { style:{ fontSize:15, fontWeight:700, color:'#F5F5F5' } }, MC.titulo(empresa.nome)),
+          React.createElement('div', { style:{ fontSize:10, color:'#9B9BB4', fontFamily:'IBM Plex Mono,monospace', marginTop:4 } },
+            MC.setorDetectado(empresa.setor||'sem setor'),
+            site && React.createElement('span', { style:{ marginLeft:8, color:'#60A5FA' } }, '🔗 '+site)
+          )
+        ),
+        React.createElement('button', { onClick:onClose, style:{ background:'none', border:'none', color:'#9B9BB4', fontSize:20, cursor:'pointer', lineHeight:1, padding:'0 4px' } }, '×')
+      ),
+      // seletor de agência
+      !done && React.createElement('div', null,
+        React.createElement('div', { style:{ fontSize:9, color:'#9B9BB4', fontFamily:'IBM Plex Mono,monospace', marginBottom:8, textTransform:'uppercase', letterSpacing:.5 } }, MC.agenciaLabel+' · '+MC.agenciaHint),
+        React.createElement('div', { style:{ display:'flex', flexWrap:'wrap', gap:6 } }, _POP_AGS.map(btnAg))
+      ),
+      // aviso de conflito
+      !done && activeConflict.length > 0 && React.createElement('div', { style:{ background:'rgba(239,159,39,.12)', border:'.5px solid #EF9F27', borderRadius:8, padding:'8px 12px', fontSize:11, color:'#EF9F27' } },
+        MC.conflito(activeConflict[0].reason, (TPLS[selAg]||{}).nome||selAg)
+      ),
+      // count + botão gerar
+      !done && React.createElement('div', { style:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 } },
+        withEmail.length === 0
+          ? React.createElement('div', { style:{ fontSize:12, color:'#EF9F27', fontStyle:'italic' } }, MC.semDecisor)
+          : React.createElement(React.Fragment, null,
+              React.createElement('div', { style:{ fontSize:12, color:'#9B9BB4' } }, MC.decisores(withEmail.length)),
+              React.createElement('button', { onClick:gerar, style:{ padding:'10px 20px', borderRadius:8, border:'none', background:'#FF6B2B', color:'#fff', fontSize:12, fontWeight:700, cursor:'pointer', whiteSpace:'nowrap' } }, MC.gerarBtn(withEmail.length))
+            )
+      ),
+      // resultado pós-geração
+      done && React.createElement('div', { style:{ display:'flex', flexDirection:'column', gap:8 } },
+        React.createElement('div', { style:{ fontSize:13, color:'#1D9E75', fontWeight:600 } },
+          results.filter(function(r){ return r.ok; }).length === 1
+            ? MC.sucessoUm((results.find(function(r){ return r.ok; })||{}).nome||'')
+            : MC.sucessoMulti(results.filter(function(r){ return r.ok; }).length)
+        ),
+        results.map(function(r){ return React.createElement('div', { key:r.nome, style:{ fontSize:11, color:r.ok?'#9B9BB4':'#555', fontFamily:'IBM Plex Mono,monospace' } }, r.ok ? MC.statusOk(r.nome) : MC.statusPulado(r.nome)); }),
+        React.createElement('div', { style:{ display:'flex', justifyContent:'flex-end', marginTop:4 } },
+          React.createElement('button', { onClick:onClose, style:{ padding:'8px 20px', borderRadius:8, border:'.5px solid #2D2D44', background:'transparent', color:'#9B9BB4', fontSize:12, cursor:'pointer' } }, 'Fechar')
+        )
+      )
+    )
+  );
+}
+
 function EmpresasView({
   accs,
   setAccs,
@@ -25,6 +148,7 @@ function EmpresasView({
   const [newEmpCidade, setNewEmpCidade] = useState("");
   const [newEmpSite, setNewEmpSite] = useState("");
   const [newEmpErr, setNewEmpErr] = useState("");
+  const [emailPopover, setEmailPopover] = useState(null);
   const [fNome, setFNome] = useState("");
   const [fCargo, setFCargo] = useState("");
   const [fEmail, setFEmail] = useState("");
@@ -738,7 +862,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       overflow: "hidden",
       background: "#0D0D0D"
     }
-  }, showAddEmp && /*#__PURE__*/React.createElement("div", {
+  }, emailPopover && React.createElement(EmailPopover, { empresa: emailPopover, accs: accs, setAccs: setAccs, curGrupoId: curGrupo.id, onClose: function(){ setEmailPopover(null); } }), showAddEmp && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
@@ -1102,7 +1226,13 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         fontFamily: "IBM Plex Mono,monospace",
         marginTop: 2
       }
-    }, e.setor)), /*#__PURE__*/React.createElement("div", {
+    }, e.setor), (e.website || e.site) && /*#__PURE__*/React.createElement("a", {
+      href: ("https://" + (e.website || e.site)).replace("https://https://", "https://"),
+      target: "_blank",
+      rel: "noopener noreferrer",
+      onClick: function(ev){ ev.stopPropagation(); },
+      style: { fontSize: 9, color: "#60A5FA", fontFamily: "IBM Plex Mono,monospace", display: "block", marginTop: 2, textDecoration: "none", overflow: "hidden", whiteSpace: "nowrap", textOverflow: "ellipsis" }
+    }, (typeof MICROCOPY !== 'undefined' ? MICROCOPY.siteLink(e.website || e.site) : ("🔗 " + (e.website || e.site))))), /*#__PURE__*/React.createElement("div", {
       style: {
         width: 80,
         flexShrink: 0
@@ -1144,7 +1274,11 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         borderRadius: 2,
         transition: "width .3s"
       }
-    }))), /*#__PURE__*/React.createElement("div", {
+    }))), /*#__PURE__*/React.createElement("button", {
+      title: typeof MICROCOPY !== 'undefined' ? MICROCOPY.btnEmail : "Gerar e-mail pro decisor",
+      onClick: function(ev){ ev.stopPropagation(); setEmailPopover(e); },
+      style: { padding: "5px 8px", borderRadius: 6, border: ".5px solid #2D2D44", background: "transparent", color: "#9B9BB4", fontSize: 14, cursor: "pointer", flexShrink: 0 }
+    }, "✉️"), /*#__PURE__*/React.createElement("div", {
       className: "score-badge " + scoreCls(sc),
       style: {
         width: 30,
