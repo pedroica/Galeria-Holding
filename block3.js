@@ -3323,6 +3323,8 @@ function App() {
   const [curLead, setCurLead] = useState(null);
   const [sbQ, setSbQ] = useState("");
   const [fitFil, setFitFil] = useState("all");
+  const [visLimit, setVisLimit] = useState(200);
+  useEffect(() => { setVisLimit(200); }, [fitFil, sbQ, curGrupo]);
   const [accs, setAccs] = useState(() => {
     const v1 = loadSt("ghub_accs", {});
     const v3 = loadSt("gh_decisores_v3", {});
@@ -4002,7 +4004,7 @@ function App() {
     }
   }, /*#__PURE__*/React.createElement("span", {
     className: "sbcnt"
-  }, filtered.length), /*#__PURE__*/React.createElement("button", {
+  }, filtered.length > visLimit ? (Math.min(visLimit, filtered.length) + " de " + filtered.length) : filtered.length), /*#__PURE__*/React.createElement("button", {
     onClick: () => setAddCoModal(true),
     style: {
       padding: "2px 8px",
@@ -4029,7 +4031,7 @@ function App() {
     onClick: () => setFitFil(f)
   }, l))), /*#__PURE__*/React.createElement("div", {
     className: "sblist"
-  }, filtered.slice(0, 200).map(d => {
+  }, filtered.slice(0, visLimit).map(d => {
     const fit = curGrupo.fit(d.setor || "");
     const fc = fitColor(fit);
     const res = checkRestrictions(d, curGrupo.id);
@@ -4104,7 +4106,15 @@ function App() {
         fontFamily: "DM Mono,monospace"
       }
     }, "✕")));
-  }))), /*#__PURE__*/React.createElement("div", {
+  }), filtered.length > visLimit && /*#__PURE__*/React.createElement("div", {
+    style: { padding: "8px 10px", textAlign: "center", borderTop: ".5px solid #2D2D44" }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: { fontSize: 9, color: "#9B9BB4", fontFamily: "IBM Plex Mono,monospace", marginRight: 8 }
+  }, "mostrando " + Math.min(visLimit, filtered.length) + " de " + filtered.length), /*#__PURE__*/React.createElement("button", {
+    onClick: function() { setVisLimit(function(v) { return v + 200; }); },
+    style: { fontSize: 9, color: "#60A5FA", background: "transparent", border: ".5px solid #2D2D44", borderRadius: 4, padding: "3px 8px", cursor: "pointer", fontFamily: "IBM Plex Mono,monospace" }
+  }, "+ Ver mais"))
+  )), /*#__PURE__*/React.createElement("div", {
     className: "main",
     style: {
       "--tc": curGrupo.color,
