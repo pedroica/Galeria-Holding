@@ -3445,6 +3445,20 @@ function App() {
     };
   }, []);
   useEffect(() => {
+    window.__refreshFromStorage = function () {
+      const newLeads = loadSt('ghub_custom_leads', []);
+      setCustomLeads(function (prev) {
+        PROSP = buildProsp(newLeads);
+        return newLeads;
+      });
+      setAccs(function (prev) {
+        const fromStorage = loadSt('gh_decisores_v3', {});
+        return Object.assign({}, fromStorage, prev);
+      });
+    };
+    return function () { delete window.__refreshFromStorage; };
+  }, []);
+  useEffect(() => {
     window.__moveDecToEmpresa = function (dec, destRank) {
       setAccs(function (prev) {
         var k = curGrupo.id + "_" + destRank;

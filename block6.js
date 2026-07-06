@@ -539,6 +539,7 @@ function FerramentasModal({
       try {
         const rep = processCSV(rd.result);
         setImportReport(rep);
+        if (typeof window.__refreshFromStorage === 'function') window.__refreshFromStorage();
       } catch (e) {
         setMsg("❌ Erro ao processar CSV: " + e.message);
       }
