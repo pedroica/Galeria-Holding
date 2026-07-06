@@ -638,3 +638,154 @@ function FerramentasModal({
     /*#__PURE__*/React.createElement("button", { className: "kes-btn-s", onClick: onClose }, "Fechar")
   )));
 }
+
+/* ─── AUTO-IMPORT MMN (roda 1× na primeira carga, remove-se via flag) ─── */
+(function mmnImportOnce() {
+  if (localStorage.getItem('ghub_mmn_import_v1')) return;
+
+  function nS(n) {
+    if (!n) return '';
+    return n.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]/g, '').toLowerCase();
+  }
+  const SM = { belezacosmeticos:'Beleza', cosmeticos:'Beleza', beleza:'Beleza', perfumaria:'Beleza',
+    nutricaobemestar:'FMCG', nutricao:'FMCG', bemestar:'FMCG', suplementos:'FMCG', oleo:'FMCG',
+    chocolatesalimentos:'Food', chocolates:'Food', alimentos:'Food', alimenticio:'Food',
+    utensilios:'Varejo', utensilioscasa:'Varejo', vestuario:'Varejo',
+    servicosfinanceiros:'Fintech', financeiro:'Fintech', energia:'Energia' };
+  function nSetor(s) {
+    if (!s) return 'Outros';
+    const k = nS(s);
+    if (SM[k]) return SM[k];
+    for (const [key, val] of Object.entries(SM)) { if (k.startsWith(key) || key.startsWith(k)) return val; }
+    return s.split('/')[0].trim().replace(/^\w/, c => c.toUpperCase());
+  }
+  function mCol(est) {
+    const e = nS(est || '');
+    if (e.includes('email')) return 'email';
+    if (e.includes('linkedin')) return 'linkedin';
+    if (e.includes('whatsapp') || e.includes('wa')) return 'whatsapp';
+    if (e.includes('respons')) return 'respondeu';
+    if (e.includes('negoc')) return 'negociacao';
+    if (e.includes('reuni')) return 'reuniao';
+    return 'para_acionar';
+  }
+  function wKey() {
+    const d = new Date(); d.setHours(0,0,0,0);
+    d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+    return d.toISOString().slice(0, 10);
+  }
+  function lSt(k, def) { try { return JSON.parse(localStorage.getItem(k)) || def; } catch { return def; } }
+  function sSt(k, v) { localStorage.setItem(k, JSON.stringify(v)); }
+
+  const DATA = [
+    {n:'Natura',s:'Beleza/Cosméticos',sg:'Cosméticos / Beleza',w:'natura.com.br',t:'A',p:'US$7,1 bi',e:'Novo',m:'Venda direta + MMN',d:[
+      {n:'Tatiana Ponce',c:'CMO e Head de Inovação (Natura + Avon LatAm)',li:'linkedin.com/in/tatiana-moraes-de-oliveira-ponce-338a1951',st:'confirmado',g:'Comanda marketing unificado Natura+Avon',o:'2ª maior de venda direta do mundo. Controla Avon.'},
+      {n:'Diego Costa',c:'Diretor Sênior de Marketing (submarcas LatAm)',st:'confirmado',g:'Fala de TikTok/Pinterest e IA na perfumaria — fit CR.IA',o:'Fonte: acontecendoaqui (2026)'},
+      {n:'Gabriel Fernandes',c:'Diretor de Marca e Comunicação Integrada',st:'confirmado',g:'Ex-Pernod Ricard, chegou em 2025',o:'Fonte: Terra (2025)'}]},
+    {n:'Avon',s:'Beleza/Cosméticos',sg:'Cosméticos / Beleza',w:'avon.com.br',t:'A',p:'Parte do Natura&Co',e:'Novo',m:'Venda direta + MMN',d:[
+      {n:'Tatiana Ponce',c:'CMO Natura&Co (mkt e P&D Avon LatAm)',st:'confirmado',g:'Brasil é o maior mercado global da Avon',o:'Fonte: Forbes (2024)'}]},
+    {n:'Hinode Group',s:'Beleza/Cosméticos',sg:'Cosméticos / Perfumaria',w:'hinode.com.br',t:'A',p:'R$750 mi',e:'Novo',m:'MMN',d:[
+      {n:'Sandro Rodrigues',c:'CEO (família controladora)',st:'sugerido',g:'Empresa familiar, mirando geração Z e TikTok',o:'Confirmar head de marketing via Lusha'}]},
+    {n:'Herbalife',s:'Nutrição/Bem-estar',sg:'Nutrição / Bem-estar',w:'herbalife.com.br',t:'A',p:'US$5,5 bi',e:'Novo',m:'MMN',d:[
+      {n:'Jordan Rizetto',c:'VP e Diretor Geral Brasil',st:'confirmado',g:'Veio do marketing — sensível a pauta de marca',o:'Fonte: Propmark/ABEVD'}]},
+    {n:'Amway',s:'Nutrição/Bem-estar',sg:'Bem-estar / Casa / Beleza',w:'amway.com.br',t:'A',p:'US$7,3 bi',e:'Novo',m:'MMN',d:[
+      {n:'Daniele Côrtes',c:'CEO / Country Manager Brasil',st:'sugerido',g:'Confirmar diretor(a) de marketing via Lusha',o:'Fonte: LinkedIn'}]},
+    {n:'Mary Kay',s:'Beleza/Cosméticos',sg:'Cosméticos / Beleza',w:'marykay.com.br',t:'A',p:'Top global',e:'Novo',m:'MMN',d:[
+      {n:'Vick Gallo',c:'VP de Marketing Brasil',st:'confirmado',g:'Criou o TikTok líder mundial do grupo. Perfil digital-first — fit CR.IA',o:'Fonte: Meio&Mensagem (2025)'}]},
+    {n:'Jequiti',s:'Beleza/Cosméticos',sg:'Cosméticos / Perfumaria',w:'jequiti.com.br',t:'A',p:'R$466 mi',e:'Novo',m:'Venda direta',d:[
+      {n:'Larissa Fontanini',c:'Diretora de Marketing',st:'confirmado',g:'Sinergia com mídia SBT. Reestruturação (skincare, varejo, live)',o:'Fonte: ABEVD/Exame'},
+      {n:'Eduardo Ribeiro',c:'CEO',st:'confirmado',g:'Plano de dobrar consultores e entrar no varejo',o:'Fonte: iNews'}]},
+    {n:'Cacau Show',s:'Chocolates/Alimentos',sg:'Chocolates / Presentes',w:'cacaushow.com.br',t:'A',p:'R$6,8 bi (rede)',e:'Novo',m:'Venda direta + franquias',d:[
+      {n:'Lilian Rodrigues',c:'Diretora de Marketing',st:'confirmado',g:'Ex-Boticário, foco 2025 em live commerce — fit conteúdo/criação',o:'Fonte: D.Comercio'},
+      {n:'Daniel Roque',c:'VP de Negócios',st:'confirmado',g:'Se o ângulo for a rede de venda direta, o decisor é ele',o:'Patrocínio TV no SBT = apetite de mídia'}]},
+    {n:'Forever Living',s:'Nutrição/Bem-estar',sg:'Bem-estar / Aloe vera',w:'foreverliving.com',t:'A',p:'158 países',e:'Novo',m:'MMN',d:[]},
+    {n:'Tupperware',s:'Utensílios/Casa',sg:'Utensílios domésticos',w:'tupperware.com.br',t:'A',p:'Marca global clássica',e:'Novo',m:'Venda direta',d:[]},
+    {n:'iGreen Energy',s:'Energia',sg:'Energia (mercado livre)',w:'igreenenergy.com.br',t:'B',p:'Maior case de crescimento 2025',e:'Novo',m:'MMN',d:[]},
+    {n:'Amakha Paris',s:'Perfumaria',sg:'Perfumaria',w:'amakhaparis.com.br',t:'B',p:'Crescimento rápido',e:'Novo',m:'MMN',d:[]},
+    {n:'Zyone',s:'Beleza/Cosméticos',sg:'Cosméticos',w:'zyone.com.br',t:'B',p:'Salto institucional 2025',e:'Novo',m:'MMN',d:[]},
+    {n:'Atlântica Natural',s:'Nutrição/Bem-estar',sg:'Nutrição / Bem-estar',w:'',t:'B',p:'Destaque 2025',e:'Novo',m:'MMN',d:[]},
+    {n:'Akmos',s:'Nutrição/Bem-estar',sg:'Nutrição / Cosméticos / Casa',w:'akmos.com.br',t:'B',p:'Base fiel',e:'Novo',m:'MMN',d:[]},
+    {n:'Akmel',s:'Nutrição/Bem-estar',sg:'Bem-estar / Cosméticos',w:'',t:'B',p:'Consistência',e:'Novo',m:'MMN',d:[]},
+    {n:'Moments Paris',s:'Perfumaria',sg:'Perfumaria premium',w:'',t:'B',p:'Posicionamento premium',e:'Novo',m:'MMN',d:[]},
+    {n:'Boulevard Monde',s:'Nutrição/Bem-estar',sg:'Bem-estar / Cosméticos',w:'boulevardmonde.com.br',t:'B',p:'100 mil+ revendedores',e:'Novo',m:'MMN',d:[]},
+    {n:'Omnilife',s:'Nutrição/Bem-estar',sg:'Suplementos',w:'omnilife.com',t:'B',p:'US$573 mi',e:'Novo',m:'MMN',d:[]},
+    {n:'Nu Skin',s:'Beleza/Cosméticos',sg:'Beleza / Anti-idade',w:'nuskin.com',t:'B',p:'US$2,5 bi',e:'Novo',m:'MMN',d:[]},
+    {n:'Oriflame',s:'Beleza/Cosméticos',sg:'Cosméticos',w:'oriflame.com',t:'C',p:'US$1,38 bi',e:'Novo',m:'MMN',d:[]},
+    {n:'Jeunesse',s:'Beleza/Cosméticos',sg:'Beleza / Bem-estar',w:'jeunesseglobal.com',t:'C',p:'Global',e:'Novo',m:'MMN',d:[]},
+    {n:'Vorwerk (Thermomix/Jafra)',s:'Utensílios/Casa',sg:'Eletrodomésticos / Cosméticos',w:'thermomix.com.br',t:'C',p:'US$4,48 bi',e:'Novo',m:'Venda direta',d:[]},
+    {n:'Young Living',s:'Nutrição/Bem-estar',sg:'Óleos essenciais',w:'youngliving.com',t:'C',p:'US$2,2 bi',e:'Novo',m:'MMN',d:[]},
+    {n:'4Life Research',s:'Nutrição/Bem-estar',sg:'Suplementos / Imunidade',w:'4life.com',t:'C',p:'Global',e:'Novo',m:'MMN',d:[]},
+    {n:'Hy Cite (Royal Prestige)',s:'Utensílios/Casa',sg:'Utensílios / Casa',w:'royalprestige.com',t:'C',p:'US$341 mi',e:'Novo',m:'Venda direta',d:[]},
+    {n:'Mahogany',s:'Perfumaria',sg:'Cosméticos / Perfumaria',w:'mahogany.com.br',t:'C',p:'Rede nacional',e:'Novo',m:'Venda direta',d:[]},
+    {n:'DeMillus',s:'Vestuário',sg:'Vestuário / Lingerie',w:'demillus.com.br',t:'C',p:'Tradicional nacional',e:'Novo',m:'Venda direta',d:[]},
+    {n:'Jan Rosê',s:'Beleza/Cosméticos',sg:'Cosméticos',w:'janrose.com.br',t:'C',p:'Nacional',e:'Novo',m:'Venda direta',d:[]},
+    {n:'Crystallini',s:'Beleza/Cosméticos',sg:'Cosméticos / Semijoias',w:'',t:'C',p:'Nacional',e:'Novo',m:'Venda direta',d:[]},
+    {n:'Odorata',s:'Perfumaria',sg:'Cosméticos / Perfumaria',w:'',t:'C',p:'Nacional',e:'Novo',m:'Venda direta',d:[]},
+    {n:'Yakult',s:'Nutrição/Bem-estar',sg:'Alimentício / Probióticos',w:'yakult.com.br',t:'C',p:'Global',e:'Novo',m:'Venda direta',d:[]},
+    {n:'Refin',s:'Serviços Financeiros',sg:'Serviços financeiros',w:'',t:'C',p:'Expansão 2025',e:'Novo',m:'MMN',d:[]},
+    {n:'APVS Brasil',s:'Serviços Financeiros',sg:'Proteção veicular / Associação',w:'apvsbrasil.com.br',t:'C',p:'Grande operação',e:'Novo',m:'MMN',d:[]},
+    {n:'Maravilhas da Terra (MDT)',s:'Nutrição/Bem-estar',sg:'Bem-estar / Chás funcionais',w:'',t:'C',p:'Crescimento acelerado',e:'Novo',m:'MMN',d:[]},
+    {n:'USANA',s:'Nutrição/Bem-estar',sg:'Nutrição / Suplementos',w:'usana.com',t:'C',p:'US$1,14 bi',e:'Novo',m:'MMN',d:[]},
+    {n:"Nature's Sunshine",s:'Nutrição/Bem-estar',sg:'Suplementos / Fitoterápicos',w:'naturessunshine.com',t:'C',p:'US$385 mi',e:'Novo',m:'MMN',d:[]},
+  ];
+
+  try {
+    if (typeof ghExportBackup === 'function') ghExportBackup();
+  } catch(e) {}
+
+  const cLeads = lSt('ghub_custom_leads', []);
+  const decDB  = lSt('gh_decisores_v3', {});
+  const kanDB  = lSt('gh_kanban_v3', {});
+  const wk     = wKey();
+
+  const lkup = {};
+  const allL = (typeof window.LEADS_ALL !== 'undefined' && Array.isArray(window.LEADS_ALL)) ? window.LEADS_ALL : [];
+  allL.forEach(l => { if (l && l.nome) lkup[nS(l.nome)] = l.rank; });
+  cLeads.forEach(l => { if (l && l.nome) lkup[nS(l.nome)] = l.rank; });
+  let maxR = 9000;
+  cLeads.forEach(l => { if (l.rank > maxR) maxR = l.rank; });
+  allL.forEach(l => { if (l.rank > maxR) maxR = l.rank; });
+
+  let novas = 0, atualiz = 0, decAdd = 0;
+
+  for (const co of DATA) {
+    const ck = nS(co.n);
+    let rank = lkup[ck];
+    if (!rank) {
+      maxR++;
+      rank = maxR;
+      lkup[ck] = rank;
+      cLeads.push({ rank, nome: co.n.toUpperCase(), setor: nSetor(co.s),
+        segmento_detalhe: co.sg, website: co.w, tier: co.t,
+        porte: co.p, modelo: co.m, cli: false, custom: true });
+      novas++;
+    } else {
+      atualiz++;
+    }
+    const dbK = 'galeria_' + rank;
+    if (!decDB[dbK]) decDB[dbK] = { decisors: [], sugeridos: [], activities: [] };
+    const entry = decDB[dbK];
+    for (const d of (co.d || [])) {
+      if (!d.n) continue;
+      const arr = d.st === 'confirmado' ? entry.decisors : entry.sugeridos;
+      const dup = arr.find(x => nS(x.nome) === nS(d.n) && nS(x.cargo) === nS(d.c));
+      if (!dup) {
+        arr.push({ nome: d.n, cargo: d.c, email: '', wa: '', li: d.li || '',
+          fromMailing: false, addedAt: 'import', gancho: d.g || '', observacoes: d.o || '' });
+        decAdd++;
+      }
+    }
+    if (!kanDB[wk]) kanDB[wk] = {};
+    const col = mCol(co.e);
+    if (!kanDB[wk][col]) kanDB[wk][col] = [];
+    const cId = 'galeria_' + rank;
+    if (!kanDB[wk][col].includes(cId)) kanDB[wk][col].push(cId);
+  }
+
+  sSt('ghub_custom_leads', cLeads);
+  sSt('gh_decisores_v3', decDB);
+  sSt('gh_kanban_v3', kanDB);
+  localStorage.setItem('ghub_mmn_import_v1', '1');
+
+  console.log('[MMN Import] ✅ ' + novas + ' novas | ' + atualiz + ' atualizadas | ' + decAdd + ' decisores');
+})();
