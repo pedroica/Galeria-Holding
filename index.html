@@ -531,6 +531,65 @@ select.kes-input{cursor:pointer}
   .subtabs{overflow-x:auto;white-space:nowrap;-webkit-overflow-scrolling:touch}
   input,select,textarea{font-size:16px!important}
 }
+
+/* ══════════════════════════════════════════════════
+   FASE 4-A — Modal animations + depth
+   ══════════════════════════════════════════════════ */
+@keyframes gh-fade-in  { from{opacity:0} to{opacity:1} }
+@keyframes gh-slide-up { from{opacity:0;transform:translateY(14px)} to{opacity:1;transform:translateY(0)} }
+
+/* backdrop fade */
+.modov,.kes-modal-ov { animation:gh-fade-in 180ms ease-out both; }
+/* panel slide-up */
+.mod,.kes-modal { animation:gh-slide-up 200ms ease-out both; }
+/* iOS-style depth: blur + lighter overlay */
+.modov,.kes-modal-ov {
+  backdrop-filter:blur(8px);
+  -webkit-backdrop-filter:blur(8px);
+  background:rgba(0,0,0,.78)!important;
+}
+
+/* button press feedback */
+.gh-btn-primary:active,.kes-btn-p:active,.btn.btnp:active {
+  transform:translateY(1px) scale(.98);
+  transition:transform .08s ease-out;
+}
+
+/* keyboard focus ring */
+:focus-visible {
+  outline:2px solid rgba(255,107,43,.55);
+  outline-offset:2px;
+  border-radius:3px;
+}
+
+/* ══════════════════════════════════════════════════
+   FASE 4-B — Touch targets (pointer:coarse only)
+   ══════════════════════════════════════════════════ */
+@media (pointer:coarse) {
+  /* Apple HIG mínimo: 44px */
+  button,.clickable,.st,.ctab,.kes-chip,.fb { min-height:44px; }
+  .tb-right button { min-height:40px; }
+  /* sidebar items mais confortáveis */
+  .coitem { min-height:48px; padding:12px; }
+  /* filtros: área de toque maior */
+  .fb { padding:6px 12px; }
+  /* subtabs (navegação principal) */
+  .st { padding:12px 16px; }
+}
+
+/* ══════════════════════════════════════════════════
+   FASE 4-D — Typography + micro-polish
+   ══════════════════════════════════════════════════ */
+/* D1: unify leftover DM Mono → IBM Plex Mono */
+.corank,.fb,.restag,.fittag,.cfgbtn,.resbtn {
+  font-family:'IBM Plex Mono',monospace!important;
+}
+/* D2: .corank era #2a2a2a sobre #0f0f1a — contraste <1.5:1, invisível */
+.corank { color:#3d3d5c!important; }
+/* D3: search border transition (estava instantâneo) */
+.sbsearch input,.gh-input { transition:border-color .15s; }
+/* D4: card hover border transition suave */
+.card { transition:border-color .15s; }
 </style>
 
 <script>
