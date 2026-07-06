@@ -3516,7 +3516,10 @@ function App() {
     });
     setCurLead(null);
   };
-  const nextRank = () => Math.max(9000, ...customLeads.map(c => c.rank)) + 1;
+  const nextRank = useCallback(
+    () => Math.max(9000, ...(customLeads.length ? customLeads.map(c => c.rank || 9000) : [9000])) + 1,
+    [customLeads]
+  );
   const accKey = (g, r) => g.id + "_" + r;
   const getAcc = () => curLead ? accs[accKey(curGrupo, curLead.rank)] || {
     decisors: [],
