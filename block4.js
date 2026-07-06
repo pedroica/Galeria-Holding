@@ -8,10 +8,13 @@ const {
 // ─── E-mail 3 cliques: helpers ────────────────────────────────────────────────
 function _bestAgForSetor(setor) {
   var s = (setor || '').toLowerCase();
-  if (['educacao','farma','automotivo','super app','games','grande varejo','cerveja'].some(function(x){ return s.includes(x); })) return 'galeria';
-  if (['beleza','fmcg','varejo moda','food','alimentos','varejo','lacteo','sorvete'].some(function(x){ return s.includes(x); })) return 'mila';
-  if (['fintech','b2b','tech','luxo','proptech','servicos financeiros','financeiro'].some(function(x){ return s.includes(x); })) return '404';
-  if (['streaming','entretenimento','social media','musica'].some(function(x){ return s.includes(x); })) return 'cccaramelo';
+  // §5 do PROMPT_MESTRE: setor → agência de melhor fit
+  if (['cerveja'].some(function(x){ return s.includes(x); })) return 'galeria';
+  if (['sorvete','franqueadora','lacteo','lacteos','alimento','comida indie'].some(function(x){ return s.includes(x); })) return 'mila';
+  if (['luxo','internacional','saas','varejo nicho','lancamento','lançamento','b2b'].some(function(x){ return s.includes(x); })) return '404';
+  if (['rebranding','genz','gen z','time enxuto','marca de grupo','comida'].some(function(x){ return s.includes(x); })) return 'cccaramelo';
+  if (['educacao','educação','farma','automotivo','super app','games','grande varejo'].some(function(x){ return s.includes(x); })) return 'galeria';
+  if (['fmcg','varejo moda','moda'].some(function(x){ return s.includes(x); })) return 'mila';
   return 'galeria_holding';
 }
 function _getAgTpl(agId, setor) {
