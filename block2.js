@@ -141,7 +141,12 @@ function lsGet(key, def) {
 function lsSet(key, val) {
   try {
     localStorage.setItem(key, JSON.stringify(val));
-  } catch (e) {}
+  } catch (e) {
+    if (e.name === 'QuotaExceededError' || e.code === 22) {
+      console.error('[CRM] localStorage cheio — dado não salvo:', key);
+      alert('⚠️ Armazenamento local cheio. Exporte um backup (🛟 Ferramentas) e limpe dados antigos para continuar salvando.');
+    }
+  }
 }
 function lsMerge(key, patch) {
   const cur = lsGet(key, {});

@@ -2182,7 +2182,7 @@ function fitColor(f){return f==="alto"?"#00FF94":f==="medio"?"#FFB547":"#FF4757"
 function fitLabel(f){return f==="alto"?"FIT ALTO":f==="medio"?"FIT MED":"SEM FIT";}
 function initials(name){return(name||"?").split(" ").slice(0,2).map(w=>w[0]).join("").toUpperCase();}
 function loadSt(k,def){try{const v=localStorage.getItem(k);return v?JSON.parse(v):def;}catch{return def;}}
-function saveSt(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch{}}
+function saveSt(k,v){try{localStorage.setItem(k,JSON.stringify(v));}catch(e){if(e.name==='QuotaExceededError'||e.code===22){console.error('[CRM] localStorage cheio — dado não salvo:',k);alert('⚠️ Armazenamento local cheio. Exporte um backup (🛟 Ferramentas) e limpe dados antigos para continuar salvando.');}}}
 function hexRgb(h){const m=h.replace("#","").match(/.{2}/g);return m?m.map(x=>parseInt(x,16)).join(","):"255,255,255";}
 var SETORES_LIST = [
   "E-commerce","Varejo","Varejo Moda","Varejo Esporte","FMCG","Fintech","Financeiro",
