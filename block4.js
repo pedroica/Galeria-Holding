@@ -40,11 +40,13 @@ var _POP_AGS = [
 ];
 
 function EmailPopover({ empresa, accs, setAccs, curGrupoId, onClose }) {
-  var MC = (typeof MICROCOPY !== 'undefined') ? MICROCOPY : { titulo:function(e){return'✉️ E-mail pra '+e;}, setorDetectado:function(s){return'Setor: '+s;}, agenciaLabel:'Agência', agenciaHint:'sugerida pelo fit do setor', badgeMelhorFit:'★ melhor fit', decisores:function(n){return n+' decisores com e-mail';}, semDecisor:'Nenhum decisor com e-mail.', conflito:function(m){return'⚠️ '+m;}, gerarBtn:function(n){return'Gerar e abrir e-mails';}, sucessoMulti:function(n){return'✅ '+n+' e-mails abertos.';}, sucessoUm:function(n){return'✅ E-mail aberto pro '+n+'.';}, statusOk:function(n){return'✓ '+n+' — aberto';}, statusPulado:function(n){return'— '+n+' (sem e-mail, pulado)';} };
+  var MC = (typeof MICROCOPY !== 'undefined') ? MICROCOPY : { titulo:function(e){return'✉️ E-mail pra '+e;}, setorDetectado:function(s){return'Setor: '+s;}, agenciaLabel:'Agência', agenciaHint:'sugerida pelo fit do setor', badgeMelhorFit:'★ melhor fit', decisores:function(n){return n+' decisores com e-mail';}, semDecisor:'Nenhum decisor com e-mail.', conflito:function(m,a){return'⚠️ '+m;}, conflitoTrocar:'Trocar de agência', conflitoSeguir:'Seguir mesmo assim', gerarBtn:function(n){return'Gerar e abrir e-mails';}, gerando:'Gerando com CR.IA…', sucessoMulti:function(n){return'✅ '+n+' e-mails abertos.';}, sucessoUm:function(n){return'✅ E-mail aberto pro '+n+'.';}, statusOk:function(n){return'✓ '+n+' — aberto';}, statusPulado:function(n){return'— '+n+' (sem e-mail, pulado)';} };
   var TPLS = (typeof AGENCY_TEMPLATES !== 'undefined') ? AGENCY_TEMPLATES : {};
   var [selAg, setSelAg] = useState(function(){ return _bestAgForSetor(empresa.setor); });
   var [results, setResults] = useState([]);
   var [done, setDone] = useState(false);
+  var [loading, setLoading] = useState(false);
+  var [conflictOverride, setConflictOverride] = useState(false);
 
   var dbKey = curGrupoId + '_' + empresa.rank;
   var acc = (accs||{})[dbKey] || { decisors:[], sugeridos:[], activities:[] };
@@ -54,32 +56,63 @@ function EmailPopover({ empresa, accs, setAccs, curGrupoId, onClose }) {
 
   var conflicts = (typeof checkRestrictions === 'function') ? checkRestrictions({ nome: empresa.nome, setor: empresa.setor }, selAg) : [];
   var activeConflict = conflicts.filter(function(c){ return !c.expiresAt || new Date(c.expiresAt) > new Date(); });
+  var blocked = activeConflict.length > 0 && !conflictOverride;
 
-  var gerar = function() {
+  var changeAg = function(id) { setSelAg(id); setConflictOverride(false); };
+
+  var trocarAgencia = function() {
+    var next = _POP_AGS.find(function(a) {
+      if (a.id === selAg) return false;
+      var c = (typeof checkRestrictions === 'function') ? checkRestrictions({ nome: empresa.nome, setor: empresa.setor }, a.id) : [];
+      return !c.filter(function(x){ return !x.expiresAt || new Date(x.expiresAt) > new Date(); }).length;
+    });
+    changeAg(next ? next.id : 'galeria_holding');
+  };
+
+  var gerar = async function() {
     var tpl = _getAgTpl(selAg, empresa.setor);
     if (!tpl || withEmail.length === 0) return;
+    setLoading(true);
+    var hasKey = (typeof getClaudeKey === 'function') && getClaudeKey();
+    var grupoObj = (typeof GRUPO !== 'undefined') ? GRUPO.find(function(g){ return g.id === selAg; }) : null;
+    var hist = (acc.activities||[]).slice(-3).map(function(a){ return a.date+': '+a.note; }).join('; ');
     var res = [];
-    withEmail.forEach(function(d) {
+    for (var i = 0; i < withEmail.length; i++) {
+      var d = withEmail[i];
       var pn = (d.nome||'').split(' ')[0];
       var vars = { nome: pn, empresa: empresa.nome, site: site };
-      var assunto = _fillVars(tpl.assunto, vars);
-      var corpo = _fillVars(tpl.corpo, vars) + '\n\n' + (tpl.assinatura||'');
-      try { window.open('mailto:' + encodeURIComponent(d.email) + '?subject=' + encodeURIComponent(assunto) + '&body=' + encodeURIComponent(corpo), '_blank'); res.push({ nome: d.nome, ok: true }); }
-      catch(err) { res.push({ nome: d.nome, ok: false }); }
-    });
+      var assunto, corpo;
+      if (hasKey && grupoObj && typeof gerarEmail === 'function') {
+        try {
+          var gen = await gerarEmail(pn, empresa.nome, empresa.setor||'', grupoObj, tpl.assunto, 'direto e consultivo', hist||'');
+          assunto = gen.assunto || _fillVars(tpl.assunto, vars);
+          corpo = gen.corpo || (_fillVars(tpl.corpo, vars) + '\n\n' + (tpl.assinatura||''));
+        } catch(err) {
+          assunto = _fillVars(tpl.assunto, vars);
+          corpo = _fillVars(tpl.corpo, vars) + '\n\n' + (tpl.assinatura||'');
+        }
+      } else {
+        assunto = _fillVars(tpl.assunto, vars);
+        corpo = _fillVars(tpl.corpo, vars) + '\n\n' + (tpl.assinatura||'');
+      }
+      try {
+        window.open('mailto:' + encodeURIComponent(d.email) + '?subject=' + encodeURIComponent(assunto) + '&body=' + encodeURIComponent(corpo), '_blank');
+        res.push({ nome: d.nome, ok: true });
+      } catch(err) { res.push({ nome: d.nome, ok: false }); }
+    }
     var prev = lsGet('gh_decisores_v3', {});
     var curAcc = prev[dbKey] || { decisors:[], sugeridos:[], activities:[] };
     var agNome = (TPLS[selAg]||{}).nome || selAg;
-    var newActs = res.filter(function(r){ return r.ok; }).map(function(r){ return { type:'email', typeLabel:'✉ Email', decisor:r.nome, note:'E-mail gerado — agência '+agNome, date:new Date().toLocaleDateString('pt-BR'), isoDate:new Date().toISOString(), synced:false }; });
+    var newActs = res.filter(function(r){ return r.ok; }).map(function(r){ return { type:'email_enviado', typeLabel:'✉ Email', decisor:r.nome, note:'E-mail gerado — agência '+agNome, date:new Date().toLocaleDateString('pt-BR'), isoDate:new Date().toISOString(), synced:false }; });
     var updatedAcc = Object.assign({}, curAcc, { activities:(curAcc.activities||[]).concat(newActs) });
     var updated = Object.assign({}, prev, { [dbKey]: updatedAcc });
     setAccs(updated); lsSet('gh_decisores_v3', updated);
-    setResults(res); setDone(true);
+    setLoading(false); setResults(res); setDone(true);
   };
 
   var btnAg = function(ag) {
     var sel = selAg === ag.id, best = ag.id === bestAg;
-    return React.createElement('button', { key: ag.id, onClick: function(){ setSelAg(ag.id); }, style: { padding:'6px 12px', borderRadius:20, border:'.5px solid', borderColor:sel?'#FF6B2B':'#2D2D44', background:sel?'rgba(255,107,43,.15)':'transparent', color:sel?'#FF6B2B':'#9B9BB4', fontSize:11, cursor:'pointer', fontWeight:sel?700:400, display:'inline-flex', alignItems:'center', gap:4 } },
+    return React.createElement('button', { key: ag.id, onClick: function(){ changeAg(ag.id); }, style: { padding:'6px 12px', borderRadius:20, border:'.5px solid', borderColor:sel?'#FF6B2B':'#2D2D44', background:sel?'rgba(255,107,43,.15)':'transparent', color:sel?'#FF6B2B':'#9B9BB4', fontSize:11, cursor:'pointer', fontWeight:sel?700:400, display:'inline-flex', alignItems:'center', gap:4 } },
       ag.label, best && React.createElement('span', { style:{ fontSize:9, color:'#EF9F27' } }, ' '+MC.badgeMelhorFit));
   };
 
@@ -97,16 +130,24 @@ function EmailPopover({ empresa, accs, setAccs, curGrupoId, onClose }) {
         React.createElement('button', { onClick:onClose, style:{ background:'none', border:'none', color:'#9B9BB4', fontSize:20, cursor:'pointer', lineHeight:1, padding:'0 4px' } }, '×')
       ),
       // seletor de agência
-      !done && React.createElement('div', null,
+      !done && !loading && React.createElement('div', null,
         React.createElement('div', { style:{ fontSize:9, color:'#9B9BB4', fontFamily:'IBM Plex Mono,monospace', marginBottom:8, textTransform:'uppercase', letterSpacing:.5 } }, MC.agenciaLabel+' · '+MC.agenciaHint),
         React.createElement('div', { style:{ display:'flex', flexWrap:'wrap', gap:6 } }, _POP_AGS.map(btnAg))
       ),
-      // aviso de conflito
-      !done && activeConflict.length > 0 && React.createElement('div', { style:{ background:'rgba(239,159,39,.12)', border:'.5px solid #EF9F27', borderRadius:8, padding:'8px 12px', fontSize:11, color:'#EF9F27' } },
-        MC.conflito(activeConflict[0].reason, (TPLS[selAg]||{}).nome||selAg)
+      // conflito — bloqueia com trocar / seguir
+      !done && !loading && blocked && React.createElement('div', { style:{ background:'rgba(239,159,39,.12)', border:'.5px solid #EF9F27', borderRadius:8, padding:'10px 12px', display:'flex', flexDirection:'column', gap:8 } },
+        React.createElement('div', { style:{ fontSize:11, color:'#EF9F27' } }, MC.conflito(activeConflict[0].reason, (TPLS[selAg]||{}).nome||selAg)),
+        React.createElement('div', { style:{ display:'flex', gap:8 } },
+          React.createElement('button', { onClick: trocarAgencia, style:{ flex:1, padding:'7px 0', borderRadius:7, border:'.5px solid #EF9F27', background:'transparent', color:'#EF9F27', fontSize:11, fontWeight:600, cursor:'pointer' } }, MC.conflitoTrocar),
+          React.createElement('button', { onClick: function(){ setConflictOverride(true); }, style:{ flex:1, padding:'7px 0', borderRadius:7, border:'.5px solid #555', background:'transparent', color:'#9B9BB4', fontSize:11, cursor:'pointer' } }, MC.conflitoSeguir)
+        )
       ),
-      // count + botão gerar
-      !done && React.createElement('div', { style:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 } },
+      // aviso leve quando conflito já foi aceito (seguir mesmo assim)
+      !done && !loading && !blocked && activeConflict.length > 0 && React.createElement('div', { style:{ fontSize:10, color:'#EF9F27', opacity:.7, fontStyle:'italic' } }, '⚠️ '+MC.conflito(activeConflict[0].reason, (TPLS[selAg]||{}).nome||selAg)),
+      // loading
+      loading && React.createElement('div', { style:{ textAlign:'center', padding:'16px 0', fontSize:13, color:'#9B9BB4', fontStyle:'italic' } }, MC.gerando),
+      // count + botão gerar (só aparece se não bloqueado por conflito)
+      !done && !loading && !blocked && React.createElement('div', { style:{ display:'flex', alignItems:'center', justifyContent:'space-between', gap:12 } },
         withEmail.length === 0
           ? React.createElement('div', { style:{ fontSize:12, color:'#EF9F27', fontStyle:'italic' } }, MC.semDecisor)
           : React.createElement(React.Fragment, null,
