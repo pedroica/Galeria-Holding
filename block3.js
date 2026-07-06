@@ -3490,16 +3490,22 @@ function App() {
     document.documentElement.style.setProperty("--tcr", curGrupo.rgb);
   }, [curGrupo]);
   const allLeads = useMemo(() => buildProsp(customLeads), [customLeads]);
-  const filtered = useMemo(() => allLeads.filter(d => {
+  // filteredBase não depende de accs — editar um decisor não recomputa 2000+ leads
+  const filteredBase = useMemo(() => allLeads.filter(d => {
     const fit = curGrupo.fit(d.setor || "");
     const res = checkRestrictions(d, curGrupo.id);
     if (fitFil === "restrito" && res.length === 0) return false;
-    if (fitFil === "crm" && !accs[curGrupo.id + "_" + d.rank]) return false;
     if (fitFil === "alto" && fit !== "alto") return false;
     if (fitFil === "medio" && fit !== "medio") return false;
     if (sbQ && !d.nome.toUpperCase().includes(sbQ.toUpperCase())) return false;
     return true;
-  }), [curGrupo, fitFil, sbQ, accs, customLeads]);
+  }), [curGrupo, fitFil, sbQ, allLeads]);
+  // filtered adiciona o filtro CRM por cima — só recomputa allLeads quando fitFil="crm"
+  const filtered = useMemo(() => {
+    if (fitFil !== "crm") return filteredBase;
+    const prefix = curGrupo.id + "_";
+    return filteredBase.filter(d => !!accs[prefix + d.rank]);
+  }, [filteredBase, fitFil, accs, curGrupo.id]);
   const addCompany = co => {
     setCustomLeads(prev => {
       const updated = [...prev, co];
