@@ -508,7 +508,7 @@ function FerramentasModal({
       // add to acionamentos kanban
       const kanCol = mapKanbanCol(grp.estagio);
       const card = {
-        id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+        id: (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36) + Math.random().toString(36).slice(2, 9)),
         nome: grp.nome.toUpperCase(), cargo: "Prospect",
         empresa: grp.nome.toUpperCase(), canal: kanCol,
         addedAt: new Date().toLocaleDateString("pt-BR"),
