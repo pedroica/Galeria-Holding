@@ -227,6 +227,10 @@ Mínimo 5 pessoas. Retorne SOMENTE o JSON, sem texto adicional.`;
     const [fEmail, setFEmail] = React.useState("");
     const [fWa, setFWa] = React.useState("");
     const [fLi, setFLi] = React.useState("");
+    const [fWa2, setFWa2] = React.useState("");
+    const [fWa3, setFWa3] = React.useState("");
+    const [fIg, setFIg] = React.useState("");
+    const [fFb, setFFb] = React.useState("");
     const salvarNovo = () => {
       if (!fNome.trim()) return;
       const novo = {
