@@ -2127,7 +2127,11 @@ function checkRestrictions(lead, groupId, customRestrictions=[]) {
       const exp = new Date(r.expiresAt);
       if (exp < new Date()) return false; // expired, no longer restricted
     }
-    return r.keywords.some(kw => lead.nome.toUpperCase().includes(kw.toUpperCase()));
+    return r.keywords.some(kw => {
+      const kwUp = kw.toUpperCase(), nameUp = lead.nome.toUpperCase();
+      if (kwUp.includes(' ')) return nameUp.includes(kwUp); // multi-word: substring OK
+      return nameUp.split(/[\s\/\-\.&,]+/).includes(kwUp);  // single-word: token exato
+    });
   });
   return matched;
 }
