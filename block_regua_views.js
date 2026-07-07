@@ -492,3 +492,355 @@ var CoberturaView = function CoberturaView(_ref) {
 
   ); // end root div
 }; // end CoberturaView
+
+// ═════════════════════════════════════════════════════════════════════════════
+// RankingView — Fase 4
+// Props: accs, curGrupo
+// ═════════════════════════════════════════════════════════════════════════════
+var RankingView = function RankingView(_ref) {
+  var accs     = _ref.accs;
+  var curGrupo = _ref.curGrupo;
+
+  var PAGE = 50;
+  var _p  = useState(0);    var page      = _p[0];  var setPage      = _p[1];
+  var _sf = useState("");   var filtSetor = _sf[0]; var setFiltSetor = _sf[1];
+  var _ff = useState("");   var filtFit   = _ff[0]; var setFiltFit   = _ff[1];
+  var _ms = useState(0);    var minScore  = _ms[0]; var setMinScore  = _ms[1];
+  var _so = useState("score"); var sortBy = _so[0]; var setSortBy    = _so[1];
+
+  var leads = typeof PROSP !== "undefined" ? PROSP : [];
+  var MONO  = "IBM Plex Mono,monospace";
+
+  function chip(color) {
+    return { display:"inline-flex", alignItems:"center", padding:"2px 7px", borderRadius:10,
+             border:"1px solid "+color+"44", background:color+"18", color:color,
+             fontSize:9, fontFamily:MONO, fontWeight:600 };
+  }
+  function fBtn(active, extra) {
+    return Object.assign({ padding:"3px 8px",
+      border:".5px solid "+(active?"#FF6B2B":"#2D2D44"), borderRadius:4,
+      background:active?"rgba(255,107,43,.1)":"transparent",
+      color:active?"#FF6B2B":"#9B9BB4", fontSize:9, cursor:"pointer", fontFamily:MONO }, extra||{});
+  }
+
+  // compute scores for all leads in current group with accs entries
+  var rows = useMemo(function() {
+    if (typeof getScorePrioridade !== "function") return [];
+    var prefix = curGrupo.id + "_";
+    return leads.map(function(lead) {
+      if (!accs[prefix + lead.rank]) return null;
+      var sd = getScorePrioridade(curGrupo.id, lead.rank, lead);
+      return { lead:lead, sd:sd };
+    }).filter(Boolean);
+  }, [accs, leads, curGrupo]);
+
+  var setores = useMemo(function() {
+    var s = {};
+    rows.forEach(function(r){ if(r.lead.setor) s[r.lead.setor]=1; });
+    return Object.keys(s).sort();
+  }, [rows]);
+
+  var filtered = useMemo(function() {
+    var r = rows.filter(function(row) {
+      if (filtSetor && row.lead.setor !== filtSetor) return false;
+      if (filtFit   && row.sd.fitLevel !== filtFit) return false;
+      if (row.sd.score < minScore) return false;
+      return true;
+    });
+    if (sortBy === "score")    r.sort(function(a,b){ return b.sd.score - a.sd.score; });
+    else if (sortBy === "rec") r.sort(function(a,b){ return b.sd.detalhes.recencia - a.sd.detalhes.recencia; });
+    else if (sortBy === "fit") r.sort(function(a,b){ return b.sd.detalhes.fit - a.sd.detalhes.fit; });
+    return r;
+  }, [rows, filtSetor, filtFit, minScore, sortBy]);
+
+  var pages = Math.max(1, Math.ceil(filtered.length / PAGE));
+  var sp = Math.min(page, pages - 1);
+  var pageRows = filtered.slice(sp * PAGE, (sp + 1) * PAGE);
+
+  function colHdr(label, key) {
+    return React.createElement("span", {
+      key:key, onClick:function(){ setSortBy(key); setPage(0); },
+      style:{ fontSize:8, color:sortBy===key?"#FF6B2B":"#555570",
+              fontFamily:MONO, cursor:"pointer", userSelect:"none" }
+    }, label + (sortBy===key?" ↓":""));
+  }
+
+  return /*#__PURE__*/React.createElement("div", {
+    style:{ flex:1, overflow:"auto", padding:"12px 16px", fontFamily:MONO }
+  },
+
+    /* header */
+    React.createElement("div", {style:{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}},
+      React.createElement("span", {style:{fontSize:11,fontWeight:700,color:"#E0E0FF",letterSpacing:1}},
+        "📈 RANKING · "+curGrupo.name.toUpperCase()),
+      React.createElement("span", {style:chip("#9B9BB4")}, rows.length+" empresas"),
+      React.createElement("span", {style:chip("#FF6B2B")}, filtered.length+" filtradas")
+    ),
+
+    /* filters */
+    React.createElement("div", {style:{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10,alignItems:"center"}},
+      React.createElement("select", {
+        value:filtSetor, onChange:function(e){ setFiltSetor(e.target.value); setPage(0); },
+        style:{background:"#141428",border:".5px solid #2D2D44",borderRadius:4,color:"#9B9BB4",
+               padding:"3px 6px",fontSize:9,fontFamily:MONO,cursor:"pointer"}
+      },
+        React.createElement("option",{value:""},"Todos os setores"),
+        setores.map(function(s){ return React.createElement("option",{key:s,value:s},s); })
+      ),
+      ["","alto","medio","baixo"].map(function(f){
+        return React.createElement("button",{key:f||"_",
+          onClick:function(){ setFiltFit(f); setPage(0); }, style:fBtn(filtFit===f)
+        }, f ? "Fit "+f : "Todos");
+      }),
+      React.createElement("select", {
+        value:minScore, onChange:function(e){ setMinScore(Number(e.target.value)); setPage(0); },
+        style:{background:"#141428",border:".5px solid #2D2D44",borderRadius:4,color:"#9B9BB4",
+               padding:"3px 6px",fontSize:9,fontFamily:MONO,cursor:"pointer"}
+      },
+        [[0,"Score mín."],[30,"≥30"],[50,"≥50"],[70,"≥70"],[80,"≥80"]].map(function(o){
+          return React.createElement("option",{key:o[0],value:o[0]},o[1]);
+        })
+      )
+    ),
+
+    /* table header */
+    React.createElement("div", {
+      style:{display:"grid",gridTemplateColumns:"28px 2fr 90px 60px 110px 70px 70px 55px",
+             gap:6,padding:"5px 8px",borderBottom:"1px solid #2D2D44",marginBottom:2}
+    },
+      React.createElement("span",{style:{fontSize:8,color:"#555570"}},"#"),
+      React.createElement("span",{style:{fontSize:8,color:"#555570"}},"EMPRESA"),
+      React.createElement("span",{style:{fontSize:8,color:"#555570"}},"SETOR"),
+      colHdr("SCORE","score"),
+      React.createElement("span",{style:{fontSize:8,color:"#555570",userSelect:"none"}},"P · F · R · C"),
+      colHdr("FIT","fit"),
+      colHdr("RECÊNCIA","rec"),
+      React.createElement("span",{style:{fontSize:8,color:"#555570"}},"COB.")
+    ),
+
+    /* rows */
+    pageRows.map(function(row, i) {
+      var pos = sp * PAGE + i + 1;
+      var sd  = row.sd;
+      var sColor = sd.score>=70?"#FF6B2B":sd.score>=50?"#F59E0B":"#60A5FA";
+      var fColor = sd.fitLevel==="alto"?"#22C55E":sd.fitLevel==="medio"?"#F59E0B":"#9B9BB4";
+      var cob = typeof getCoberturaEmpresa==="function"
+        ? getCoberturaEmpresa(curGrupo.id,row.lead.rank) : {preenchidos:0,status:"vazia"};
+      var cColor = cob.status==="completa"?"#22C55E":cob.status==="parcial"?"#F59E0B":"#EF4444";
+      var tip = "Potencial: "+sd.detalhes.potencial+"\nFit: "+sd.detalhes.fit+
+                "\nRecência: "+sd.detalhes.recencia+"\nCobertura: "+sd.detalhes.gap;
+
+      return React.createElement("div", {
+        key:row.lead.rank,
+        style:{display:"grid",gridTemplateColumns:"28px 2fr 90px 60px 110px 70px 70px 55px",
+               gap:6,padding:"5px 8px",borderBottom:".5px solid #1A1A2E",alignItems:"center"}
+      },
+        React.createElement("span",{style:{fontSize:8,color:"#555570"}},pos),
+        React.createElement("span",{
+          style:{fontSize:9,color:"#E0E0FF",fontWeight:600,overflow:"hidden",
+                 textOverflow:"ellipsis",whiteSpace:"nowrap"},title:row.lead.nome
+        },row.lead.nome),
+        React.createElement("span",{style:{fontSize:8,color:"#9B9BB4",overflow:"hidden",
+          textOverflow:"ellipsis",whiteSpace:"nowrap"}},(row.lead.setor||"—")),
+        /* score + bar */
+        React.createElement("div",{},
+          React.createElement("span",{style:{fontSize:11,color:sColor,fontWeight:700}},sd.score),
+          React.createElement("div",{style:{height:3,background:"#1A1A2E",borderRadius:2,marginTop:2}},
+            React.createElement("div",{style:{height:"100%",width:sd.score+"%",background:sColor,borderRadius:2}}))
+        ),
+        /* mini breakdown: P F R C */
+        React.createElement("div",{style:{display:"flex",gap:1},title:tip},
+          [["P",sd.detalhes.potencial,"#60A5FA"],["F",sd.detalhes.fit,"#22C55E"],
+           ["R",sd.detalhes.recencia,"#F59E0B"],["C",sd.detalhes.gap,"#A78BFA"]].map(function(b){
+            return React.createElement("div",{key:b[0],
+              style:{width:24,height:16,borderRadius:2,background:b[2]+"22",
+                     display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column"}},
+              React.createElement("span",{style:{fontSize:5,color:b[2]+"aa"}},b[0]),
+              React.createElement("span",{style:{fontSize:6,color:b[2],fontWeight:700}},b[1])
+            );
+          })
+        ),
+        React.createElement("span",{style:Object.assign({},chip(fColor),{fontSize:8})},sd.fitLevel),
+        React.createElement("span",{style:{fontSize:8,color:sd.diasSemContato>30?"#EF4444":sd.diasSemContato>0?"#F59E0B":"#22C55E"}},
+          sd.diasSemContato>0?sd.diasSemContato+"d":"hoje"),
+        React.createElement("span",{style:Object.assign({},chip(cColor),{fontSize:8})},cob.preenchidos+"/3")
+      );
+    }),
+
+    /* empty */
+    filtered.length===0 && React.createElement("div",{
+      style:{textAlign:"center",padding:"40px 0",color:"#3d3d5c",fontSize:10}
+    },"Nenhuma empresa encontrada."),
+
+    /* pagination */
+    pages>1 && React.createElement("div",{
+      style:{display:"flex",gap:8,justifyContent:"center",padding:"12px 0",alignItems:"center"}
+    },
+      React.createElement("button",{onClick:function(){setPage(function(p){return Math.max(0,p-1);});},
+        disabled:sp===0,style:Object.assign({},fBtn(false),{opacity:sp===0?0.4:1})},"← Ant"),
+      React.createElement("span",{style:{fontSize:9,color:"#9B9BB4"}},
+        (sp+1)+" / "+pages+" · "+filtered.length+" empresas"),
+      React.createElement("button",{onClick:function(){setPage(function(p){return Math.min(pages-1,p+1);});},
+        disabled:sp>=pages-1,style:Object.assign({},fBtn(false),{opacity:sp>=pages-1?0.4:1})},"Próx →")
+    )
+  );
+}; // end RankingView
+
+// ═════════════════════════════════════════════════════════════════════════════
+// ReguaMensalView — Fase 5
+// Props: accs, curGrupo, onDispatch(decisor, empresa, setor, oferta)
+// ═════════════════════════════════════════════════════════════════════════════
+var ReguaMensalView = function ReguaMensalView(_ref) {
+  var accs       = _ref.accs;
+  var curGrupo   = _ref.curGrupo;
+  var onDispatch = _ref.onDispatch;
+
+  var PAGE = 30;
+  var _p  = useState(0); var page = _p[0]; var setPage = _p[1];
+  var _rt = useState(0); var tick = _rt[0]; var setTick = _rt[1]; // force re-render after registrarToque
+
+  var leads = typeof PROSP !== "undefined" ? PROSP : [];
+  var MONO  = "IBM Plex Mono,monospace";
+
+  function chip(color) {
+    return { display:"inline-flex", alignItems:"center", padding:"2px 7px", borderRadius:10,
+             border:"1px solid "+color+"44", background:color+"18", color:color,
+             fontSize:9, fontFamily:MONO, fontWeight:600 };
+  }
+  function fBtn(active, extra) {
+    return Object.assign({ padding:"3px 8px",
+      border:".5px solid "+(active?"#FF6B2B":"#2D2D44"), borderRadius:4,
+      background:active?"rgba(255,107,43,.1)":"transparent",
+      color:active?"#FF6B2B":"#9B9BB4", fontSize:9, cursor:"pointer", fontFamily:MONO }, extra||{});
+  }
+
+  /* vencidos: re-derive when accs or tick changes */
+  var vencidos = useMemo(function() {
+    if (typeof getDecisoresVencidos !== "function") return [];
+    return getDecisoresVencidos(curGrupo.id, leads);
+  }, [accs, curGrupo, leads, tick]);
+
+  /* progresso do mês atual */
+  var mesAtual = useMemo(function() {
+    try {
+      var regua = JSON.parse(localStorage.getItem("gh_regua_v1")||"{}");
+      var mesStr = new Date().toISOString().slice(0,7); // "YYYY-MM"
+      var count = 0;
+      Object.keys(regua).forEach(function(k){
+        var e = regua[k];
+        if (e.ultimoToqueEm && e.ultimoToqueEm.startsWith(mesStr)) count++;
+      });
+      return count;
+    } catch(e) { return 0; }
+  }, [tick]);
+
+  var pages = Math.max(1, Math.ceil(vencidos.length / PAGE));
+  var sp = Math.min(page, pages - 1);
+  var pageRows = vencidos.slice(sp * PAGE, (sp + 1) * PAGE);
+  var SL = typeof SLOT_LABELS !== "undefined" ? SLOT_LABELS : {ceo:"CEO",cmo:"CMO",gerencia:"Gerência"};
+  var mesLabel = new Date().toLocaleDateString("pt-BR",{month:"long",year:"numeric"});
+
+  return /*#__PURE__*/React.createElement("div", {
+    style:{ flex:1, overflow:"auto", padding:"12px 16px", fontFamily:MONO }
+  },
+
+    /* header */
+    React.createElement("div", {style:{display:"flex",alignItems:"center",gap:8,marginBottom:12,flexWrap:"wrap"}},
+      React.createElement("span", {style:{fontSize:11,fontWeight:700,color:"#E0E0FF",letterSpacing:1}},
+        "🗓 RÉGUA MENSAL"),
+      React.createElement("span", {style:{fontSize:9,color:"#9B9BB4"}}, mesLabel),
+      React.createElement("span", {style:chip("#EF4444")}, vencidos.length+" vencendo"),
+      React.createElement("span", {style:chip("#22C55E")}, mesAtual+" contatados este mês")
+    ),
+
+    /* config hint */
+    React.createElement("div", {style:{fontSize:8,color:"#3d3d5c",marginBottom:10}},
+      "Intervalo: "+((typeof REGUA_CONFIG!=="undefined"?REGUA_CONFIG.intervalo:30))+"d  ·  " +
+      "Prioridade: "+((typeof REGUA_CONFIG!=="undefined"?REGUA_CONFIG.prioSlots:["cmo","gerencia","ceo"]).map(function(s){ return SL[s]||s; }).join(" → "))
+    ),
+
+    /* table header */
+    React.createElement("div", {
+      style:{display:"grid",gridTemplateColumns:"2fr 45px 1.2fr 1.2fr 70px 90px",
+             gap:6,padding:"5px 8px",borderBottom:"1px solid #2D2D44",marginBottom:2}
+    },
+      ["EMPRESA","SCORE","DECISOR","PRÓX. OFERTA","DIAS","AÇÃO"].map(function(h){
+        return React.createElement("span",{key:h,style:{fontSize:8,color:"#555570",fontFamily:MONO}},h);
+      })
+    ),
+
+    /* rows */
+    pageRows.map(function(row) {
+      var sColor = row.score>=70?"#FF6B2B":row.score>=50?"#F59E0B":"#60A5FA";
+      var dColor = row.diasDesde>=60?"#EF4444":row.diasDesde>=30?"#F59E0B":"#22C55E";
+      var of = row.proxOferta;
+
+      return React.createElement("div", {
+        key:row.lead.rank,
+        style:{display:"grid",gridTemplateColumns:"2fr 45px 1.2fr 1.2fr 70px 90px",
+               gap:6,padding:"5px 8px",borderBottom:".5px solid #1A1A2E",alignItems:"center"}
+      },
+        /* empresa */
+        React.createElement("div",{},
+          React.createElement("div",{style:{fontSize:9,color:"#E0E0FF",fontWeight:600,
+            overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},title:row.lead.nome},row.lead.nome),
+          React.createElement("div",{style:{fontSize:7,color:"#555570"}},row.lead.setor||"")
+        ),
+        /* score */
+        React.createElement("div",{},
+          React.createElement("span",{style:{fontSize:10,color:sColor,fontWeight:700}},row.score),
+          React.createElement("div",{style:{height:2,background:"#1A1A2E",borderRadius:1,marginTop:2}},
+            React.createElement("div",{style:{height:"100%",width:row.score+"%",background:sColor,borderRadius:1}}))
+        ),
+        /* decisor */
+        React.createElement("div",{},
+          React.createElement("div",{style:{fontSize:8,color:"#E0E0FF",overflow:"hidden",
+            textOverflow:"ellipsis",whiteSpace:"nowrap"}},row.decisor.nome),
+          React.createElement("div",{style:{fontSize:7,color:"#555570"}},
+            row.decisor.cargo||(SL[row.slotName]||row.slotName)||"")
+        ),
+        /* próxima oferta */
+        of ? React.createElement("div",{title:of.grupo.name+" — "+of.angulo},
+          React.createElement("div",{style:{fontSize:8,color:"#A78BFA",overflow:"hidden",
+            textOverflow:"ellipsis",whiteSpace:"nowrap"}},of.grupo.name),
+          React.createElement("div",{style:{fontSize:7,color:"#555570",overflow:"hidden",
+            textOverflow:"ellipsis",whiteSpace:"nowrap"}},of.angulo)
+        ) : React.createElement("span",{style:{fontSize:8,color:"#3d3d5c"}},"—"),
+        /* dias */
+        React.createElement("span",{style:chip(dColor)},
+          row.diasDesde>=999?"nunca":row.diasDesde+"d"),
+        /* disparar */
+        React.createElement("button",{
+          onClick:function(){
+            if (of && typeof registrarToque==="function") {
+              registrarToque(curGrupo.id,row.lead.rank,of.grupo.id,of.anguloIdx,row.decisor.nome);
+              setTick(function(v){return v+1;});
+            }
+            if (onDispatch) onDispatch(row.decisor,row.lead.nome,row.lead.setor||"",of);
+          },
+          style:{fontSize:8,padding:"4px 8px",border:".5px solid #FF6B2B",borderRadius:4,
+                 background:"rgba(255,107,43,.1)",color:"#FF6B2B",cursor:"pointer",fontFamily:MONO,
+                 whiteSpace:"nowrap"}
+        },"Disparar →")
+      );
+    }),
+
+    /* empty */
+    vencidos.length===0 && React.createElement("div",{
+      style:{textAlign:"center",padding:"40px 0",color:"#3d3d5c",fontSize:10,lineHeight:1.7}
+    },"Nenhuma empresa vencendo este mês 🎉\nTodos os decisores foram contatados recentemente."),
+
+    /* pagination */
+    pages>1 && React.createElement("div",{
+      style:{display:"flex",gap:8,justifyContent:"center",padding:"12px 0",alignItems:"center"}
+    },
+      React.createElement("button",{onClick:function(){setPage(function(p){return Math.max(0,p-1);});},
+        disabled:sp===0,style:Object.assign({},fBtn(false),{opacity:sp===0?0.4:1})},"← Ant"),
+      React.createElement("span",{style:{fontSize:9,color:"#9B9BB4"}},
+        (sp+1)+" / "+pages+" · "+vencidos.length+" empresas"),
+      React.createElement("button",{onClick:function(){setPage(function(p){return Math.min(pages-1,p+1);});},
+        disabled:sp>=pages-1,style:Object.assign({},fBtn(false),{opacity:sp>=pages-1?0.4:1})},"Próx →")
+    )
+
+  );
+}; // end ReguaMensalView

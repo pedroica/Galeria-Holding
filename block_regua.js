@@ -267,7 +267,165 @@ async function enriquecerBaseLusha(grupoId, leads, onProgress) {
 }
 window.enriquecerBaseLusha = enriquecerBaseLusha;
 
-// ── 7. AUTO-MIGRAÇÃO (1× por sessão) ─────────────────────────────────────────
+// ── 7. FASE 4: SCORE DE PRIORIDADE (0–100) ───────────────────────────────────
+// Compõe score com pesos de REGUA_CONFIG.pesos:
+//   potencial (rank → porte da empresa)
+//   fit       (GRUPO[id].fit(setor))
+//   recencia  (dias sem contato de calcularTemperatura)
+//   gap       (preenchimento dos 3 slots)
+
+function getScorePrioridade(grupoId, rank, lead) {
+  var pesos = REGUA_CONFIG.pesos; // { potencial, gap, recencia, fit }
+
+  // fit
+  var grupoObj = (typeof GRUPO !== "undefined" ? GRUPO : []).find(function(g){ return g.id === grupoId; });
+  var fitLevel = grupoObj && lead && lead.setor ? grupoObj.fit(lead.setor) : "medio";
+  var fitScore = fitLevel === "alto" ? 100 : fitLevel === "medio" ? 60 : 30;
+
+  // potencial (rank como proxy de porte — menor rank = maior empresa)
+  var r = rank || 9999;
+  var potScore = r <= 50 ? 100 : r <= 200 ? 85 : r <= 1000 ? 70 : r <= 3000 ? 55 : r >= 9000 ? 50 : 40;
+
+  // recencia (dias desde último contato — mais tempo = score maior = mais urgente)
+  var raw = {};
+  try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) {}
+  var entry = raw[grupoId + "_" + rank];
+  var dias = 0;
+  if (typeof calcularTemperatura === "function" && entry) {
+    var temp = calcularTemperatura(entry);
+    dias = temp.diasSemContato || 0;
+  }
+  var recScore = Math.min(100, Math.round(dias * 100 / 60)); // 60 dias = 100pts
+
+  // gap (qualidade da cobertura)
+  var cob = typeof getCoberturaEmpresa === "function"
+    ? getCoberturaEmpresa(grupoId, rank)
+    : { preenchidos: 0, status: "vazia" };
+  var hasActivities = entry && (entry.activities || []).length > 0;
+  var gapScore = cob.preenchidos === 3 ? 100 : cob.preenchidos === 2 ? 85
+    : cob.preenchidos === 1 ? 65 : hasActivities ? 40 : 20;
+
+  var score = Math.round(
+    pesos.potencial * potScore +
+    pesos.fit       * fitScore  +
+    pesos.recencia  * recScore  +
+    pesos.gap       * gapScore
+  );
+
+  return {
+    score:    score,
+    detalhes: { potencial: potScore, fit: fitScore, recencia: recScore, gap: gapScore },
+    fitLevel: fitLevel,
+    diasSemContato: dias,
+  };
+}
+window.getScorePrioridade = getScorePrioridade;
+
+// ── 8. FASE 5: ROTAÇÃO DE OFERTAS ────────────────────────────────────────────
+// gh_regua_v1: { "{grupoId}_{rank}": { historicoOfertas:[{grupoId,anguloIdx,ofertaEm,decisorNome}], ultimoToqueEm } }
+
+function getProximaOferta(grupoId, rank) {
+  var regua = {};
+  try { regua = JSON.parse(localStorage.getItem("gh_regua_v1") || "{}"); } catch(e) {}
+  var key = grupoId + "_" + rank;
+  var hist = (regua[key] && regua[key].historicoOfertas) || [];
+  var G = typeof GRUPO !== "undefined" ? GRUPO : [];
+  if (!G.length) return null;
+
+  var usados = hist.map(function(h){ return h.grupoId; });
+  var candidatos = G.filter(function(g){ return usados.indexOf(g.id) === -1; });
+  if (candidatos.length === 0) { candidatos = G; } // ciclo completo → reinicia
+
+  var next = candidatos[0];
+  var grupoCount = hist.filter(function(h){ return h.grupoId === next.id; }).length;
+  var angles = next.angles || ["Apresentação"];
+  var anguloIdx = Math.min(grupoCount, angles.length - 1);
+
+  return { grupo: next, angulo: angles[anguloIdx], anguloIdx: anguloIdx };
+}
+window.getProximaOferta = getProximaOferta;
+
+// ── 9. DECISORES VENCIDOS (sem toque há N dias) ───────────────────────────────
+function getDecisoresVencidos(grupoId, leads, intervaloDias) {
+  var dias = intervaloDias || REGUA_CONFIG.intervalo;
+  var lista = leads || (typeof PROSP !== "undefined" ? PROSP : []);
+  var raw = {};
+  try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) {}
+  var regua = {};
+  try { regua = JSON.parse(localStorage.getItem("gh_regua_v1") || "{}"); } catch(e) {}
+  var agora = Date.now();
+  var resultado = [];
+
+  for (var i = 0; i < lista.length; i++) {
+    var lead = lista[i];
+    var key = grupoId + "_" + lead.rank;
+    var entry = raw[key];
+    if (!entry) continue;
+
+    // último toque registrado na régua
+    var rEntry = regua[key];
+    var ultimoMs = rEntry && rEntry.ultimoToqueEm ? new Date(rEntry.ultimoToqueEm).getTime() : 0;
+
+    // comparar com último toque das activities
+    if (typeof calcularTemperatura === "function" && entry) {
+      var temp = calcularTemperatura(entry);
+      if (temp.diasSemContato > 0) {
+        var fromAct = agora - temp.diasSemContato * 86400000;
+        if (fromAct > ultimoMs) ultimoMs = fromAct;
+      }
+    }
+
+    var diasDesde = ultimoMs > 0 ? Math.floor((agora - ultimoMs) / 86400000) : 999;
+    if (diasDesde < dias) continue; // recentemente contatado
+
+    // decisor prioritário (por prioSlots)
+    var prio = REGUA_CONFIG.prioSlots;
+    var slots = entry.decisores || { ceo: null, cmo: null, gerencia: null };
+    var decisor = null; var slotName = null;
+    for (var j = 0; j < prio.length; j++) {
+      var sl = slots[prio[j]];
+      if (sl && sl.nome) { decisor = sl; slotName = prio[j]; break; }
+    }
+    // fallback: decisors[] array existente
+    if (!decisor && entry.decisors && entry.decisors.length > 0) {
+      var d0 = entry.decisors[0];
+      decisor = { nome: d0.nome, cargo: d0.cargo || "", email: d0.email || "" };
+      slotName = "verificado";
+    }
+    if (!decisor) continue;
+
+    var sd = typeof getScorePrioridade === "function"
+      ? getScorePrioridade(grupoId, lead.rank, lead) : { score: 50 };
+    var oferta = typeof getProximaOferta === "function"
+      ? getProximaOferta(grupoId, lead.rank) : null;
+
+    resultado.push({ lead: lead, decisor: decisor, slotName: slotName,
+                     diasDesde: diasDesde, proxOferta: oferta, score: sd.score });
+  }
+
+  resultado.sort(function(a, b){ return b.score - a.score; });
+  return resultado;
+}
+window.getDecisoresVencidos = getDecisoresVencidos;
+
+// ── 10. REGISTRAR TOQUE NA RÉGUA ─────────────────────────────────────────────
+function registrarToque(grupoId, rank, grupoOfertaId, anguloIdx, decisorNome) {
+  var regua = {};
+  try { regua = JSON.parse(localStorage.getItem("gh_regua_v1") || "{}"); } catch(e) {}
+  var key = grupoId + "_" + rank;
+  if (!regua[key]) regua[key] = { historicoOfertas: [], ultimoToqueEm: "" };
+  regua[key].historicoOfertas = (regua[key].historicoOfertas || []).concat([{
+    grupoId:     grupoOfertaId,
+    anguloIdx:   anguloIdx || 0,
+    ofertaEm:    new Date().toISOString().slice(0, 10),
+    decisorNome: decisorNome || "",
+  }]);
+  regua[key].ultimoToqueEm = new Date().toISOString();
+  try { localStorage.setItem("gh_regua_v1", JSON.stringify(regua)); } catch(e) {}
+}
+window.registrarToque = registrarToque;
+
+// ── 11. AUTO-MIGRAÇÃO (1× por sessão) ────────────────────────────────────────
 if (!window._reguaV1Migrated) {
   window._reguaV1Migrated = true;
   var _mc = migrarDecisoresV1();

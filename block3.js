@@ -3701,7 +3701,7 @@ function App() {
     style: {
       gap: 4
     }
-  }, [["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
     key: v,
     onClick: () => switchView(v),
     style: {
@@ -3996,6 +3996,35 @@ function App() {
     accs: accs,
     setAccs: setAccs,
     curGrupo: curGrupo
+  })) : viewMode === "ranking" ? /*#__PURE__*/React.createElement("div", {
+    className: "ws",
+    style: {
+      flex: 1,
+      overflow: "hidden",
+      display: "flex",
+      flexDirection: "column"
+    }
+  }, typeof RankingView !== "undefined" && /*#__PURE__*/React.createElement(RankingView, {
+    accs: accs,
+    curGrupo: curGrupo
+  })) : viewMode === "regua" ? /*#__PURE__*/React.createElement("div", {
+    className: "ws",
+    style: {
+      flex: 1,
+      overflow: "hidden",
+      display: "flex",
+      flexDirection: "column"
+    }
+  }, typeof ReguaMensalView !== "undefined" && /*#__PURE__*/React.createElement(ReguaMensalView, {
+    accs: accs,
+    curGrupo: curGrupo,
+    onDispatch: function(decisor, empresa, setor) {
+      setAbordagemGlobal({
+        decisor: decisor,
+        empresa: empresa,
+        setor: setor
+      });
+    }
   })) : /*#__PURE__*/React.createElement("div", {
     className: "ws"
   }, /*#__PURE__*/React.createElement("div", {
