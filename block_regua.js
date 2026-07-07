@@ -187,7 +187,87 @@ function setDecisoresSlot(grupoId, rank, slot, dados) {
 }
 window.setDecisoresSlot = setDecisoresSlot;
 
-// ── 6. AUTO-MIGRAÇÃO (1× por sessão) ─────────────────────────────────────────
+// ── 6. ENRIQUECIMENTO LUSHA (Fase 3) ─────────────────────────────────────────
+// Enriquece um slot que já tem `nome` mas falta email ou telefone.
+// Retorna { ok, email, phone, entry } ou { ok:false, erro }.
+// Nota: lushaEnrich(fn, ln, company) está em block0_util.js e roteia via proxy.
+
+async function enriquecerSlotLusha(grupoId, rank, slotName, empresaNome) {
+  var cob = getCoberturaEmpresa(grupoId, rank);
+  var slot = cob.slots[slotName];
+  if (!slot || !slot.nome.trim()) {
+    return { ok: false, erro: "Slot sem nome — adicione manualmente primeiro" };
+  }
+
+  var parts = slot.nome.trim().split(/\s+/);
+  var fn = parts[0] || "";
+  var ln = parts.slice(1).join(" ") || "";
+
+  try {
+    if (typeof lushaEnrich !== "function") {
+      return { ok: false, erro: "lushaEnrich não disponível — recarregue a página" };
+    }
+    var res = await lushaEnrich(fn, ln, empresaNome);
+    if (!res.email && !res.phone) {
+      return { ok: false, erro: "Não encontrado na Lusha" };
+    }
+    var atualizado = Object.assign({}, slot, {
+      email:       res.email   || slot.email,
+      telefone:    res.phone   || slot.telefone,
+      fonte:       "lusha",
+      status:      "enriquecido",
+      atualizadoEm: new Date().toLocaleDateString("pt-BR"),
+    });
+    var entry = setDecisoresSlot(grupoId, rank, slotName, atualizado);
+    return { ok: true, email: res.email, phone: res.phone, entry: entry };
+  } catch(e) {
+    return { ok: false, erro: String(e) };
+  }
+}
+window.enriquecerSlotLusha = enriquecerSlotLusha;
+
+// Modo lote: percorre todos os leads do grupo, enriquece slots com nome mas sem email/fone.
+// onProgress({ total, done, ok, falhas }) é chamado a cada passo.
+async function enriquecerBaseLusha(grupoId, leads, onProgress) {
+  var lista = leads || (typeof PROSP !== "undefined" ? PROSP : []);
+
+  // montar fila de tarefas (só slots com nome + dados faltando)
+  var tarefas = [];
+  for (var i = 0; i < lista.length; i++) {
+    var lead = lista[i];
+    var cob = getCoberturaEmpresa(grupoId, lead.rank);
+    for (var si = 0; si < SLOTS_DECISORES.length; si++) {
+      var sn = SLOTS_DECISORES[si];
+      var sl = cob.slots[sn];
+      if (sl && sl.nome.trim() && (!sl.email || !sl.telefone)) {
+        tarefas.push({ lead: lead, slotName: sn });
+      }
+    }
+  }
+
+  var total = tarefas.length;
+  var done = 0; var ok = 0; var falhas = [];
+  if (onProgress) onProgress({ total: total, done: 0, ok: 0, falhas: [] });
+
+  for (var j = 0; j < tarefas.length; j++) {
+    var t = tarefas[j];
+    var result = await enriquecerSlotLusha(grupoId, t.lead.rank, t.slotName, t.lead.nome);
+    done++;
+    if (result.ok) {
+      ok++;
+    } else {
+      falhas.push({ empresa: t.lead.nome, slot: SLOT_LABELS[t.slotName] || t.slotName, erro: result.erro });
+    }
+    if (onProgress) onProgress({ total: total, done: done, ok: ok, falhas: falhas });
+    // rate limit: ~2 req/s para não estourar cota Lusha
+    await new Promise(function(r) { setTimeout(r, 500); });
+  }
+
+  return { total: total, ok: ok, falhas: falhas };
+}
+window.enriquecerBaseLusha = enriquecerBaseLusha;
+
+// ── 7. AUTO-MIGRAÇÃO (1× por sessão) ─────────────────────────────────────────
 if (!window._reguaV1Migrated) {
   window._reguaV1Migrated = true;
   var _mc = migrarDecisoresV1();
