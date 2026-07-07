@@ -648,7 +648,7 @@ select.kes-input{cursor:pointer}
   }
   await migrarSeed();
   // scripts classicos (sem const globais duplicados)
-  for(var s0 of ['gh-core.js','block0_util.js','templates_agencias.js']){
+  for(var s0 of ['gh-core.js','block0_util.js','templates_agencias.js','block_regua.js']){
     try{ await loadScript(s0); }catch(e){ console.error(e); }
   }
   // blocos react pre-compilados
