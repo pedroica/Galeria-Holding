@@ -3701,7 +3701,7 @@ function App() {
     style: {
       gap: 4
     }
-  }, [["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["bomdias", "☀️ Bom Dia"], ["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
     key: v,
     onClick: () => switchView(v),
     style: {
@@ -4025,6 +4025,17 @@ function App() {
         setor: setor
       });
     }
+  })) : viewMode === "bomdias" ? /*#__PURE__*/React.createElement("div", {
+    className: "ws",
+    style: {
+      flex: 1,
+      overflow: "hidden",
+      display: "flex",
+      flexDirection: "column"
+    }
+  }, typeof BomDiaView !== "undefined" && /*#__PURE__*/React.createElement(BomDiaView, {
+    accs: accs,
+    curGrupo: curGrupo
   })) : /*#__PURE__*/React.createElement("div", {
     className: "ws"
   }, /*#__PURE__*/React.createElement("div", {
