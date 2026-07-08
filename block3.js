@@ -3357,7 +3357,17 @@ function App() {
   const [resOpen, setResOpen] = useState(false);
   const [dashOpen, setDashOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
-  const [viewMode, setViewMode] = useState("hotpipeline");
+  const [viewMode, setViewMode] = useState(function() {
+    // Se é manhã (6h-11h) e ainda não abriu Bom Dia hoje → começa direto lá
+    var hora = new Date().getHours();
+    var hoje = new Date().toISOString().slice(0, 10);
+    var jaAbriu = localStorage.getItem("gh_bomdias_nav") === hoje;
+    if (hora >= 6 && hora < 11 && !jaAbriu) {
+      localStorage.setItem("gh_bomdias_nav", hoje);
+      return "bomdias";
+    }
+    return "hotpipeline";
+  });
   const switchView = v => {
     setViewMode(v);
     setCurLead(null);
