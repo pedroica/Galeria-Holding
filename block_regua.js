@@ -466,7 +466,150 @@ function registrarToque(grupoId, rank, grupoOfertaId, anguloIdx, decisorNome) {
 }
 window.registrarToque = registrarToque;
 
-// ── 11. AUTO-MIGRAÇÃO (1× por sessão) ────────────────────────────────────────
+// ── 11. BUSCA PÚBLICA DE DECISORES VIA HUNTER ────────────────────────────────
+// Hunter domain-search retorna pessoas + cargos de fontes públicas (LinkedIn,
+// sites corporativos etc.). Não usa créditos Lusha.
+// Limites Hunter: ~25 buscas/mês no free, mais nos planos pagos.
+
+function _extrairDominio(lead, entry) {
+  // 1. website do lead (campo `website` ou `w`)
+  var ws = (lead && (lead.website || lead.w)) || "";
+  if (ws) {
+    ws = ws.replace(/^https?:\/\//i, "").replace(/^www\./i, "")
+            .split("/")[0].split("?")[0].trim();
+    if (ws && ws.indexOf(".") > 0) return ws;
+  }
+  // 2. domínio do e-mail de decisors existentes (exclui provedores genéricos)
+  var genericos = ["gmail.com","hotmail.com","yahoo.com","outlook.com",
+                   "uol.com.br","terra.com.br","ig.com.br","bol.com.br"];
+  var decisors = (entry && entry.decisors) || [];
+  for (var i = 0; i < decisors.length; i++) {
+    var em = (decisors[i].email || "").trim().toLowerCase();
+    if (em && em.indexOf("@") > 0) {
+      var dom = em.split("@")[1];
+      if (dom && genericos.indexOf(dom) === -1) return dom;
+    }
+  }
+  return null;
+}
+window._extrairDominio = _extrairDominio;
+
+// Chama Hunter domain-search via proxy Vercel (sem expor chave) ou chave local.
+async function _hunterDomain(domain, limit) {
+  try {
+    var key = typeof getHunterKey === "function" ? getHunterKey() : "";
+    var url = key
+      ? "https://api.hunter.io/v2/domain-search?domain=" + encodeURIComponent(domain) +
+        "&api_key=" + key + "&limit=" + (limit || 20)
+      : "/api/hunter?mode=domain&domain=" + encodeURIComponent(domain) +
+        "&limit=" + (limit || 20);
+    var r = await fetch(url);
+    if (!r.ok) return [];
+    var d = await r.json();
+    if (d.errors) return [];
+    return (d.data && d.data.emails) || [];
+  } catch(e) { return []; }
+}
+
+// Busca slots vazios de uma empresa via Hunter. Só preenche slots que ainda
+// estejam vazios. Retorna { ok, dominio, preenchidos, erro }.
+async function buscarDecisoresHunter(grupoId, rank, lead) {
+  var raw = {};
+  try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) {}
+  var entry = raw[grupoId + "_" + rank];
+
+  var dominio = _extrairDominio(lead, entry);
+  if (!dominio) return { ok: false, erro: "Sem domínio para buscar" };
+
+  var emails = await _hunterDomain(dominio, 50);
+  if (!emails.length) {
+    return { ok: false, dominio: dominio, erro: "Hunter não encontrou contatos em " + dominio };
+  }
+
+  // ordena por confiança decrescente para pegar o melhor match
+  emails.sort(function(a, b){ return (b.confidence || 0) - (a.confidence || 0); });
+
+  var preenchidos = 0;
+  for (var i = 0; i < emails.length; i++) {
+    var em = emails[i];
+    var position = em.position || "";
+    var slot = mapCargoToSlot(position);
+    if (!slot) continue;
+
+    // re-lê estado atual para checar se slot foi preenchido por iteração anterior
+    var rawNow = {};
+    try { rawNow = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) {}
+    var eNow = rawNow[grupoId + "_" + rank];
+    var slotAtual = eNow && eNow.decisores && eNow.decisores[slot];
+    if (slotAtual && slotAtual.nome) continue; // já preenchido
+
+    var nome = ((em.first_name || "") + " " + (em.last_name || "")).trim();
+    if (!nome) continue;
+
+    try {
+      setDecisoresSlot(grupoId, rank, slot, {
+        nome:        nome,
+        cargo:       position,
+        email:       em.value || "",
+        linkedin:    em.linkedin || "",
+        fonte:       "hunter",
+        status:      (em.confidence || 0) >= 80 ? "verificado" : "pendente",
+        atualizadoEm: new Date().toLocaleDateString("pt-BR"),
+      });
+      preenchidos++;
+    } catch(e) {
+      return { ok: preenchidos > 0, dominio: dominio, preenchidos: preenchidos, erro: String(e) };
+    }
+  }
+
+  return { ok: preenchidos > 0, dominio: dominio, preenchidos: preenchidos };
+}
+window.buscarDecisoresHunter = buscarDecisoresHunter;
+
+// Busca em lote: percorre toda a base, pula empresas sem domínio ou já completas,
+// deduplica por domínio (economiza cotas Hunter quando há 2 produtos da mesma empresa).
+async function buscarBaseHunter(grupoId, leads, onProgress) {
+  var lista = leads || (typeof PROSP !== "undefined" ? PROSP : []);
+  var raw = {};
+  try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) {}
+
+  var vistosdom = {};
+  var candidatos = [];
+  for (var i = 0; i < lista.length; i++) {
+    var lead = lista[i];
+    var entry = raw[grupoId + "_" + lead.rank];
+    if (!entry) continue;
+    var cob = getCoberturaEmpresa(grupoId, lead.rank, raw);
+    if (cob.faltantes.length === 0) continue; // já completo
+    var dominio = _extrairDominio(lead, entry);
+    if (!dominio) continue;
+    if (vistosdom[dominio]) continue; // mesmo domínio já agendado
+    vistosdom[dominio] = true;
+    candidatos.push({ lead: lead, dominio: dominio });
+  }
+
+  var total = candidatos.length;
+  var done = 0; var ok = 0; var semResult = 0; var falhas = [];
+  if (onProgress) onProgress({ total: total, done: 0, ok: 0, semResult: 0, falhas: [] });
+
+  for (var j = 0; j < candidatos.length; j++) {
+    var c = candidatos[j];
+    var res = await buscarDecisoresHunter(grupoId, c.lead.rank, c.lead);
+    done++;
+    if (res.ok) { ok++; }
+    else if (res.erro && res.erro.indexOf("QUOTA") !== -1) {
+      falhas.push({ empresa: c.lead.nome, erro: res.erro }); break;
+    } else { semResult++; }
+    if (onProgress) onProgress({ total: total, done: done, ok: ok, semResult: semResult, falhas: falhas });
+    // Hunter: 1 req/s seguro para todos os planos
+    await new Promise(function(r){ setTimeout(r, 1200); });
+  }
+
+  return { total: total, done: done, ok: ok, semResult: semResult, falhas: falhas };
+}
+window.buscarBaseHunter = buscarBaseHunter;
+
+// ── 12. AUTO-MIGRAÇÃO (1× por sessão) ────────────────────────────────────────
 if (!window._reguaV1Migrated) {
   window._reguaV1Migrated = true;
   var _mc = migrarDecisoresV1();

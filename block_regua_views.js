@@ -28,13 +28,16 @@ var CoberturaView = function CoberturaView(_ref) {
   var _f  = useState({nome:"",cargo:"",email:"",telefone:"",linkedin:""});
   var form = _f[0]; var setForm = _f[1];
 
-  // ── per-slot enrichment loading ────────────────────────────────
-  // key = "rank_slotName"
+  // ── per-slot enrichment loading (Lusha) ───────────────────────
   var _el = useState({});    var enrichLoading = _el[0]; var setEnrichLoading = _el[1];
 
-  // ── batch modal ────────────────────────────────────────────────
+  // ── per-company Hunter loading ─────────────────────────────────
+  // key = rank
+  var _hl = useState({});    var hunterLoading = _hl[0]; var setHunterLoading = _hl[1];
+
+  // ── batch modals ───────────────────────────────────────────────
   var _bm = useState(null);  var batchModal = _bm[0]; var setBatchModal = _bm[1];
-  // abortRef allows stopping the batch (not really needed for Phase 3, but good UX)
+  var _hm = useState(null);  var hunterModal = _hm[0]; var setHunterModal = _hm[1];
   var abortRef = useRef(false);
 
   // ── helpers ────────────────────────────────────────────────────
@@ -48,12 +51,15 @@ var CoberturaView = function CoberturaView(_ref) {
   var allRows = useMemo(function() {
     var prefix = curGrupo.id + "_";
     return leads.map(function(lead) {
-      if (!accs[prefix + lead.rank]) return null;
+      var entry = accs[prefix + lead.rank];
+      if (!entry) return null;
       var cob = typeof getCoberturaEmpresa === "function"
         ? getCoberturaEmpresa(curGrupo.id, lead.rank, accs)
         : { status:"vazia", faltantes:["ceo","cmo","gerencia"], preenchidos:0,
             slots:{ ceo:null, cmo:null, gerencia:null } };
-      return { lead:lead, cob:cob };
+      var dominio = typeof _extrairDominio === "function"
+        ? _extrairDominio(lead, entry) : null;
+      return { lead:lead, cob:cob, dominio:dominio };
     }).filter(Boolean);
   }, [accs, leads, curGrupo]);
 
@@ -62,13 +68,17 @@ var CoberturaView = function CoberturaView(_ref) {
   var completas = allRows.filter(function(r){ return r.cob.status === "completa"; }).length;
   var parciais  = allRows.filter(function(r){ return r.cob.status === "parcial"; }).length;
   var vazias    = allRows.filter(function(r){ return r.cob.status === "vazia"; }).length;
-  // count slots enrichable (have name, missing email or phone)
+  // slots enriquecíveis via Lusha (nome mas sem email/telefone)
   var enrichable = allRows.reduce(function(acc, r) {
     return acc + ["ceo","cmo","gerencia"].filter(function(s) {
       var sl = r.cob.slots[s];
       return sl && sl.nome.trim() && (!sl.email || !sl.telefone);
     }).length;
   }, 0);
+  // empresas auto-buscáveis via Hunter (tem domínio + slots vazios)
+  var autoBuscaveis = allRows.filter(function(r) {
+    return r.dominio && r.cob.status !== "completa";
+  }).length;
 
   // ── sector list ────────────────────────────────────────────────
   var setores = useMemo(function() {
@@ -153,6 +163,50 @@ var CoberturaView = function CoberturaView(_ref) {
     });
   }, [curGrupo, leads, refreshAccs]);
 
+  // ── per-company Hunter search ──────────────────────────────────
+  var buscarHunter = useCallback(function(rank, lead) {
+    if (typeof buscarDecisoresHunter !== "function") {
+      alert("buscarDecisoresHunter não disponível. Recarregue a página.");
+      return;
+    }
+    setHunterLoading(function(prev) { var n = Object.assign({}, prev); n[rank] = true; return n; });
+    buscarDecisoresHunter(curGrupo.id, rank, lead).then(function(res) {
+      if (res.ok && res.preenchidos > 0) {
+        refreshAccs();
+      } else if (res.erro && res.erro.indexOf("QUOTA") !== -1) {
+        alert("⚠️ ESPAÇO LOTADO — dados não salvos. Exporte um backup em 🛟 Ferramentas.");
+      } else if (!res.ok) {
+        alert("Hunter — " + (res.erro || "Sem resultados para " + (res.dominio||"?")));
+      } else {
+        refreshAccs(); // preenchidos=0 mas ok, slots já estavam completos
+      }
+      setHunterLoading(function(prev) { var n = Object.assign({}, prev); delete n[rank]; return n; });
+    }).catch(function(e) {
+      alert("Erro Hunter: " + e);
+      setHunterLoading(function(prev) { var n = Object.assign({}, prev); delete n[rank]; return n; });
+    });
+  }, [curGrupo, refreshAccs]);
+
+  // ── batch Hunter ───────────────────────────────────────────────
+  var runHunterBatch = useCallback(function() {
+    if (typeof buscarBaseHunter !== "function") {
+      alert("buscarBaseHunter não disponível. Recarregue a página.");
+      return;
+    }
+    setHunterModal({ running:true, total:0, done:0, ok:0, semResult:0, falhas:[] });
+
+    buscarBaseHunter(curGrupo.id, leads, function(prog) {
+      setHunterModal(function(prev) {
+        return Object.assign({}, prev, prog, { running: prog.done < prog.total });
+      });
+    }).then(function(res) {
+      setHunterModal(function(prev) { return Object.assign({}, prev, res, { running:false }); });
+      refreshAccs();
+    }).catch(function(e) {
+      setHunterModal(function(prev) { return Object.assign({}, prev, { running:false, erro: String(e) }); });
+    });
+  }, [curGrupo, leads, refreshAccs]);
+
   // ── save manual slot ───────────────────────────────────────────
   var saveSlot = useCallback(function() {
     if (!modal || !form.nome.trim()) return;
@@ -223,18 +277,27 @@ var CoberturaView = function CoberturaView(_ref) {
                boxSizing:"border-box" };
 
   // ── slot cell renderer ─────────────────────────────────────────
-  function slotCell(slot, rank, slotName, empresaNome) {
-    if (!slot) return React.createElement("span", { style:{fontSize:8,color:"#3d3d5c"} }, "—");
+  function slotCell(slot) {
+    if (!slot || !slot.nome) return React.createElement("span", { style:{fontSize:8,color:"#3d3d5c"} }, "—");
     var hasEmail = !!slot.email;
     var hasPhone = !!slot.telefone;
-    var enriched = slot.fonte === "lusha" || slot.status === "enriquecido";
-    var color = enriched ? "#22C55E" : (hasEmail || hasPhone) ? "#60A5FA" : "#9B9BB4";
-    var title = slot.nome + " · " + slot.cargo + (slot.email ? "\n✉ "+slot.email : "") + (slot.telefone ? "\n📱 "+slot.telefone : "");
+    var isLusha   = slot.fonte === "lusha"   || slot.status === "enriquecido";
+    var isHunter  = slot.fonte === "hunter";
+    var isManual  = slot.fonte === "manual"  || slot.status === "verificado";
+    var color = isLusha  ? "#22C55E"   // verde — Lusha
+              : isHunter ? "#A78BFA"   // roxo  — Hunter público
+              : (hasEmail || hasPhone) ? "#60A5FA" // azul — manual c/ contato
+              : "#9B9BB4";             // cinza — manual sem contato
+    var badge = isLusha ? "✓ " : isHunter ? "🌐 " : "";
+    var title = slot.nome + (slot.cargo ? " · " + slot.cargo : "") +
+                (slot.email ? "\n✉ "+slot.email : "") +
+                (slot.telefone ? "\n📱 "+slot.telefone : "") +
+                (isHunter ? "\nFonte: Hunter (pública)" : isLusha ? "\nFonte: Lusha" : "");
     return React.createElement("span", {
       style:{ fontSize:8, color:color, overflow:"hidden", textOverflow:"ellipsis",
               whiteSpace:"nowrap", display:"block" },
       title:title
-    }, (enriched ? "✓ " : "") + slot.nome);
+    }, badge + slot.nome);
   }
 
   // ── action buttons for a row ───────────────────────────────────
@@ -243,14 +306,29 @@ var CoberturaView = function CoberturaView(_ref) {
     var nome      = row.lead.nome;
     var faltantes = row.cob.faltantes;
     var slots     = row.cob.slots;
+    var dominio   = row.dominio;
 
     var btns = [];
+
+    // 🌐 Hunter automático (1 botão por empresa, se tem domínio e slots vazios)
+    if (dominio && faltantes.length > 0) {
+      var hLoading = !!hunterLoading[rank];
+      btns.push(React.createElement("button", {
+        key: "hunter",
+        title: "Buscar CEO/CMO/Gerência em " + dominio + " (fontes públicas via Hunter)",
+        disabled: hLoading,
+        onClick: function() { buscarHunter(rank, row.lead); },
+        style:{ fontSize:8, padding:"2px 6px", border:".5px solid #A78BFA44", borderRadius:3,
+                background:"rgba(167,139,250,.08)", color: hLoading ? "#555570" : "#A78BFA",
+                cursor: hLoading ? "default" : "pointer", fontFamily:MONO, fontWeight:600 }
+      }, hLoading ? "🌐…" : "🌐 Auto"));
+    }
 
     // "+" for empty slots
     faltantes.forEach(function(slotName) {
       btns.push(React.createElement("button", {
         key: "add_"+slotName,
-        title: "Adicionar "+SL[slotName],
+        title: "Adicionar "+SL[slotName]+" manualmente",
         onClick: function() {
           setModal({ rank:rank, slot:slotName });
           setForm({ nome:"", cargo:SL[slotName]||"", email:"", telefone:"", linkedin:"" });
@@ -260,16 +338,16 @@ var CoberturaView = function CoberturaView(_ref) {
       }, "+"+slotName.slice(0,3).toUpperCase()));
     });
 
-    // "🔍" for slots with name but missing email/phone
+    // "🔍" Lusha — slots com nome mas sem email/telefone
     ["ceo","cmo","gerencia"].forEach(function(slotName) {
       var sl = slots[slotName];
       if (!sl || !sl.nome.trim()) return;
-      if (sl.email && sl.telefone) return; // already complete
+      if (sl.email && sl.telefone) return;
       var lk = rank + "_" + slotName;
       var loading = !!enrichLoading[lk];
       btns.push(React.createElement("button", {
         key: "enr_"+slotName,
-        title: "Enriquecer "+SL[slotName]+" via Lusha",
+        title: "Enriquecer "+SL[slotName]+" via Lusha (pago)",
         disabled: loading,
         onClick: function() { enrichSlot(rank, slotName, nome); },
         style:{ fontSize:8, padding:"2px 5px", border:".5px solid #2D2D44", borderRadius:3,
@@ -311,13 +389,20 @@ var CoberturaView = function CoberturaView(_ref) {
       React.createElement("span", { style:chip("#22C55E") }, completas+" completas"),
       React.createElement("span", { style:chip("#F59E0B") }, parciais+" parciais"),
       React.createElement("span", { style:chip("#EF4444") }, vazias+" vazias"),
-      enrichable > 0 && React.createElement("span", { style:chip("#60A5FA") }, enrichable+" enriquecíveis"),
+      autoBuscaveis > 0 && React.createElement("span", { style:chip("#A78BFA") }, autoBuscaveis+" c/ domínio"),
+      enrichable > 0 && React.createElement("span", { style:chip("#60A5FA") }, enrichable+" enriquecíveis (Lusha)"),
       React.createElement("div", { style:{marginLeft:"auto", display:"flex", gap:6} },
+        autoBuscaveis > 0 && React.createElement("button", {
+          onClick: runHunterBatch,
+          style: fBtn(true, { fontSize:9, borderColor:"#A78BFA66", color:"#A78BFA",
+                              background:"rgba(167,139,250,.08)" }),
+          title: "Busca automática de CEO/CMO/Gerência em todas as empresas com domínio (fontes públicas)"
+        }, "🌐 Buscar via Hunter"),
         enrichable > 0 && React.createElement("button", {
           onClick: runBatch,
           style: fBtn(true, { fontSize:9 }),
           title: "Enriquecer via Lusha todos os slots com nome mas sem email/fone"
-        }, "🔍 Enriquecer base"),
+        }, "🔍 Enriquecer (Lusha)"),
         React.createElement("button", { onClick:exportCSV, style:fBtn(false,{fontSize:9}) },
           "⬇ CSV")
       )
@@ -376,9 +461,9 @@ var CoberturaView = function CoberturaView(_ref) {
         React.createElement("span", {style:CELL}, row.lead.setor||"—"),
         React.createElement("span", {style:chip(statusColor[row.cob.status])},
           statusLabel[row.cob.status]),
-        slotCell(row.cob.slots.ceo,      row.lead.rank, "ceo",      row.lead.nome),
-        slotCell(row.cob.slots.cmo,      row.lead.rank, "cmo",      row.lead.nome),
-        slotCell(row.cob.slots.gerencia, row.lead.rank, "gerencia", row.lead.nome),
+        slotCell(row.cob.slots.ceo),
+        slotCell(row.cob.slots.cmo),
+        slotCell(row.cob.slots.gerencia),
         actionButtons(row)
       );
     }),
@@ -497,6 +582,48 @@ var CoberturaView = function CoberturaView(_ref) {
             disabled:!!batchModal.running,
             style:Object.assign({},fBtn(!batchModal.running),{opacity:batchModal.running?0.4:1})
           }, batchModal.running ? "Aguarde…" : "Fechar")
+        )
+      )
+    ),
+
+    /* ═══════════════════════════════════════════════════════════
+       HUNTER BATCH MODAL
+       ═════════════════════════════════════════════════════════== */
+    hunterModal && React.createElement("div", {
+      style:{ position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:9100,
+              display:"flex",alignItems:"center",justifyContent:"center" }
+    },
+      React.createElement("div", {
+        style:{ background:"#1A1A2E",border:".5px solid #A78BFA44",borderRadius:8,
+                padding:24,minWidth:360,maxWidth:480,fontFamily:MONO }
+      },
+        React.createElement("div", {style:{fontSize:11,color:"#E0E0FF",fontWeight:700,marginBottom:2}},
+          hunterModal.running ? "🌐 Buscando via Hunter…" : "🌐 Busca concluída"),
+        React.createElement("div", {style:{fontSize:8,color:"#9B9BB4",marginBottom:10}},
+          "Fontes públicas · ~1 req/s · sem custo Lusha"),
+
+        hunterModal.total > 0 && progressBar(hunterModal.done||0, hunterModal.total),
+
+        React.createElement("div", {style:{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}},
+          React.createElement("span", {style:chip("#9B9BB4")}, (hunterModal.total||0)+" domínios"),
+          hunterModal.ok > 0 && React.createElement("span", {style:chip("#A78BFA")},
+            "✓ "+hunterModal.ok+" com resultados"),
+          hunterModal.semResult > 0 && React.createElement("span", {style:chip("#F59E0B")},
+            hunterModal.semResult+" sem resultado"),
+          hunterModal.falhas && hunterModal.falhas.length > 0 && React.createElement("span",
+            {style:chip("#EF4444")}, "✗ "+hunterModal.falhas.length+" erros")
+        ),
+
+        hunterModal.total === 0 && !hunterModal.running && React.createElement("div", {
+          style:{fontSize:9,color:"#9B9BB4",marginTop:10}
+        }, "Nenhuma empresa com domínio detectável encontrada. Adicione o site via CSV ou edite a empresa."),
+
+        React.createElement("div", {style:{marginTop:16,display:"flex",justifyContent:"flex-end"}},
+          React.createElement("button", {
+            onClick:function(){ setHunterModal(null); if(!hunterModal.running) refreshAccs(); },
+            disabled:!!hunterModal.running,
+            style:Object.assign({},fBtn(!hunterModal.running),{opacity:hunterModal.running?0.4:1})
+          }, hunterModal.running ? "Aguarde…" : "Fechar e atualizar")
         )
       )
     )
