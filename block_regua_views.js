@@ -703,7 +703,7 @@ var CoberturaView = function CoberturaView(_ref) {
           }, hunterModal.running ? "Aguarde…" : "Fechar e atualizar")
         )
       )
-    )
+    ),
 
     /* ═══════════════════════════════════════════════════════════
        CRAWLER BATCH MODAL
