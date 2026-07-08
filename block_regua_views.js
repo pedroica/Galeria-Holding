@@ -118,7 +118,12 @@ var CoberturaView = function CoberturaView(_ref) {
       }
       setEnrichLoading(function(prev) { var n = Object.assign({}, prev); delete n[lk]; return n; });
     }).catch(function(e) {
-      alert("Erro: " + e);
+      var msg = String(e);
+      if (msg.indexOf("QUOTA_CHEIA") !== -1) {
+        alert("⚠️ ESPAÇO LOTADO — o contato da Lusha foi recebido mas NÃO foi salvo!\n\nVá em 🛟 Ferramentas → Exportar backup, guarde o arquivo e depois clique em Limpar dados antigos para liberar espaço.");
+      } else {
+        alert("Erro ao enriquecer: " + msg);
+      }
       setEnrichLoading(function(prev) { var n = Object.assign({}, prev); delete n[lk]; return n; });
     });
   }, [curGrupo, refreshAccs]);
@@ -152,16 +157,22 @@ var CoberturaView = function CoberturaView(_ref) {
   var saveSlot = useCallback(function() {
     if (!modal || !form.nome.trim()) return;
     if (typeof setDecisoresSlot !== "function") return;
-    var entry = setDecisoresSlot(curGrupo.id, modal.rank, modal.slot, {
-      nome:        form.nome.trim(),
-      cargo:       form.cargo.trim(),
-      email:       form.email.trim(),
-      telefone:    form.telefone.trim(),
-      linkedin:    form.linkedin.trim(),
-      fonte:       "manual",
-      status:      "verificado",
-      atualizadoEm: new Date().toLocaleDateString("pt-BR"),
-    });
+    var entry;
+    try {
+      entry = setDecisoresSlot(curGrupo.id, modal.rank, modal.slot, {
+        nome:        form.nome.trim(),
+        cargo:       form.cargo.trim(),
+        email:       form.email.trim(),
+        telefone:    form.telefone.trim(),
+        linkedin:    form.linkedin.trim(),
+        fonte:       "manual",
+        status:      "verificado",
+        atualizadoEm: new Date().toLocaleDateString("pt-BR"),
+      });
+    } catch(e) {
+      alert("⚠️ NÃO SALVO — " + e.message);
+      return;
+    }
     if (entry) {
       var k = curGrupo.id + "_" + modal.rank;
       setAccs(function(prev) { var n = Object.assign({}, prev); n[k] = entry; return n; });

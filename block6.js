@@ -315,8 +315,88 @@ function FerramentasModal({
   const [proxy, setProxy] = useState(null);
   const [importReport, setImportReport] = useState(null);
   const [importando, setImportando] = useState(false);
+  const [diagInfo, setDiagInfo] = useState(null);
   const fileRef = React.useRef(null);
   const csvRef = React.useRef(null);
+
+  // ── Diagnóstico e recuperação de slots ────────────────────────────────────
+  const doSincronizarSlots = () => {
+    try {
+      var raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}");
+      var keys = Object.keys(raw);
+      var syncCount = 0; var updateCount = 0;
+      var szKB = Math.round(JSON.stringify(raw).length / 1024);
+      var slotTotal = 0;
+
+      keys.forEach(function(k) {
+        var entry = raw[k];
+        if (!entry || !entry.decisores) return;
+        ["ceo","cmo","gerencia"].forEach(function(s) {
+          var sl = entry.decisores[s];
+          if (!sl || !sl.nome) return;
+          slotTotal++;
+          var existing = entry.decisors || [];
+          var decName  = (sl.nome  || "").toLowerCase().trim();
+          var decEmail = (sl.email || "").toLowerCase().trim();
+          var matchIdx = -1;
+          for (var mi = 0; mi < existing.length; mi++) {
+            var ed = existing[mi];
+            if (decEmail && ed.email && ed.email.toLowerCase() === decEmail) { matchIdx = mi; break; }
+            if (decName  && ed.nome  && ed.nome.toLowerCase().trim() === decName) { matchIdx = mi; break; }
+          }
+          if (matchIdx >= 0) {
+            var changed = false;
+            if (sl.email    && !existing[matchIdx].email) { existing[matchIdx].email = sl.email; changed = true; }
+            if (sl.telefone && !existing[matchIdx].wa)    { existing[matchIdx].wa    = sl.telefone; changed = true; }
+            if (sl.cargo    && !existing[matchIdx].cargo) { existing[matchIdx].cargo  = sl.cargo; changed = true; }
+            if (sl.linkedin && !existing[matchIdx].li)    { existing[matchIdx].li    = sl.linkedin; changed = true; }
+            if (changed) updateCount++;
+          } else {
+            entry.decisors = existing.concat([{
+              nome: sl.nome, cargo: sl.cargo||"", email: sl.email||"",
+              wa: sl.telefone||"", li: sl.linkedin||"",
+              fromMailing: false, addedAt: "slot-recovery:"+s,
+            }]);
+            syncCount++;
+          }
+        });
+      });
+
+      try {
+        localStorage.setItem("gh_decisores_v3", JSON.stringify(raw));
+        setDiagInfo({
+          szKB, slotTotal, syncCount, updateCount,
+          msg: syncCount + " novos + " + updateCount + " atualizados em decisors[]. Recarregue a página para ver.",
+        });
+        setMsg("✅ Sincronização concluída — " + (syncCount+updateCount) + " contatos sincronizados.");
+      } catch(qe) {
+        setMsg("❌ QUOTA CHEIA (" + szKB + "KB) — exporte um backup e importe num navegador limpo.");
+      }
+    } catch(e) {
+      setMsg("❌ Erro: " + e.message);
+    }
+  };
+
+  const doDiag = () => {
+    try {
+      var raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}");
+      var keys = Object.keys(raw);
+      var slotTotal = 0; var comEmail = 0;
+      keys.forEach(function(k) {
+        var e = raw[k];
+        if (!e || !e.decisores) return;
+        ["ceo","cmo","gerencia"].forEach(function(s) {
+          var sl = e.decisores[s];
+          if (sl && sl.nome) { slotTotal++; if (sl.email) comEmail++; }
+        });
+      });
+      var szKB = Math.round(JSON.stringify(raw).length / 1024);
+      var quotaOk = true;
+      try { localStorage.setItem("__qt__", new Array(50000).join("x")); localStorage.removeItem("__qt__"); } catch(q) { quotaOk = false; }
+      setDiagInfo({ szKB, slotTotal, comEmail, quotaOk, keys: keys.length });
+      setMsg("Diagnóstico: " + slotTotal + " slots preenchidos | " + szKB + "KB | quota " + (quotaOk?"OK":"CHEIA!"));
+    } catch(e) { setMsg("Erro: " + e.message); }
+  };
   useEffect(() => {
     let alive = true;
     window.__ghProxyInfo().then(p => {
@@ -576,6 +656,31 @@ function FerramentasModal({
   /*#__PURE__*/React.createElement("div", {
     style: { fontSize: 9, fontFamily: "IBM Plex Mono,monospace", color: "#555", marginTop: 8, lineHeight: 1.6 }
   }, "Exporte um backup antes de qualquer atualização do site. Os dados vivem no navegador (localStorage) — trocar de máquina ou limpar o navegador sem backup = perda de dados. Um snapshot automático diário das chaves críticas também é mantido internamente."),
+
+  // ── Recuperação de Decisores ────────────────────────────────────────────────
+  /*#__PURE__*/React.createElement("div", { className: "kes-label", style: { marginBottom: 8, marginTop: 18, color: "#F59E0B" } }, "⚠️ RECUPERAÇÃO DE DECISORES (slots → lista)"),
+  /*#__PURE__*/React.createElement("div", { style: { fontSize: 9, color: "#888", marginBottom: 8, fontFamily: "IBM Plex Mono,monospace" } },
+    "Se os decisores enriquecidos via 🗺 Cobertura não aparecem na view principal, clique em Sincronizar. Isso copia os slots (CEO/CMO/Gerência) para a lista de decisores visível em cada empresa."),
+  /*#__PURE__*/React.createElement("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
+    /*#__PURE__*/React.createElement("button", {
+      className: "kes-btn-s",
+      style: { borderColor: "rgba(245,158,11,.4)", color: "#F59E0B" },
+      onClick: doDiag
+    }, "🔍 Diagnóstico de armazenamento"),
+    /*#__PURE__*/React.createElement("button", {
+      className: "kes-btn-s",
+      style: { borderColor: "rgba(245,158,11,.4)", color: "#F59E0B" },
+      onClick: doSincronizarSlots
+    }, "🔄 Sincronizar slots → decisores")
+  ),
+  diagInfo && /*#__PURE__*/React.createElement("div", {
+    style: { marginTop: 8, padding: "8px 12px", background: "#111", borderRadius: 6, border: ".5px solid rgba(245,158,11,.3)",
+             fontSize: 9, fontFamily: "IBM Plex Mono,monospace", color: "#F59E0B", lineHeight: 1.7 }
+  },
+    diagInfo.keys !== undefined && ("Entradas: " + diagInfo.keys + " | Tamanho: " + diagInfo.szKB + "KB | Quota: " + (diagInfo.quotaOk ? "OK ✓" : "CHEIA ⚠") + "\n"),
+    diagInfo.slotTotal !== undefined && ("Slots preenchidos: " + diagInfo.slotTotal + (diagInfo.comEmail !== undefined ? " (" + diagInfo.comEmail + " com e-mail)" : "") + "\n"),
+    diagInfo.msg && diagInfo.msg
+  ),
 
   // ── Relatório de importação CSV ──
   importReport && /*#__PURE__*/React.createElement("div", {

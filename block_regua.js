@@ -175,15 +175,48 @@ function setDecisoresSlot(grupoId, rank, slot, dados) {
     entry.decisores = { ceo: null, cmo: null, gerencia: null };
   }
 
-  entry.decisores[slot] = Object.assign({
+  var slotData = Object.assign({
     nome: "", cargo: "", email: "", telefone: "", linkedin: "",
     fonte: "manual", status: "pendente",
     atualizadoEm: new Date().toLocaleDateString("pt-BR"),
   }, dados);
+  entry.decisores[slot] = slotData;
+
+  // Sincroniza com decisors[] para que block4.js (e-mails) e demais views
+  // vejam os contatos enriquecidos. Deduplica por e-mail ou nome.
+  var decName  = (slotData.nome  || "").toLowerCase().trim();
+  var decEmail = (slotData.email || "").toLowerCase().trim();
+  var existing = entry.decisors || [];
+  var matchIdx = -1;
+  for (var mi = 0; mi < existing.length; mi++) {
+    var ed = existing[mi];
+    if (decEmail && ed.email && ed.email.toLowerCase() === decEmail) { matchIdx = mi; break; }
+    if (decName  && ed.nome  && ed.nome.toLowerCase().trim() === decName) { matchIdx = mi; break; }
+  }
+  if (matchIdx >= 0) {
+    // actualiza campos vazios do contato existente
+    if (slotData.email    && !existing[matchIdx].email) existing[matchIdx].email = slotData.email;
+    if (slotData.telefone && !existing[matchIdx].wa)    existing[matchIdx].wa    = slotData.telefone;
+    if (slotData.cargo    && !existing[matchIdx].cargo) existing[matchIdx].cargo = slotData.cargo;
+    if (slotData.linkedin && !existing[matchIdx].li)    existing[matchIdx].li    = slotData.linkedin;
+  } else if (decName) {
+    entry.decisors = existing.concat([{
+      nome:        slotData.nome,
+      cargo:       slotData.cargo || "",
+      email:       slotData.email || "",
+      wa:          slotData.telefone || "",
+      li:          slotData.linkedin || "",
+      fromMailing: false,
+      addedAt:     "slot:" + slot,
+    }]);
+  }
 
   raw[key] = entry;
-  try { localStorage.setItem("gh_decisores_v3", JSON.stringify(raw)); }
-  catch(e) {}
+  try {
+    localStorage.setItem("gh_decisores_v3", JSON.stringify(raw));
+  } catch(e) {
+    throw new Error("QUOTA_CHEIA: Não foi possível salvar — localStorage lotado. Exporte um backup e libere espaço.");
+  }
   return entry;
 }
 window.setDecisoresSlot = setDecisoresSlot;
