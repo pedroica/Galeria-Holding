@@ -609,7 +609,114 @@ async function buscarBaseHunter(grupoId, leads, onProgress) {
 }
 window.buscarBaseHunter = buscarBaseHunter;
 
-// ── 12. AUTO-MIGRAÇÃO (1× por sessão) ────────────────────────────────────────
+// ── 12. CRAWLER DE DECISORES (Receita Federal + Website) ─────────────────────
+// Chama /api/crawl que busca QSA no CNPJ e scrapa páginas /equipe /sobre etc.
+// Sem custo — fontes 100% públicas.
+
+async function buscarDecisoresCrawler(grupoId, rank, lead) {
+  var raw = {};
+  try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) {}
+  var entry = raw[grupoId + "_" + rank];
+
+  var dominio = _extrairDominio(lead, entry);
+  var cnpj    = (lead && lead.cnpj) || (entry && entry.cnpj) || "";
+
+  if (!dominio && !cnpj) {
+    return { ok: false, erro: "Sem CNPJ nem website para buscar" };
+  }
+
+  try {
+    var params = [];
+    if (cnpj)    params.push("cnpj="    + encodeURIComponent(cnpj.replace(/\D/g,"")));
+    if (dominio) params.push("domain="  + encodeURIComponent(dominio));
+    if (lead && lead.nome) params.push("nome=" + encodeURIComponent(lead.nome));
+
+    var r = await fetch("/api/crawl?" + params.join("&"));
+    if (!r.ok) return { ok: false, erro: "Erro HTTP " + r.status };
+    var data = await r.json();
+
+    var pessoas = (data && data.pessoas) || [];
+    if (!pessoas.length) {
+      return { ok: false, fontes: data.fontesUsadas,
+               erro: "Sem resultados em " + ((data.fontesUsadas||[]).join(", ")||"fontes públicas") };
+    }
+
+    var preenchidos = 0;
+    for (var i = 0; i < pessoas.length; i++) {
+      var p = pessoas[i];
+      var slot = mapCargoToSlot(p.cargo);
+      if (!slot) continue;
+
+      var rawNow = {};
+      try { rawNow = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) {}
+      var eNow = rawNow[grupoId + "_" + rank];
+      var slotAtual = eNow && eNow.decisores && eNow.decisores[slot];
+      if (slotAtual && slotAtual.nome) continue; // preserva dado existente
+
+      try {
+        setDecisoresSlot(grupoId, rank, slot, {
+          nome:        p.nome,
+          cargo:       p.cargo,
+          email:       p.email      || "",
+          linkedin:    p.linkedin   || "",
+          fonte:       "crawler",
+          status:      "pendente", // requer verificação manual
+          atualizadoEm: new Date().toLocaleDateString("pt-BR"),
+        });
+        preenchidos++;
+      } catch(e) {
+        return { ok: preenchidos > 0, preenchidos: preenchidos, erro: String(e) };
+      }
+    }
+
+    return { ok: true, preenchidos: preenchidos, total: pessoas.length,
+             fontes: data.fontesUsadas };
+  } catch(e) {
+    return { ok: false, erro: String(e) };
+  }
+}
+window.buscarDecisoresCrawler = buscarDecisoresCrawler;
+
+async function buscarBaseCrawler(grupoId, leads, onProgress) {
+  var lista = leads || (typeof PROSP !== "undefined" ? PROSP : []);
+  var raw = {};
+  try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) {}
+
+  var candidatos = [];
+  for (var i = 0; i < lista.length; i++) {
+    var lead = lista[i];
+    var entry = raw[grupoId + "_" + lead.rank];
+    if (!entry) continue;
+    var cob = getCoberturaEmpresa(grupoId, lead.rank, raw);
+    if (cob.faltantes.length === 0) continue;
+    var dominio = _extrairDominio(lead, entry);
+    var cnpj = (lead && lead.cnpj) || (entry && entry.cnpj) || "";
+    if (!dominio && !cnpj) continue;
+    candidatos.push(lead);
+  }
+
+  var total = candidatos.length;
+  var done = 0; var ok = 0; var semResult = 0; var falhas = [];
+  if (onProgress) onProgress({ total: total, done: 0, ok: 0, semResult: 0, falhas: [] });
+
+  for (var j = 0; j < candidatos.length; j++) {
+    var c = candidatos[j];
+    var res = await buscarDecisoresCrawler(grupoId, c.rank, c);
+    done++;
+    if (res.ok && (res.preenchidos||0) > 0) { ok++; }
+    else if (res.erro && res.erro.indexOf("QUOTA") !== -1) {
+      falhas.push({ empresa: c.nome, erro: res.erro }); break;
+    } else { semResult++; }
+    if (onProgress) onProgress({ total: total, done: done, ok: ok, semResult: semResult, falhas: falhas });
+    // ~800ms entre requests para não sobrecarregar os sites
+    await new Promise(function(r){ setTimeout(r, 800); });
+  }
+
+  return { total: total, done: done, ok: ok, semResult: semResult, falhas: falhas };
+}
+window.buscarBaseCrawler = buscarBaseCrawler;
+
+// ── 13. AUTO-MIGRAÇÃO (1× por sessão) ────────────────────────────────────────
 if (!window._reguaV1Migrated) {
   window._reguaV1Migrated = true;
   var _mc = migrarDecisoresV1();

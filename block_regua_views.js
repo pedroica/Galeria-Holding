@@ -32,12 +32,15 @@ var CoberturaView = function CoberturaView(_ref) {
   var _el = useState({});    var enrichLoading = _el[0]; var setEnrichLoading = _el[1];
 
   // ── per-company Hunter loading ─────────────────────────────────
-  // key = rank
-  var _hl = useState({});    var hunterLoading = _hl[0]; var setHunterLoading = _hl[1];
+  var _hl = useState({});    var hunterLoading  = _hl[0]; var setHunterLoading  = _hl[1];
+
+  // ── per-company Crawler loading ────────────────────────────────
+  var _cl = useState({});    var crawlerLoading = _cl[0]; var setCrawlerLoading = _cl[1];
 
   // ── batch modals ───────────────────────────────────────────────
-  var _bm = useState(null);  var batchModal = _bm[0]; var setBatchModal = _bm[1];
-  var _hm = useState(null);  var hunterModal = _hm[0]; var setHunterModal = _hm[1];
+  var _bm = useState(null);  var batchModal   = _bm[0]; var setBatchModal   = _bm[1];
+  var _hm = useState(null);  var hunterModal  = _hm[0]; var setHunterModal  = _hm[1];
+  var _cm = useState(null);  var crawlerModal = _cm[0]; var setCrawlerModal = _cm[1];
   var abortRef = useRef(false);
 
   // ── helpers ────────────────────────────────────────────────────
@@ -78,6 +81,12 @@ var CoberturaView = function CoberturaView(_ref) {
   // empresas auto-buscáveis via Hunter (tem domínio + slots vazios)
   var autoBuscaveis = allRows.filter(function(r) {
     return r.dominio && r.cob.status !== "completa";
+  }).length;
+  // empresas rastreáveis via crawler (CNPJ ou domínio + gaps)
+  var crawlaveis = allRows.filter(function(r) {
+    var entry = accs[(curGrupo.id + "_" + r.lead.rank)];
+    var cnpj = (r.lead.cnpj) || (entry && entry.cnpj) || "";
+    return (r.dominio || cnpj) && r.cob.status !== "completa";
   }).length;
 
   // ── sector list ────────────────────────────────────────────────
@@ -207,6 +216,46 @@ var CoberturaView = function CoberturaView(_ref) {
     });
   }, [curGrupo, leads, refreshAccs]);
 
+  // ── per-company Crawler ────────────────────────────────────────
+  var buscarCrawler = useCallback(function(rank, lead) {
+    if (typeof buscarDecisoresCrawler !== "function") {
+      alert("buscarDecisoresCrawler não disponível. Recarregue a página."); return;
+    }
+    setCrawlerLoading(function(prev) { var n = Object.assign({}, prev); n[rank] = true; return n; });
+    buscarDecisoresCrawler(curGrupo.id, rank, lead).then(function(res) {
+      if (res.ok) {
+        refreshAccs();
+        if (!(res.preenchidos > 0)) {
+          alert("🕷️ Encontrei contatos mas os slots já estavam preenchidos.");
+        }
+      } else {
+        alert("🕷️ Crawler — " + (res.erro || "Sem resultados nas fontes públicas"));
+      }
+      setCrawlerLoading(function(prev) { var n = Object.assign({}, prev); delete n[rank]; return n; });
+    }).catch(function(e) {
+      alert("Erro crawler: " + e);
+      setCrawlerLoading(function(prev) { var n = Object.assign({}, prev); delete n[rank]; return n; });
+    });
+  }, [curGrupo, refreshAccs]);
+
+  // ── batch Crawler ──────────────────────────────────────────────
+  var runCrawlerBatch = useCallback(function() {
+    if (typeof buscarBaseCrawler !== "function") {
+      alert("buscarBaseCrawler não disponível. Recarregue a página."); return;
+    }
+    setCrawlerModal({ running:true, total:0, done:0, ok:0, semResult:0, falhas:[] });
+    buscarBaseCrawler(curGrupo.id, leads, function(prog) {
+      setCrawlerModal(function(prev) {
+        return Object.assign({}, prev, prog, { running: prog.done < prog.total });
+      });
+    }).then(function(res) {
+      setCrawlerModal(function(prev) { return Object.assign({}, prev, res, { running:false }); });
+      refreshAccs();
+    }).catch(function(e) {
+      setCrawlerModal(function(prev) { return Object.assign({}, prev, { running:false, erro:String(e) }); });
+    });
+  }, [curGrupo, leads, refreshAccs]);
+
   // ── save manual slot ───────────────────────────────────────────
   var saveSlot = useCallback(function() {
     if (!modal || !form.nome.trim()) return;
@@ -283,16 +332,18 @@ var CoberturaView = function CoberturaView(_ref) {
     var hasPhone = !!slot.telefone;
     var isLusha   = slot.fonte === "lusha"   || slot.status === "enriquecido";
     var isHunter  = slot.fonte === "hunter";
-    var isManual  = slot.fonte === "manual"  || slot.status === "verificado";
-    var color = isLusha  ? "#22C55E"   // verde — Lusha
-              : isHunter ? "#A78BFA"   // roxo  — Hunter público
+    var isCrawler = slot.fonte === "crawler" || slot.fonte === "receita_federal";
+    var color = isLusha   ? "#22C55E"   // verde  — Lusha (pago)
+              : isHunter  ? "#A78BFA"   // roxo   — Hunter (público)
+              : isCrawler ? "#F59E0B"   // âmbar  — Crawler/QSA (público)
               : (hasEmail || hasPhone) ? "#60A5FA" // azul — manual c/ contato
               : "#9B9BB4";             // cinza — manual sem contato
-    var badge = isLusha ? "✓ " : isHunter ? "🌐 " : "";
+    var badge = isLusha ? "✓ " : isHunter ? "🌐 " : isCrawler ? "🕷 " : "";
+    var fonteLabel = isHunter ? "\nFonte: Hunter" : isLusha ? "\nFonte: Lusha"
+                   : isCrawler ? "\nFonte: Crawler/Receita Federal (verificar)" : "";
     var title = slot.nome + (slot.cargo ? " · " + slot.cargo : "") +
                 (slot.email ? "\n✉ "+slot.email : "") +
-                (slot.telefone ? "\n📱 "+slot.telefone : "") +
-                (isHunter ? "\nFonte: Hunter (pública)" : isLusha ? "\nFonte: Lusha" : "");
+                (slot.telefone ? "\n📱 "+slot.telefone : "") + fonteLabel;
     return React.createElement("span", {
       style:{ fontSize:8, color:color, overflow:"hidden", textOverflow:"ellipsis",
               whiteSpace:"nowrap", display:"block" },
@@ -310,18 +361,37 @@ var CoberturaView = function CoberturaView(_ref) {
 
     var btns = [];
 
-    // 🌐 Hunter automático (1 botão por empresa, se tem domínio e slots vazios)
+    // 🕷️ Crawler (Receita Federal QSA + website) — primeira escolha, grátis, sem limite
+    if (faltantes.length > 0) {
+      var entry2 = accs[curGrupo.id + "_" + rank];
+      var cnpjLead = (row.lead.cnpj) || (entry2 && entry2.cnpj) || "";
+      var temFonte = !!(dominio || cnpjLead);
+      var cLoading = !!crawlerLoading[rank];
+      if (temFonte) {
+        btns.push(React.createElement("button", {
+          key: "crawler",
+          title: "Buscar decisores publicamente" + (cnpjLead ? " via Receita Federal (CNPJ:"+cnpjLead+")" : "") + (dominio ? " + site:" + dominio : ""),
+          disabled: cLoading,
+          onClick: function() { buscarCrawler(rank, row.lead); },
+          style:{ fontSize:8, padding:"2px 6px", border:".5px solid #F59E0B44", borderRadius:3,
+                  background:"rgba(245,158,11,.08)", color: cLoading ? "#555570" : "#F59E0B",
+                  cursor: cLoading ? "default" : "pointer", fontFamily:MONO, fontWeight:600 }
+        }, cLoading ? "🕷…" : "🕷 QSA+Web"));
+      }
+    }
+
+    // 🌐 Hunter automático (domínio detectado + slots vazios)
     if (dominio && faltantes.length > 0) {
       var hLoading = !!hunterLoading[rank];
       btns.push(React.createElement("button", {
         key: "hunter",
-        title: "Buscar CEO/CMO/Gerência em " + dominio + " (fontes públicas via Hunter)",
+        title: "Buscar e-mails em " + dominio + " via Hunter (fontes públicas)",
         disabled: hLoading,
         onClick: function() { buscarHunter(rank, row.lead); },
         style:{ fontSize:8, padding:"2px 6px", border:".5px solid #A78BFA44", borderRadius:3,
                 background:"rgba(167,139,250,.08)", color: hLoading ? "#555570" : "#A78BFA",
                 cursor: hLoading ? "default" : "pointer", fontFamily:MONO, fontWeight:600 }
-      }, hLoading ? "🌐…" : "🌐 Auto"));
+      }, hLoading ? "🌐…" : "🌐 E-mail"));
     }
 
     // "+" for empty slots
@@ -389,20 +459,27 @@ var CoberturaView = function CoberturaView(_ref) {
       React.createElement("span", { style:chip("#22C55E") }, completas+" completas"),
       React.createElement("span", { style:chip("#F59E0B") }, parciais+" parciais"),
       React.createElement("span", { style:chip("#EF4444") }, vazias+" vazias"),
+      crawlaveis > 0 && React.createElement("span", { style:chip("#F59E0B") }, crawlaveis+" rastreáveis"),
       autoBuscaveis > 0 && React.createElement("span", { style:chip("#A78BFA") }, autoBuscaveis+" c/ domínio"),
-      enrichable > 0 && React.createElement("span", { style:chip("#60A5FA") }, enrichable+" enriquecíveis (Lusha)"),
+      enrichable > 0 && React.createElement("span", { style:chip("#60A5FA") }, enrichable+" Lusha"),
       React.createElement("div", { style:{marginLeft:"auto", display:"flex", gap:6} },
+        crawlaveis > 0 && React.createElement("button", {
+          onClick: runCrawlerBatch,
+          style: fBtn(true, { fontSize:9, borderColor:"#F59E0B66", color:"#F59E0B",
+                              background:"rgba(245,158,11,.08)" }),
+          title: "Buscar decisores via Receita Federal (CNPJ/QSA) e website — grátis, sem limites"
+        }, "🕷 Crawler (CNPJ+Web)"),
         autoBuscaveis > 0 && React.createElement("button", {
           onClick: runHunterBatch,
           style: fBtn(true, { fontSize:9, borderColor:"#A78BFA66", color:"#A78BFA",
                               background:"rgba(167,139,250,.08)" }),
-          title: "Busca automática de CEO/CMO/Gerência em todas as empresas com domínio (fontes públicas)"
-        }, "🌐 Buscar via Hunter"),
+          title: "Buscar e-mails em todos os domínios via Hunter"
+        }, "🌐 Hunter (e-mails)"),
         enrichable > 0 && React.createElement("button", {
           onClick: runBatch,
           style: fBtn(true, { fontSize:9 }),
           title: "Enriquecer via Lusha todos os slots com nome mas sem email/fone"
-        }, "🔍 Enriquecer (Lusha)"),
+        }, "🔍 Lusha"),
         React.createElement("button", { onClick:exportCSV, style:fBtn(false,{fontSize:9}) },
           "⬇ CSV")
       )
@@ -624,6 +701,51 @@ var CoberturaView = function CoberturaView(_ref) {
             disabled:!!hunterModal.running,
             style:Object.assign({},fBtn(!hunterModal.running),{opacity:hunterModal.running?0.4:1})
           }, hunterModal.running ? "Aguarde…" : "Fechar e atualizar")
+        )
+      )
+    )
+
+    /* ═══════════════════════════════════════════════════════════
+       CRAWLER BATCH MODAL
+       ═════════════════════════════════════════════════════════== */
+    crawlerModal && React.createElement("div", {
+      style:{ position:"fixed",inset:0,background:"rgba(0,0,0,.85)",zIndex:9100,
+              display:"flex",alignItems:"center",justifyContent:"center" }
+    },
+      React.createElement("div", {
+        style:{ background:"#1A1A2E",border:".5px solid #F59E0B44",borderRadius:8,
+                padding:24,minWidth:360,maxWidth:480,fontFamily:MONO }
+      },
+        React.createElement("div", {style:{fontSize:11,color:"#E0E0FF",fontWeight:700,marginBottom:2}},
+          crawlerModal.running ? "🕷 Rastreando fontes públicas…" : "🕷 Rastreamento concluído"),
+        React.createElement("div", {style:{fontSize:8,color:"#9B9BB4",marginBottom:10}},
+          "Receita Federal (CNPJ/QSA) + páginas de equipe dos sites · Grátis · Sem limite de créditos"),
+
+        crawlerModal.total > 0 && progressBar(crawlerModal.done||0, crawlerModal.total),
+
+        React.createElement("div", {style:{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}},
+          React.createElement("span", {style:chip("#9B9BB4")}, (crawlerModal.total||0)+" empresas"),
+          (crawlerModal.ok||0) > 0 && React.createElement("span", {style:chip("#F59E0B")},
+            "✓ "+(crawlerModal.ok)+" com decisores"),
+          (crawlerModal.semResult||0) > 0 && React.createElement("span", {style:chip("#555570")},
+            (crawlerModal.semResult)+" sem resultado"),
+          crawlerModal.falhas && crawlerModal.falhas.length > 0 && React.createElement("span",
+            {style:chip("#EF4444")}, "✗ "+crawlerModal.falhas.length+" erros")
+        ),
+
+        crawlerModal.total === 0 && !crawlerModal.running && React.createElement("div", {
+          style:{fontSize:9,color:"#9B9BB4",marginTop:10}
+        }, "Nenhuma empresa com CNPJ ou website encontrada. Importe via CSV com a coluna 'cnpj' ou 'website'."),
+
+        React.createElement("div", {style:{fontSize:8,color:"#F59E0B",marginTop:8,lineHeight:1.6}},
+          "⚠ Dados da Receita Federal mostram sócios/administradores legais — confirme que são os decisores de marketing antes de usar no disparo."),
+
+        React.createElement("div", {style:{marginTop:16,display:"flex",justifyContent:"flex-end"}},
+          React.createElement("button", {
+            onClick:function(){ setCrawlerModal(null); if(!crawlerModal.running) refreshAccs(); },
+            disabled:!!crawlerModal.running,
+            style:Object.assign({},fBtn(!crawlerModal.running),{opacity:crawlerModal.running?0.4:1})
+          }, crawlerModal.running ? "Aguarde…" : "Fechar e atualizar")
         )
       )
     )
