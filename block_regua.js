@@ -128,11 +128,12 @@ window.migrarDecisoresV1 = migrarDecisoresV1;
 // Retorna { status, faltantes, preenchidos, slots } para uma empresa num grupo.
 // status: "completa" | "parcial" | "vazia"
 
-function getCoberturaEmpresa(grupoId, rank) {
-  var raw;
-  try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); }
-  catch(e) { raw = {}; }
-
+function getCoberturaEmpresa(grupoId, rank, rawAccs) {
+  var raw = rawAccs;
+  if (!raw) {
+    try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); }
+    catch(e) { raw = {}; }
+  }
   var entry = raw[grupoId + "_" + rank];
   if (!entry || !entry.decisores) {
     return {
@@ -274,7 +275,7 @@ window.enriquecerBaseLusha = enriquecerBaseLusha;
 //   recencia  (dias sem contato de calcularTemperatura)
 //   gap       (preenchimento dos 3 slots)
 
-function getScorePrioridade(grupoId, rank, lead) {
+function getScorePrioridade(grupoId, rank, lead, rawAccs) {
   var pesos = REGUA_CONFIG.pesos; // { potencial, gap, recencia, fit }
 
   // fit
@@ -287,8 +288,8 @@ function getScorePrioridade(grupoId, rank, lead) {
   var potScore = r <= 50 ? 100 : r <= 200 ? 85 : r <= 1000 ? 70 : r <= 3000 ? 55 : r >= 9000 ? 50 : 40;
 
   // recencia (dias desde último contato — mais tempo = score maior = mais urgente)
-  var raw = {};
-  try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) {}
+  var raw = rawAccs;
+  if (!raw) { try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) { raw = {}; } }
   var entry = raw[grupoId + "_" + rank];
   var dias = 0;
   if (typeof calcularTemperatura === "function" && entry) {
@@ -297,9 +298,9 @@ function getScorePrioridade(grupoId, rank, lead) {
   }
   var recScore = Math.min(100, Math.round(dias * 100 / 60)); // 60 dias = 100pts
 
-  // gap (qualidade da cobertura)
+  // gap (qualidade da cobertura) — passa rawAccs para evitar re-parse
   var cob = typeof getCoberturaEmpresa === "function"
-    ? getCoberturaEmpresa(grupoId, rank)
+    ? getCoberturaEmpresa(grupoId, rank, raw)
     : { preenchidos: 0, status: "vazia" };
   var hasActivities = entry && (entry.activities || []).length > 0;
   var gapScore = cob.preenchidos === 3 ? 100 : cob.preenchidos === 2 ? 85
@@ -346,11 +347,11 @@ function getProximaOferta(grupoId, rank) {
 window.getProximaOferta = getProximaOferta;
 
 // ── 9. DECISORES VENCIDOS (sem toque há N dias) ───────────────────────────────
-function getDecisoresVencidos(grupoId, leads, intervaloDias) {
+function getDecisoresVencidos(grupoId, leads, intervaloDias, rawAccs) {
   var dias = intervaloDias || REGUA_CONFIG.intervalo;
   var lista = leads || (typeof PROSP !== "undefined" ? PROSP : []);
-  var raw = {};
-  try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) {}
+  var raw = rawAccs;
+  if (!raw) { try { raw = JSON.parse(localStorage.getItem("gh_decisores_v3") || "{}"); } catch(e) { raw = {}; } }
   var regua = {};
   try { regua = JSON.parse(localStorage.getItem("gh_regua_v1") || "{}"); } catch(e) {}
   var agora = Date.now();
@@ -394,8 +395,15 @@ function getDecisoresVencidos(grupoId, leads, intervaloDias) {
     }
     if (!decisor) continue;
 
+    // Filtrar empresas do seed que nunca foram tocadas: só exibe na régua se teve
+    // atividade registrada, um decisor adicionado manualmente ou um toque na régua.
+    var hasActivities = (entry.activities || []).length > 0;
+    var hasManualDecisor = slots.ceo || slots.cmo || slots.gerencia ||
+      (entry.decisors || []).some(function(d){ return !d.fromMailing; });
+    if (!hasActivities && !hasManualDecisor && ultimoMs === 0) continue;
+
     var sd = typeof getScorePrioridade === "function"
-      ? getScorePrioridade(grupoId, lead.rank, lead) : { score: 50 };
+      ? getScorePrioridade(grupoId, lead.rank, lead, raw) : { score: 50 };
     var oferta = typeof getProximaOferta === "function"
       ? getProximaOferta(grupoId, lead.rank) : null;
 

@@ -50,7 +50,7 @@ var CoberturaView = function CoberturaView(_ref) {
     return leads.map(function(lead) {
       if (!accs[prefix + lead.rank]) return null;
       var cob = typeof getCoberturaEmpresa === "function"
-        ? getCoberturaEmpresa(curGrupo.id, lead.rank)
+        ? getCoberturaEmpresa(curGrupo.id, lead.rank, accs)
         : { status:"vazia", faltantes:["ceo","cmo","gerencia"], preenchidos:0,
             slots:{ ceo:null, cmo:null, gerencia:null } };
       return { lead:lead, cob:cob };
@@ -529,8 +529,11 @@ var RankingView = function RankingView(_ref) {
     var prefix = curGrupo.id + "_";
     return leads.map(function(lead) {
       if (!accs[prefix + lead.rank]) return null;
-      var sd = getScorePrioridade(curGrupo.id, lead.rank, lead);
-      return { lead:lead, sd:sd };
+      var sd  = getScorePrioridade(curGrupo.id, lead.rank, lead, accs);
+      var cob = typeof getCoberturaEmpresa === "function"
+        ? getCoberturaEmpresa(curGrupo.id, lead.rank, accs)
+        : { preenchidos:0, status:"vazia" };
+      return { lead:lead, sd:sd, cob:cob };
     }).filter(Boolean);
   }, [accs, leads, curGrupo]);
 
@@ -624,8 +627,7 @@ var RankingView = function RankingView(_ref) {
       var sd  = row.sd;
       var sColor = sd.score>=70?"#FF6B2B":sd.score>=50?"#F59E0B":"#60A5FA";
       var fColor = sd.fitLevel==="alto"?"#22C55E":sd.fitLevel==="medio"?"#F59E0B":"#9B9BB4";
-      var cob = typeof getCoberturaEmpresa==="function"
-        ? getCoberturaEmpresa(curGrupo.id,row.lead.rank) : {preenchidos:0,status:"vazia"};
+      var cob = row.cob || {preenchidos:0,status:"vazia"};
       var cColor = cob.status==="completa"?"#22C55E":cob.status==="parcial"?"#F59E0B":"#EF4444";
       var tip = "Potencial: "+sd.detalhes.potencial+"\nFit: "+sd.detalhes.fit+
                 "\nRecência: "+sd.detalhes.recencia+"\nCobertura: "+sd.detalhes.gap;
@@ -717,7 +719,7 @@ var ReguaMensalView = function ReguaMensalView(_ref) {
   /* vencidos: re-derive when accs or tick changes */
   var vencidos = useMemo(function() {
     if (typeof getDecisoresVencidos !== "function") return [];
-    return getDecisoresVencidos(curGrupo.id, leads);
+    return getDecisoresVencidos(curGrupo.id, leads, undefined, accs);
   }, [accs, curGrupo, leads, tick]);
 
   /* progresso do mês atual */
