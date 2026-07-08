@@ -165,6 +165,7 @@ var CoberturaView = function CoberturaView(_ref) {
         return Object.assign({}, prev, res, { running:false });
       });
       refreshAccs();
+      if (res.ok > 0) window.dispatchEvent(new CustomEvent("gh:decisor:added",{detail:{qtd:res.ok,source:"lusha"}}));
     }).catch(function(e) {
       setBatchModal(function(prev) {
         return Object.assign({}, prev, { running:false, erro: String(e) });
@@ -182,6 +183,7 @@ var CoberturaView = function CoberturaView(_ref) {
     buscarDecisoresHunter(curGrupo.id, rank, lead).then(function(res) {
       if (res.ok && res.preenchidos > 0) {
         refreshAccs();
+        window.dispatchEvent(new CustomEvent("gh:decisor:added",{detail:{qtd:res.preenchidos,source:"hunter"}}));
       } else if (res.erro && res.erro.indexOf("QUOTA") !== -1) {
         alert("⚠️ ESPAÇO LOTADO — dados não salvos. Exporte um backup em 🛟 Ferramentas.");
       } else if (!res.ok) {
@@ -211,6 +213,7 @@ var CoberturaView = function CoberturaView(_ref) {
     }).then(function(res) {
       setHunterModal(function(prev) { return Object.assign({}, prev, res, { running:false }); });
       refreshAccs();
+      if (res.ok > 0) window.dispatchEvent(new CustomEvent("gh:decisor:added",{detail:{qtd:res.ok,source:"hunter"}}));
     }).catch(function(e) {
       setHunterModal(function(prev) { return Object.assign({}, prev, { running:false, erro: String(e) }); });
     });
@@ -251,6 +254,7 @@ var CoberturaView = function CoberturaView(_ref) {
     }).then(function(res) {
       setCrawlerModal(function(prev) { return Object.assign({}, prev, res, { running:false }); });
       refreshAccs();
+      if (res.ok > 0) window.dispatchEvent(new CustomEvent("gh:decisor:added",{detail:{qtd:res.ok,source:"crawler"}}));
     }).catch(function(e) {
       setCrawlerModal(function(prev) { return Object.assign({}, prev, { running:false, erro:String(e) }); });
     });
@@ -280,6 +284,7 @@ var CoberturaView = function CoberturaView(_ref) {
       var k = curGrupo.id + "_" + modal.rank;
       setAccs(function(prev) { var n = Object.assign({}, prev); n[k] = entry; return n; });
     }
+    window.dispatchEvent(new CustomEvent("gh:decisor:added",{detail:{qtd:1,source:"manual"}}));
     setModal(null);
     setForm({nome:"",cargo:"",email:"",telefone:"",linkedin:""});
   }, [modal, form, curGrupo, setAccs]);

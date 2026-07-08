@@ -377,6 +377,7 @@ input,select,button,textarea{font-family:'Inter',sans-serif!important}
 <body>
 <div id="root"><div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#060606;flex-direction:column;gap:12px"><div style="width:8px;height:8px;border-radius:2px;background:#FF6B2B"></div><div style="font-family:'IBM Plex Mono',monospace;font-size:10px;color:#333;letter-spacing:3px">CARREGANDO...</div></div></div>
 <div id="modal-root"></div>
+<div id="xp-widget-root"></div>
 
 <!-- ═══════════════════════════════════════════════════════════════
      MÓDULO ESTRATÉGICO — Kanban, Funil e Portfólio
@@ -648,11 +649,11 @@ select.kes-input{cursor:pointer}
   }
   await migrarSeed();
   // scripts classicos (sem const globais duplicados)
-  for(var s0 of ['gh-core.js','block0_util.js','templates_agencias.js','block_regua.js']){
+  for(var s0 of ['gh-core.js','block0_util.js','templates_agencias.js','block_regua.js','block_xp.js']){
     try{ await loadScript(s0); }catch(e){ console.error(e); }
   }
   // blocos react pre-compilados
-  for(var s1 of ['block1.js','block2.js','block3.js','block6.js','block7.js','block4.js','block5.js','block_regua_views.js','block_bomdias.js']){
+  for(var s1 of ['block1.js','block2.js','block3.js','block6.js','block7.js','block4.js','block5.js','block_regua_views.js','block_bomdias.js','block_xp_view.js']){
     try{ await runBlock(s1); }catch(e){ console.error(e); }
   }
   if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){

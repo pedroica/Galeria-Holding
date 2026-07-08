@@ -619,6 +619,7 @@ function FerramentasModal({
       try {
         const rep = processCSV(rd.result);
         setImportReport(rep);
+        if (rep.decisoresAdicionados > 0) window.dispatchEvent(new CustomEvent("gh:decisor:added",{detail:{qtd:rep.decisoresAdicionados,source:"csv"}}));
         if (typeof window.__refreshFromStorage === 'function') window.__refreshFromStorage();
       } catch (e) {
         setMsg("❌ Erro ao processar CSV: " + e.message);
