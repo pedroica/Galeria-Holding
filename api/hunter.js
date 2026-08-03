@@ -1,3 +1,4 @@
+// Proxy Hunter.io — mode=domain (domain-search) | mode=verify (email-verifier)
 export default async function handler(req, res) {
   if (!process.env.HUNTER_KEY) return res.status(500).json({ error: "HUNTER_KEY não configurada" });
   const { mode = "domain", domain = "", email = "", limit = "10" } = req.query;

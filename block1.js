@@ -964,12 +964,25 @@ function DecCard({
   const [showEmail, setShowEmail] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [showMover, setShowMover] = useState(false);
+  const [waStatus, setWaStatus] = useState(dc.waVerified || {});
+  const [waVerifying, setWaVerifying] = useState(false);
   const verifyEmail = async () => {
     if (!dc.email) return;
     setVerifying(true);
     const v = await hunterVerify(dc.email);
     if (v) onUpdate("emailStatus", v.result);
     setVerifying(false);
+  };
+  const verifyWA = async () => {
+    if (!phones.length || waVerifying) return;
+    if (typeof ghVerifyWANumbers !== "function") return;
+    setWaVerifying(true);
+    const result = await ghVerifyWANumbers(phones);
+    if (result) {
+      setWaStatus(result);
+      onUpdate("waVerified", result);
+    }
+    setWaVerifying(false);
   };
   const syncPD = async () => {
     if (!pdKey || !dc.email) return;
@@ -993,205 +1006,229 @@ function DecCard({
     "exists": "#A78BFA"
   };
   const phones = [dc.wa, dc.wa2, dc.wa3, dc.wa4].filter(Boolean);
-  return /*#__PURE__*/React.createElement(React.Fragment, null, showEmail && /*#__PURE__*/React.createElement(EmailModal, {
-    dc: dc,
-    empresa: empresa,
-    setor: setor,
-    grupo: grupo,
-    angulo: grupo.angles[0],
-    hist: "",
-    restrictions: restrictions,
-    onClose: () => setShowEmail(false)
-  }), showMover && /*#__PURE__*/React.createElement(MoverDecidorModal, {
-    decisor: dc,
-    empAtual: empresa,
-    onMover: dest => {
-      onMoveEmpresa && onMoveEmpresa(dc, dest);
-      setShowMover(false);
+  // Derived accent colors from grupo
+  const acBase = grupo.color || "#6b64f3";
+  const acRgb  = grupo.rgb  || "107,100,243";
+  return /*#__PURE__*/React.createElement(React.Fragment, null,
+    showEmail && /*#__PURE__*/React.createElement(EmailModal, {dc, empresa, setor, grupo, angulo: grupo.angles[0], hist: "", restrictions, onClose: () => setShowEmail(false)}),
+    showMover && /*#__PURE__*/React.createElement(MoverDecidorModal, {
+      decisor: dc, empAtual: empresa,
+      onMover: dest => { onMoveEmpresa && onMoveEmpresa(dc, dest); setShowMover(false); },
+      onClose: () => setShowMover(false)
+    }),
+    /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 190,
+        minWidth: 190,
+        background: `linear-gradient(160deg,rgba(${acRgb},.22) 0%,#0d0d18 55%)`,
+        border: `1px solid rgba(${acRgb},.28)`,
+        borderRadius: 15,
+        boxShadow: `1px 5px 28px 0px rgba(${acRgb},.18)`,
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        paddingBottom: 14,
+        fontFamily: "IBM Plex Mono,monospace",
+        position: "relative",
+        overflow: "hidden"
+      }
     },
-    onClose: () => setShowMover(false)
-  }), /*#__PURE__*/React.createElement("div", {
-    className: "deccard"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "decav",
-    style: {
-      background: `rgba(${grupo.rgb},.1)`,
-      color: grupo.color
-    }
-  }, initials(dc.nome || "?")), /*#__PURE__*/React.createElement("div", {
-    className: "decinfo"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "decname"
-  }, dc.nome || "Nome não informado", dc.aiSuggested && /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 7,
-      marginLeft: 5,
-      padding: "1px 4px",
-      borderRadius: 3,
-      background: "rgba(167,139,250,.12)",
-      color: "#A78BFA"
-    }
-  }, "IA"), dc.fromMailing && /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 7,
-      marginLeft: 4,
-      padding: "1px 4px",
-      borderRadius: 3,
-      background: "rgba(96,165,250,.08)",
-      color: "#60A5FA"
-    }
-  }, "mailing")), /*#__PURE__*/React.createElement("div", {
-    className: "deccargo"
-  }, dc.cargo || /*#__PURE__*/React.createElement("span", {
-    style: {
-      color: "#444",
-      fontStyle: "italic"
-    }
-  }, "sem cargo")), /*#__PURE__*/React.createElement("div", {
-    className: "dectags"
-  }, /*#__PURE__*/React.createElement("span", {
-    className: "dt" + (dc.email ? " dtok" : "")
-  }, "✉ ", dc.email || "sem email", dc.emailStatus && /*#__PURE__*/React.createElement("span", {
-    style: {
-      fontSize: 8,
-      padding: "1px 4px",
-      borderRadius: 8,
-      background: stC[dc.emailStatus] || "#222",
-      color: "#000",
-      marginLeft: 4
-    }
-  }, dc.emailStatus)), phones.map((p, i) => /*#__PURE__*/React.createElement("span", {
-    key: i,
-    className: "dt dtok"
-  }, "💬 ", p)), !phones.length && /*#__PURE__*/React.createElement("span", {
-    className: "dt"
-  }, "💬 sem WA"))), /*#__PURE__*/React.createElement("div", {
-    className: "decacts"
-  }, dc.email && /*#__PURE__*/React.createElement("button", {
-    className: "btn btno btnsm",
-    onClick: () => setShowEmail(true)
-  }, "✉ Email IA"), phones.map((p, i) => /*#__PURE__*/React.createElement("button", {
-    key: i,
-    className: "btn btno btnsm",
-    style: {
-      color: "#25D366",
-      borderColor: "rgba(37,211,102,.3)"
+      /* ── top accent bar ── */
+      /*#__PURE__*/React.createElement("div", {
+        style: {
+          width: "60%", height: 4,
+          background: acBase,
+          borderRadius: "0 0 10px 10px",
+          marginBottom: 16,
+          boxShadow: `0 2px 8px rgba(${acRgb},.5)`
+        }
+      }),
+      /* ── avatar ── */
+      /*#__PURE__*/React.createElement("div", {
+        style: {
+          width: 64, height: 64,
+          background: `rgba(${acRgb},.22)`,
+          border: `1.5px solid rgba(${acRgb},.45)`,
+          borderRadius: 14,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 22, fontWeight: 700, color: acBase,
+          letterSpacing: -1,
+          marginBottom: 10,
+          boxShadow: `0 2px 12px rgba(${acRgb},.2)`
+        }
+      }, initials(dc.nome || "?")),
+      /* ── name + badges ── */
+      /*#__PURE__*/React.createElement("div", {style: {textAlign: "center", paddingInline: 10, marginBottom: 2}},
+        /*#__PURE__*/React.createElement("div", {
+          style: {
+            fontWeight: 700, color: "#F5F5F5", fontSize: 13,
+            lineHeight: 1.25, letterSpacing: -.3,
+            wordBreak: "break-word"
+          }
+        }, dc.nome || "Sem nome"),
+        (dc.aiSuggested || dc.fromMailing) && /*#__PURE__*/React.createElement("div", {style: {display: "flex", gap: 4, justifyContent: "center", marginTop: 4}},
+          dc.aiSuggested  && /*#__PURE__*/React.createElement("span", {style: {fontSize: 7, padding: "1px 5px", borderRadius: 10, background: "rgba(167,139,250,.15)", color: "#A78BFA"}}, "IA"),
+          dc.fromMailing  && /*#__PURE__*/React.createElement("span", {style: {fontSize: 7, padding: "1px 5px", borderRadius: 10, background: "rgba(96,165,250,.1)", color: "#60A5FA"}}, "mailing")
+        )
+      ),
+      /* ── cargo ── */
+      /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 10, color: `rgba(${acRgb},.75)`, fontWeight: 500,
+          textAlign: "center", paddingInline: 8, marginBottom: 10,
+          lineHeight: 1.3
+        }
+      }, dc.cargo || /*#__PURE__*/React.createElement("span", {style: {color: "#333", fontStyle: "italic"}}, "sem cargo")),
+      /* ── contact status badges ── */
+      /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex", flexWrap: "wrap", gap: 4, justifyContent: "center",
+          paddingInline: 8, marginBottom: 10
+        }
+      },
+        dc.email && /*#__PURE__*/React.createElement("span", {
+          style: {
+            fontSize: 8, padding: "2px 7px", borderRadius: 20,
+            background: dc.emailStatus ? (stC[dc.emailStatus]+"22"||"#1a1a2e") : "rgba(255,255,255,.05)",
+            color: dc.emailStatus ? stC[dc.emailStatus] : "#666",
+            border: `1px solid ${dc.emailStatus ? stC[dc.emailStatus]+"55" : "#222"}`,
+            maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap"
+          },
+          title: dc.email
+        }, "✉ ", dc.email.split("@")[0]),
+        !dc.email && /*#__PURE__*/React.createElement("span", {style: {fontSize: 8, color: "#333", padding: "2px 7px", border: "1px solid #1a1a1a", borderRadius: 20}}, "sem email"),
+        phones.map((p, i) => /*#__PURE__*/React.createElement("span", {
+          key: i,
+          style: {
+            fontSize: 8, padding: "2px 7px", borderRadius: 20,
+            background: waStatus[p] === true ? "rgba(37,211,102,.1)" : waStatus[p] === false ? "rgba(255,71,87,.06)" : "rgba(37,211,102,.04)",
+            color: waStatus[p] === true ? "#25D366" : waStatus[p] === false ? "#666" : "#25D366",
+            border: `1px solid ${waStatus[p] === true ? "rgba(37,211,102,.4)" : waStatus[p] === false ? "rgba(255,71,87,.2)" : "rgba(37,211,102,.15)"}`,
+            textDecoration: waStatus[p] === false ? "line-through" : "none"
+          }
+        }, "💬", waStatus[p] === true ? " ✓" : waStatus[p] === false ? " ✗" : ""))
+      ),
+      /* ── primary action buttons ── */
+      /*#__PURE__*/React.createElement("div", {style: {display: "flex", gap: 5, justifyContent: "center", flexWrap: "wrap", paddingInline: 8, marginBottom: 8}},
+        dc.email && /*#__PURE__*/React.createElement("button", {
+          onClick: () => setShowEmail(true),
+          style: {
+            padding: "5px 10px", borderRadius: 8, border: "none",
+            background: `rgba(${acRgb},.25)`, color: acBase,
+            fontSize: 9, fontWeight: 600, cursor: "pointer",
+            fontFamily: "IBM Plex Mono,monospace"
+          }
+        }, "✉ Email"),
+        phones.map((p, i) => /*#__PURE__*/React.createElement("button", {
+          key: i,
+          onClick: () => openWA(p),
+          style: {
+            padding: "5px 10px", borderRadius: 8, border: "none",
+            background: waStatus[p] === false ? "rgba(80,80,80,.2)" : "rgba(37,211,102,.12)",
+            color: waStatus[p] === false ? "#666" : "#25D366",
+            fontSize: 9, fontWeight: 600, cursor: "pointer",
+            fontFamily: "IBM Plex Mono,monospace"
+          }
+        }, "💬", phones.length > 1 ? " WA"+(i+1) : " WA")),
+        dc.li && /*#__PURE__*/React.createElement("button", {
+          onClick: () => window.open(dc.li.startsWith("http") ? dc.li : "https://"+dc.li, "_blank"),
+          style: {
+            padding: "5px 10px", borderRadius: 8, border: "none",
+            background: "rgba(96,165,250,.1)", color: "#60A5FA",
+            fontSize: 9, fontWeight: 600, cursor: "pointer",
+            fontFamily: "IBM Plex Mono,monospace"
+          }
+        }, "in LinkedIn")
+      ),
+      /* ── secondary actions ── */
+      /*#__PURE__*/React.createElement("div", {
+        style: {
+          display: "flex", gap: 4, justifyContent: "center", flexWrap: "wrap",
+          paddingInline: 8, borderTop: "1px solid rgba(255,255,255,.05)",
+          paddingTop: 8
+        }
+      },
+        dc.ig && /*#__PURE__*/React.createElement("button", {
+          onClick: () => window.open(dc.ig.startsWith("http") ? dc.ig : dc.ig.startsWith("@") ? "https://instagram.com/"+dc.ig.slice(1) : "https://"+dc.ig, "_blank"),
+          style: {padding: "3px 7px", borderRadius: 6, border: "1px solid rgba(225,48,108,.2)", background: "rgba(225,48,108,.06)", color: "#E1306C", fontSize: 8, cursor: "pointer"}
+        }, "📸"),
+        dc.fb && /*#__PURE__*/React.createElement("button", {
+          onClick: () => window.open(dc.fb.startsWith("http") ? dc.fb : "https://"+dc.fb, "_blank"),
+          style: {padding: "3px 7px", borderRadius: 6, border: "1px solid rgba(24,119,242,.2)", background: "rgba(24,119,242,.06)", color: "#1877F2", fontSize: 8, cursor: "pointer"}
+        }, "fb"),
+        dc.email && !dc.emailStatus && /*#__PURE__*/React.createElement("button", {
+          onClick: verifyEmail, disabled: verifying,
+          style: {padding: "3px 7px", borderRadius: 6, border: "1px solid #222", background: "#111", color: "#777", fontSize: 8, cursor: "pointer"}
+        }, verifying ? "..." : "Validar ✉"),
+        phones.length > 0 && typeof getWAVerifyUrl === "function" && getWAVerifyUrl() && /*#__PURE__*/React.createElement("button", {
+          onClick: verifyWA, disabled: waVerifying,
+          title: "Verificar quais números têm WhatsApp ativo",
+          style: {padding: "3px 7px", borderRadius: 6, border: "1px solid rgba(37,211,102,.2)", background: "rgba(37,211,102,.05)", color: "#25D366", fontSize: 8, cursor: "pointer"}
+        }, waVerifying ? "..." : "🔍 WA"),
+        pdKey && dc.email && /*#__PURE__*/React.createElement("button", {
+          onClick: syncPD, disabled: pdLoading,
+          style: {padding: "3px 7px", borderRadius: 6, border: "1px solid rgba(167,139,250,.2)", background: "rgba(167,139,250,.06)", color: "#A78BFA", fontSize: 8, cursor: "pointer"}
+        }, pdLoading ? "..." : pdStatus === "exists" ? "No Pipe" : pdStatus === "ok" ? "Criado!" : "Pipe"),
+        onMoveEmpresa && /*#__PURE__*/React.createElement("button", {
+          onClick: () => setShowMover(true), title: "Mover para outra empresa",
+          style: {padding: "3px 7px", borderRadius: 6, border: "1px solid #222", background: "#111", color: "#666", fontSize: 8, cursor: "pointer"}
+        }, "🔀"),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: onToggleEdit,
+          style: {
+            padding: "3px 7px", borderRadius: 6, fontSize: 8, cursor: "pointer",
+            border: isEditing ? `1px solid rgba(${acRgb},.4)` : "1px solid #222",
+            background: isEditing ? `rgba(${acRgb},.12)` : "#111",
+            color: isEditing ? acBase : "#777"
+          }
+        }, isEditing ? "✕ Fechar" : "✏ Editar"),
+        /*#__PURE__*/React.createElement("button", {
+          onClick: onRemove,
+          style: {padding: "3px 7px", borderRadius: 6, border: "1px solid rgba(255,71,87,.2)", background: "rgba(255,71,87,.06)", color: "#FF4757", fontSize: 8, cursor: "pointer"}
+        }, "✕")
+      )
+    ),
+    /* ── edit form (expands below card) ── */
+    isEditing && /*#__PURE__*/React.createElement("div", {
+      style: {
+        background: "#0a0a12",
+        border: `1px solid rgba(${acRgb},.2)`,
+        borderRadius: 8, padding: 12, marginTop: 6,
+        width: 190, fontFamily: "IBM Plex Mono,monospace"
+      }
     },
-    onClick: () => openWA(p)
-  }, "💬 ", phones.length > 1 ? "WA" + (i + 1) : "WA")), dc.li && /*#__PURE__*/React.createElement("button", {
-    className: "btn btno btnsm",
-    style: {
-      color: "#60A5FA",
-      borderColor: "rgba(96,165,250,.3)"
-    },
-    onClick: () => window.open(dc.li.startsWith("http") ? dc.li : "https://" + dc.li, "_blank")
-  }, "in"), dc.ig && /*#__PURE__*/React.createElement("button", {
-    className: "btn btno btnsm",
-    style: {
-      color: "#E1306C",
-      borderColor: "rgba(225,48,108,.3)"
-    },
-    onClick: () => window.open(dc.ig.startsWith("http") ? dc.ig : dc.ig.startsWith("@") ? "https://instagram.com/" + dc.ig.slice(1) : "https://" + dc.ig, "_blank")
-  }, "📸"), dc.fb && /*#__PURE__*/React.createElement("button", {
-    className: "btn btno btnsm",
-    style: {
-      color: "#1877F2",
-      borderColor: "rgba(24,119,242,.3)"
-    },
-    onClick: () => window.open(dc.fb.startsWith("http") ? dc.fb : "https://" + dc.fb, "_blank")
-  }, "fb"), dc.email && !dc.emailStatus && /*#__PURE__*/React.createElement("button", {
-    className: "btn btno btnsm",
-    onClick: verifyEmail,
-    disabled: verifying
-  }, verifying ? "..." : "Validar"), pdKey && dc.email && /*#__PURE__*/React.createElement("button", {
-    className: "btn btno btnsm",
-    onClick: syncPD,
-    disabled: pdLoading,
-    style: {
-      color: "#A78BFA",
-      borderColor: "rgba(167,139,250,.3)"
-    }
-  }, pdLoading ? "..." : pdStatus === "exists" ? "No Pipe" : pdStatus === "ok" ? "Criado!" : "Pipedrive"), onMoveEmpresa && /*#__PURE__*/React.createElement("button", {
-    className: "btn btno btnsm",
-    onClick: () => setShowMover(true),
-    style: {
-      color: "#9B9BB4",
-      borderColor: "rgba(155,155,180,.3)"
-    },
-    title: "Mover para outra empresa"
-  }, "🔀"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btno btnsm",
-    onClick: onToggleEdit
-  }, isEditing ? "Fechar" : "Editar"), /*#__PURE__*/React.createElement("button", {
-    className: "btn btnsm",
-    onClick: onRemove,
-    style: {
-      background: "rgba(255,71,87,.08)",
-      color: "#FF4757",
-      border: "1px solid rgba(255,71,87,.2)"
-    }
-  }, "✕"))), isEditing && /*#__PURE__*/React.createElement("div", {
-    style: {
-      background: "#0a0a0a",
-      border: "1px solid #181818",
-      borderRadius: 4,
-      padding: 12,
-      marginBottom: 8
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "g2"
-  }, [["nome", "Nome"], ["cargo", "Cargo"], ["email", "Email"]].map(([f, pl]) => /*#__PURE__*/React.createElement("div", {
-    className: "frow",
-    key: f
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flbl"
-  }, pl), /*#__PURE__*/React.createElement("input", {
-    className: "finp",
-    placeholder: pl,
-    value: dc[f] || "",
-    onChange: e => onUpdate(f, e.target.value)
-  })))), /*#__PURE__*/React.createElement("div", {
-    className: "g2"
-  }, [["wa", "WhatsApp 1"], ["wa2", "WhatsApp 2"], ["wa3", "WhatsApp 3"], ["wa4", "WhatsApp 4"]].map(([f, pl]) => /*#__PURE__*/React.createElement("div", {
-    className: "frow",
-    key: f
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flbl"
-  }, pl), /*#__PURE__*/React.createElement("input", {
-    className: "finp",
-    placeholder: "5511999...",
-    value: dc[f] || "",
-    onChange: e => onUpdate(f, e.target.value)
-  })))), /*#__PURE__*/React.createElement("div", {
-    className: "g2"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "frow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flbl"
-  }, "LinkedIn URL"), /*#__PURE__*/React.createElement("input", {
-    className: "finp",
-    placeholder: "linkedin.com/in/...",
-    value: dc.li || "",
-    onChange: e => onUpdate("li", e.target.value)
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "frow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flbl"
-  }, "Instagram"), /*#__PURE__*/React.createElement("input", {
-    className: "finp",
-    placeholder: "@usuario ou instagram.com/...",
-    value: dc.ig || "",
-    onChange: e => onUpdate("ig", e.target.value)
-  }))), /*#__PURE__*/React.createElement("div", {
-    className: "frow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flbl"
-  }, "Facebook"), /*#__PURE__*/React.createElement("input", {
-    className: "finp",
-    placeholder: "facebook.com/...",
-    value: dc.fb || "",
-    onChange: e => onUpdate("fb", e.target.value)
-  }))));
+      /*#__PURE__*/React.createElement("div", {className: "g2"},
+        [["nome", "Nome"], ["cargo", "Cargo"], ["email", "Email"]].map(([f, pl]) =>
+          /*#__PURE__*/React.createElement("div", {className: "frow", key: f},
+            /*#__PURE__*/React.createElement("div", {className: "flbl"}, pl),
+            /*#__PURE__*/React.createElement("input", {className: "finp", placeholder: pl, value: dc[f] || "", onChange: e => onUpdate(f, e.target.value)})
+          )
+        )
+      ),
+      /*#__PURE__*/React.createElement("div", {className: "g2"},
+        [["wa","WA 1"],["wa2","WA 2"],["wa3","WA 3"],["wa4","WA 4"]].map(([f, pl]) =>
+          /*#__PURE__*/React.createElement("div", {className: "frow", key: f},
+            /*#__PURE__*/React.createElement("div", {className: "flbl"}, pl),
+            /*#__PURE__*/React.createElement("input", {className: "finp", placeholder: "5511999...", value: dc[f] || "", onChange: e => onUpdate(f, e.target.value)})
+          )
+        )
+      ),
+      /*#__PURE__*/React.createElement("div", {className: "g2"},
+        /*#__PURE__*/React.createElement("div", {className: "frow"},
+          /*#__PURE__*/React.createElement("div", {className: "flbl"}, "LinkedIn"),
+          /*#__PURE__*/React.createElement("input", {className: "finp", placeholder: "linkedin.com/in/...", value: dc.li || "", onChange: e => onUpdate("li", e.target.value)})
+        ),
+        /*#__PURE__*/React.createElement("div", {className: "frow"},
+          /*#__PURE__*/React.createElement("div", {className: "flbl"}, "Instagram"),
+          /*#__PURE__*/React.createElement("input", {className: "finp", placeholder: "@usuario", value: dc.ig || "", onChange: e => onUpdate("ig", e.target.value)})
+        )
+      ),
+      /*#__PURE__*/React.createElement("div", {className: "frow"},
+        /*#__PURE__*/React.createElement("div", {className: "flbl"}, "Facebook"),
+        /*#__PURE__*/React.createElement("input", {className: "finp", placeholder: "facebook.com/...", value: dc.fb || "", onChange: e => onUpdate("fb", e.target.value)})
+      )
+    )
+  );
 }
 function RestrictionsPanel({
   onClose
@@ -1838,7 +1875,14 @@ function AgentView({
         fontSize: 12,
         fontWeight: 700
       }
-    }, "Nenhum decisor")) : (acc.decisors || []).map((d, i) => /*#__PURE__*/React.createElement(DecCard, {
+    }, "Nenhum decisor")) : /*#__PURE__*/React.createElement("div", {
+      style: {
+        display: "flex",
+        flexWrap: "wrap",
+        gap: 14,
+        padding: "8px 0"
+      }
+    }, (acc.decisors || []).map((d, i) => /*#__PURE__*/React.createElement(DecCard, {
       key: i,
       dc: d,
       empresa: lead.nome,
@@ -1855,7 +1899,7 @@ function AgentView({
       restrictions: restrictions,
       onWALog: logWA,
       onMoveEmpresa: moveDec
-    })));
+    }))));
     if (tab === "historico") return /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
@@ -2474,6 +2518,10 @@ var KB_DEFAULT_TABS = [{
     id: 'hold',
     label: 'On Hold',
     accent: 'red'
+  }, {
+    id: 'perdido',
+    label: 'Perdido / Arquivo',
+    accent: 'gray'
   }],
   cards: [{
     id: 1,
@@ -2754,6 +2802,10 @@ var KB_DEFAULT_TABS = [{
     id: 'clienteativo',
     label: 'Cliente Ativo',
     accent: 'green'
+  }, {
+    id: 'perdido',
+    label: 'Perdido / Arquivo',
+    accent: 'gray'
   }],
   cards: [{
     id: 1,
@@ -3202,6 +3254,10 @@ function KanbanView({
   const [lfCol, setLfCol] = useState('');
   const [lfVal, setLfVal] = useState(0);
   const [lfNote, setLfNote] = useState('');
+  const [cfMotivo, setCfMotivo] = useState('perdido');
+  const [cfMotivoObs, setCfMotivoObs] = useState('');
+  const [lfMotivo, setLfMotivo] = useState('perdido');
+  const [lfMotivoObs, setLfMotivoObs] = useState('');
   const [tfName, setTfName] = useState('');
   const [tfType, setTfType] = useState('lead');
   const save = st => {
@@ -3287,6 +3343,8 @@ function KanbanView({
       setCfCol(card.col);
       setCfTag(card.tag || '');
       setCfNote(card.note || '');
+      setCfMotivo(card.motivo || 'perdido');
+      setCfMotivoObs(card.motivoObs || '');
       setCardModal({
         tabId,
         cardId
@@ -3298,6 +3356,8 @@ function KanbanView({
       setLfCol(card.col);
       setLfVal(card.value || 0);
       setLfNote(card.note || '');
+      setLfMotivo(card.motivo || 'perdido');
+      setLfMotivoObs(card.motivoObs || '');
       setLeadModal({
         tabId,
         cardId
@@ -3312,7 +3372,8 @@ function KanbanView({
       product: cfProd,
       col: cfCol,
       tag: cfTag,
-      note: cfNote.trim()
+      note: cfNote.trim(),
+      ...(cfCol === 'perdido' ? {motivo: cfMotivo, motivoObs: cfMotivoObs.trim()} : {})
     };
     const newTabs = kbState.tabs.map(t => {
       if (t.id !== cardModal.tabId) return t;
@@ -3361,7 +3422,8 @@ function KanbanView({
       galeria: lfGaleria,
       col: lfCol,
       value: parseInt(lfVal) || 0,
-      note: lfNote.trim()
+      note: lfNote.trim(),
+      ...(lfCol === 'perdido' ? {motivo: lfMotivo, motivoObs: lfMotivoObs.trim()} : {})
     };
     const newTabs = kbState.tabs.map(t => {
       if (t.id !== leadModal.tabId) return t;
@@ -3552,7 +3614,7 @@ function KanbanView({
     if (tab.type === 'cria') {
       const vis = visCards(tab);
       const ativos = vis.filter(c => c.col === 'clientes').length;
-      const pipeline = vis.filter(c => !['clientes', 'hold'].includes(c.col)).length;
+      const pipeline = vis.filter(c => !['clientes', 'hold', 'perdido'].includes(c.col)).length;
       const propostas = vis.filter(c => c.col === 'proposta').length;
       const hold = vis.filter(c => c.col === 'hold').length;
       return [['Clientes ativos', ativos], ['Em pipeline', pipeline], ['Propostas', propostas], ['On hold', hold], ['Visíveis', vis.length]].map(([l, n]) => /*#__PURE__*/React.createElement("div", {
@@ -3581,10 +3643,10 @@ function KanbanView({
         }
       }, l)));
     } else {
-      const lastCol = tab.cols[tab.cols.length - 1]?.id;
-      const ativos = (tab.cards || []).filter(c => c.col === lastCol).length;
-      const pipeline = (tab.cards || []).filter(c => c.col !== lastCol).length;
-      const totalVal = (tab.cards || []).filter(c => c.col === lastCol).reduce((a, b) => a + (b.value || 0), 0);
+      const activeLastCol = [...(tab.cols || [])].reverse().find(c => c.id !== 'perdido')?.id;
+      const ativos = (tab.cards || []).filter(c => c.col === activeLastCol).length;
+      const pipeline = (tab.cards || []).filter(c => c.col !== activeLastCol && c.col !== 'perdido').length;
+      const totalVal = (tab.cards || []).filter(c => c.col === activeLastCol).reduce((a, b) => a + (b.value || 0), 0);
       const vis = visCards(tab);
       return [['Clientes ativos', ativos, null], ['Em pipeline', pipeline, null], ['Receita', null, kbFmtVal(totalVal) || 'R$ 0'], ['Visíveis', vis.length, null]].map(([l, n, v]) => /*#__PURE__*/React.createElement("div", {
         key: l,
@@ -3803,18 +3865,30 @@ function KanbanView({
       paddingBottom: 16
     }
   }, activeTabObj.cols.map(col => {
+    const isPerdido = col.id === 'perdido';
     const colCards = visCards(activeTabObj).filter(c => c.col === col.id);
-    return /*#__PURE__*/React.createElement("div", {
-      key: col.id,
+    return /*#__PURE__*/React.createElement(React.Fragment, {
+      key: col.id
+    }, isPerdido && /*#__PURE__*/React.createElement("div", {
+      style: {
+        width: 1,
+        alignSelf: 'stretch',
+        background: '#1a1a1a',
+        flexShrink: 0,
+        marginTop: 8
+      }
+    }), /*#__PURE__*/React.createElement("div", {
       className: "kb-col",
-      "data-accent": col.accent || 'gray',
+      "data-accent": isPerdido ? 'gray' : col.accent || 'gray',
       style: {
         width: 200,
         flexShrink: 0,
-        background: '#0a0a0a',
+        background: isPerdido ? '#080808' : '#0a0a0a',
         borderRadius: 6,
         padding: '8px 6px',
-        border: '1px solid #181818'
+        border: isPerdido ? '1px solid #141414' : '1px solid #181818',
+        opacity: isPerdido ? 0.72 : 1,
+        marginLeft: isPerdido ? 8 : 0
       },
       onDragOver: e => e.preventDefault(),
       onDrop: () => onDrop(col.id)
@@ -3937,7 +4011,17 @@ function KanbanView({
           fontFamily: 'DM Mono,monospace',
           marginTop: 5
         }
-      }, kbFmtVal(card.value)));
+      }, kbFmtVal(card.value)), isPerdido && card.motivo && /*#__PURE__*/React.createElement("div", {
+        style: {
+          fontSize: 8,
+          color: card.motivo === 'perdido' ? '#6B2121' : '#3a3a5a',
+          background: card.motivo === 'perdido' ? 'rgba(107,33,33,.15)' : 'rgba(58,58,90,.15)',
+          borderRadius: 3,
+          padding: '1px 5px',
+          marginTop: 5,
+          display: 'inline-block'
+        }
+      }, card.motivo === 'perdido' ? '✗ Perdido' : '⏸ Em hold', card.motivoObs ? ' — ' + card.motivoObs : null));
     }), /*#__PURE__*/React.createElement("div", {
       onDragOver: e => e.preventDefault(),
       onDrop: () => onDrop(col.id),
@@ -3972,7 +4056,7 @@ function KanbanView({
         padding: '4px 3px 0',
         fontFamily: 'DM Mono,monospace'
       }
-    }, "+ novo ", activeTabObj.type === 'cria' ? 'card' : 'lead'));
+    }, "+ novo ", activeTabObj.type === 'cria' ? 'card' : 'lead')));
   }))), cardModal && /*#__PURE__*/React.createElement("div", {
     className: "modov"
   }, /*#__PURE__*/React.createElement("div", {
@@ -4039,7 +4123,30 @@ function KanbanView({
     rows: "3",
     value: cfNote,
     onChange: e => setCfNote(e.target.value)
-  })), /*#__PURE__*/React.createElement("div", {
+  })), cfCol === 'perdido' && /*#__PURE__*/React.createElement("div", {
+    className: "g2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "frow"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flbl"
+  }, "MOTIVO"), /*#__PURE__*/React.createElement("select", {
+    className: "finp",
+    value: cfMotivo,
+    onChange: e => setCfMotivo(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "perdido"
+  }, "Perdido"), /*#__PURE__*/React.createElement("option", {
+    value: "hold"
+  }, "Em hold"))), /*#__PURE__*/React.createElement("div", {
+    className: "frow"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flbl"
+  }, "OBS"), /*#__PURE__*/React.createElement("input", {
+    className: "finp",
+    placeholder: "Motivo, próx. passo...",
+    value: cfMotivoObs,
+    onChange: e => setCfMotivoObs(e.target.value)
+  }))), /*#__PURE__*/React.createElement("div", {
     className: "modacts"
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn btno btnsm",
@@ -4127,7 +4234,30 @@ function KanbanView({
     rows: "3",
     value: lfNote,
     onChange: e => setLfNote(e.target.value)
-  })), /*#__PURE__*/React.createElement("div", {
+  })), lfCol === 'perdido' && /*#__PURE__*/React.createElement("div", {
+    className: "g2"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "frow"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flbl"
+  }, "MOTIVO"), /*#__PURE__*/React.createElement("select", {
+    className: "finp",
+    value: lfMotivo,
+    onChange: e => setLfMotivo(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "perdido"
+  }, "Perdido"), /*#__PURE__*/React.createElement("option", {
+    value: "hold"
+  }, "Em hold"))), /*#__PURE__*/React.createElement("div", {
+    className: "frow"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "flbl"
+  }, "OBS"), /*#__PURE__*/React.createElement("input", {
+    className: "finp",
+    placeholder: "Motivo, próx. passo...",
+    value: lfMotivoObs,
+    onChange: e => setLfMotivoObs(e.target.value)
+  }))), /*#__PURE__*/React.createElement("div", {
     className: "modacts"
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn btno btnsm",

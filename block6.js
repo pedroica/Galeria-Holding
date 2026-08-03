@@ -312,6 +312,8 @@ function FerramentasModal({
   const [msg, setMsg] = useState("");
   const [hk, setHk] = useState(getHunterKey());
   const [lk, setLk] = useState(getLushaKey());
+  const [waUrl, setWaUrl] = useState(typeof getWAVerifyUrl === "function" ? getWAVerifyUrl() : "");
+  const [waKey, setWaKey] = useState(typeof getWAVerifyKey === "function" ? getWAVerifyKey() : "");
   const [proxy, setProxy] = useState(null);
   const [importReport, setImportReport] = useState(null);
   const [importando, setImportando] = useState(false);
@@ -433,6 +435,7 @@ function FerramentasModal({
   const saveKeys = () => {
     setHunterKey(hk.trim());
     setLushaKey(lk.trim());
+    if (typeof setWAVerifyUrl === "function") { setWAVerifyUrl(waUrl.trim()); setWAVerifyKey(waKey.trim()); }
     setMsg("✅ Chaves locais salvas (usadas só quando não há proxy /api).");
   };
 
@@ -737,6 +740,19 @@ function FerramentasModal({
   /*#__PURE__*/React.createElement("div", { className: "kes-field" },
     /*#__PURE__*/React.createElement("label", { className: "kes-label" }, "Lusha API key (fallback local)"),
     /*#__PURE__*/React.createElement("input", { className: "kes-input", type: "password", value: lk, onChange: e => setLk(e.target.value), placeholder: "nova chave após revogar a antiga" })
+  ),
+  /*#__PURE__*/React.createElement("div", { className: "kes-divider" }),
+  /*#__PURE__*/React.createElement("div", { className: "kes-label", style: { marginBottom: 6 } }, "🔍 WA VERIFY (Evolution API — opcional)"),
+  /*#__PURE__*/React.createElement("div", {
+    style: { fontSize: 9, fontFamily: "IBM Plex Mono,monospace", color: "#555", marginBottom: 10, lineHeight: 1.6 }
+  }, "Endpoint Evolution API para verificar se números têm WhatsApp ativo. Ex: https://evolution.seudominio.com/chat/whatsappNumbers/nome-instancia"),
+  /*#__PURE__*/React.createElement("div", { className: "kes-field" },
+    /*#__PURE__*/React.createElement("label", { className: "kes-label" }, "Endpoint URL"),
+    /*#__PURE__*/React.createElement("input", { className: "kes-input", type: "text", value: waUrl, onChange: e => setWaUrl(e.target.value), placeholder: "https://evolution.seudominio.com/chat/whatsappNumbers/instancia" })
+  ),
+  /*#__PURE__*/React.createElement("div", { className: "kes-field" },
+    /*#__PURE__*/React.createElement("label", { className: "kes-label" }, "API Key"),
+    /*#__PURE__*/React.createElement("input", { className: "kes-input", type: "password", value: waKey, onChange: e => setWaKey(e.target.value), placeholder: "apikey da Evolution API" })
   ),
   /*#__PURE__*/React.createElement("button", { className: "kes-btn-s", onClick: saveKeys }, "Salvar chaves locais"),
 

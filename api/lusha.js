@@ -1,3 +1,4 @@
+// Proxy Lusha — repassa firstName/lastName/company
 export default async function handler(req, res) {
   if (!process.env.LUSHA_KEY) return res.status(500).json({ error: "LUSHA_KEY não configurada" });
   const { firstName = "", lastName = "", company = "" } = req.query;

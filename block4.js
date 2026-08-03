@@ -592,136 +592,46 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         background: "#2D2D44"
       }
     })), /*#__PURE__*/React.createElement("div", {
-      className: "fig-grid"
+      style: {display:"flex",flexWrap:"wrap",gap:14,padding:"8px 0"}
     }, verificados.map((d, i) => {
-      const g = getGrad(d.nome);
+      const acBase = curGrupo.color || "#6b64f3";
+      const acRgb  = curGrupo.rgb  || "107,100,243";
+      const phones = [d.wa,d.wa2,d.wa3,d.wa4].filter(Boolean);
       return /*#__PURE__*/React.createElement("div", {
         key: i,
-        className: "fig2-card verified"
-      }, /*#__PURE__*/React.createElement("span", {
-        className: "fig2-badge v",
         style: {
-          margin: "8px 10px 0",
-          display: "block"
+          width:190, minWidth:190,
+          background:`linear-gradient(160deg,rgba(${acRgb},.22) 0%,#0d0d18 55%)`,
+          border:`1px solid rgba(${acRgb},.28)`,
+          borderRadius:15,
+          boxShadow:`1px 5px 28px 0px rgba(${acRgb},.18)`,
+          display:"flex", flexDirection:"column", alignItems:"center",
+          paddingBottom:14, fontFamily:"IBM Plex Mono,monospace",
+          position:"relative", overflow:"hidden"
         }
-      }, "✓ Verificado"), /*#__PURE__*/React.createElement("div", {
-        className: "fig2-avatar",
-        style: {
-          background: `linear-gradient(135deg,${g[0]},${g[1]})`
-        }
-      }, ini(d.nome)), /*#__PURE__*/React.createElement("div", {
-        className: "fig2-body"
-      }, /*#__PURE__*/React.createElement("div", {
-        className: "fig2-name"
-      }, d.nome), /*#__PURE__*/React.createElement("div", {
-        className: "fig2-cargo"
-      }, d.cargo), d.email && /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 8,
-          fontFamily: "IBM Plex Mono,monospace",
-          color: "#60A5FA",
-          marginTop: 4
-        }
-      }, "✉ ", d.email), d.wa && /*#__PURE__*/React.createElement("div", {
-        style: {
-          fontSize: 8,
-          fontFamily: "IBM Plex Mono,monospace",
-          color: "#25D366",
-          marginTop: 2
-        }
-      }, "💬 ", d.wa)), /*#__PURE__*/React.createElement("div", {
-        className: "fig2-actions",
-        style: {
-          flexWrap: "wrap",
-          gap: 4
-        }
-      }, d.wa && /*#__PURE__*/React.createElement("a", {
-        href: "https://wa.me/" + (() => {
-          var n = (d.wa || "").replace(/[^0-9]/g, "");
-          return n.startsWith("55") && n.length >= 12 ? n : "55" + n;
-        })(),
-        target: "_blank",
-        style: {
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 4,
-          padding: "6px 0",
-          borderRadius: 6,
-          border: "none",
-          background: "#25D366",
-          color: "#fff",
-          fontSize: 9,
-          fontWeight: 700,
-          textDecoration: "none",
-          cursor: "pointer",
-          minWidth: 40
-        }
-      }, "💬 WA"), d.email && /*#__PURE__*/React.createElement("a", {
-        href: "https://mail.google.com/mail/?view=cm&to=" + encodeURIComponent(d.email),
-        target: "_blank",
-        style: {
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 4,
-          padding: "6px 0",
-          borderRadius: 6,
-          border: "none",
-          background: "#EA4335",
-          color: "#fff",
-          fontSize: 9,
-          fontWeight: 700,
-          textDecoration: "none",
-          cursor: "pointer",
-          minWidth: 40
-        }
-      }, "✉️ Email"), d.linkedin && /*#__PURE__*/React.createElement("a", {
-        href: d.linkedin.startsWith("http") ? d.linkedin : "https://" + d.linkedin,
-        target: "_blank",
-        style: {
-          flex: 1,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 4,
-          padding: "6px 0",
-          borderRadius: 6,
-          border: "none",
-          background: "#0A66C2",
-          color: "#fff",
-          fontSize: 9,
-          fontWeight: 700,
-          textDecoration: "none",
-          cursor: "pointer",
-          minWidth: 40
-        }
-      }, "💼 LI"), /*#__PURE__*/React.createElement("button", {
-        style: {
-          flex: 2,
-          padding: "6px 0",
-          borderRadius: 6,
-          border: ".5px solid rgba(255,107,43,.4)",
-          background: "rgba(255,107,43,.1)",
-          color: "#FF6B2B",
-          cursor: "pointer",
-          fontSize: 9,
-          fontWeight: 700
-        },
-        onClick: () => setAbordagemDec(d)
-      }, "📨 Abordar"), /*#__PURE__*/React.createElement("button", {
-        style: {
-          background: "none",
-          border: "none",
-          color: "#555",
-          cursor: "pointer",
-          fontSize: 14,
-          padding: "0 4px"
-        },
-        onClick: () => remover(selEmpresa, d, "verificado")
-      }, "×")));
+      },
+      /*#__PURE__*/React.createElement("div", {style:{width:"60%",height:4,background:acBase,borderRadius:"0 0 10px 10px",marginBottom:16,boxShadow:`0 2px 8px rgba(${acRgb},.5)`}}),
+      /*#__PURE__*/React.createElement("div", {style:{width:64,height:64,background:`rgba(${acRgb},.22)`,border:`1.5px solid rgba(${acRgb},.45)`,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,fontWeight:700,color:acBase,letterSpacing:-1,marginBottom:10,boxShadow:`0 2px 12px rgba(${acRgb},.2)`}}, ini(d.nome)),
+      /*#__PURE__*/React.createElement("div", {style:{textAlign:"center",paddingInline:10,marginBottom:2}},
+        /*#__PURE__*/React.createElement("div", {style:{fontWeight:700,color:"#F5F5F5",fontSize:13,lineHeight:1.25,letterSpacing:-.3,wordBreak:"break-word"}}, d.nome||"Sem nome")
+      ),
+      /*#__PURE__*/React.createElement("div", {style:{fontSize:10,color:`rgba(${acRgb},.75)`,fontWeight:500,textAlign:"center",paddingInline:8,marginBottom:10,lineHeight:1.3}},
+        d.cargo||/*#__PURE__*/React.createElement("span",{style:{color:"#333",fontStyle:"italic"}},"sem cargo")
+      ),
+      /*#__PURE__*/React.createElement("div", {style:{display:"flex",flexWrap:"wrap",gap:4,justifyContent:"center",paddingInline:8,marginBottom:10}},
+        d.email&&/*#__PURE__*/React.createElement("span",{style:{fontSize:8,padding:"2px 7px",borderRadius:20,background:"rgba(255,255,255,.05)",color:"#666",border:"1px solid #222",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"},title:d.email},"✉ ",d.email.split("@")[0]),
+        !d.email&&/*#__PURE__*/React.createElement("span",{style:{fontSize:8,color:"#333",padding:"2px 7px",border:"1px solid #1a1a1a",borderRadius:20}},"sem email"),
+        phones.map((p,pi)=>/*#__PURE__*/React.createElement("span",{key:pi,style:{fontSize:8,padding:"2px 7px",borderRadius:20,background:"rgba(37,211,102,.04)",color:"#25D366",border:"1px solid rgba(37,211,102,.15)"}},"💬 ",p))
+      ),
+      /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"center",paddingInline:8,marginBottom:8}},
+        d.email&&/*#__PURE__*/React.createElement("a",{href:"https://mail.google.com/mail/?view=cm&to="+encodeURIComponent(d.email),target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:`rgba(${acRgb},.18)`,border:`1px solid rgba(${acRgb},.28)`,color:acBase,fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"✉ Email"),
+        phones.map((p,pi)=>{var n=(p||"").replace(/[^0-9]/g,"");var num=n.startsWith("55")&&n.length>=12?n:"55"+n;return /*#__PURE__*/React.createElement("a",{key:pi,href:"https://wa.me/"+num,target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:"rgba(37,211,102,.12)",border:"1px solid rgba(37,211,102,.22)",color:"#25D366",fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"💬 WA"+(phones.length>1?" "+(pi+1):""));}),
+        d.linkedin&&/*#__PURE__*/React.createElement("a",{href:d.linkedin.startsWith("http")?d.linkedin:"https://"+d.linkedin,target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:"rgba(10,102,194,.12)",border:"1px solid rgba(10,102,194,.22)",color:"#0A66C2",fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"💼 LI")
+      ),
+      /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:5,paddingInline:8,borderTop:"1px solid rgba(255,255,255,.04)",paddingTop:8,width:"100%",boxSizing:"border-box",justifyContent:"center"}},
+        /*#__PURE__*/React.createElement("button",{onClick:()=>setAbordagemDec(d),style:{flex:2,padding:"5px 0",borderRadius:7,border:".5px solid rgba(255,107,43,.4)",background:"rgba(255,107,43,.1)",color:"#FF6B2B",cursor:"pointer",fontSize:9,fontWeight:700}},"📨 Abordar"),
+        /*#__PURE__*/React.createElement("button",{onClick:()=>remover(selEmpresa,d,"verificado"),style:{padding:"5px 8px",borderRadius:7,border:".5px solid rgba(255,71,87,.2)",background:"rgba(255,71,87,.08)",color:"#FF4757",cursor:"pointer",fontSize:11}},"×")
+      ));
     }))), sugeridos.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         marginBottom: 28

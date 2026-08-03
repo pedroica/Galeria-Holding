@@ -71,6 +71,56 @@ function setHunterKey(k){try{localStorage.setItem("gh_hunter_key",k);}catch(e){}
 function getLushaKey(){try{return localStorage.getItem("gh_lusha_key")||"";}catch(e){return "";}}
 function setLushaKey(k){try{localStorage.setItem("gh_lusha_key",k);}catch(e){}}
 
+/* ── WA Verify (Evolution API) — configura endpoint + chave ───── */
+/* Preencha no painel Ferramentas ou via localStorage:
+   gh_wa_verify_url  → Ex: https://evolution.seudominio.com/chat/whatsappNumbers/nome-instancia
+   gh_wa_verify_key  → API Key da Evolution API                                               */
+function getWAVerifyUrl(){try{return localStorage.getItem("gh_wa_verify_url")||"";}catch(e){return "";}}
+function getWAVerifyKey(){try{return localStorage.getItem("gh_wa_verify_key")||"";}catch(e){return "";}}
+function setWAVerifyUrl(v){try{localStorage.setItem("gh_wa_verify_url",v);}catch(e){}}
+function setWAVerifyKey(v){try{localStorage.setItem("gh_wa_verify_key",v);}catch(e){}}
+
+async function ghVerifyWANumbers(phones){
+  var url = getWAVerifyUrl();
+  var key = getWAVerifyKey();
+  if(!url||!key||!phones||!phones.length) return null;
+  try{
+    var nums = phones.map(function(p){
+      var n=(p||"").replace(/[^0-9]/g,"");
+      return n.startsWith("55")&&n.length>=12?n:"55"+n;
+    }).filter(function(n){ return n.length>=12; });
+    if(!nums.length) return null;
+    var ctrl = typeof AbortController!=="undefined" ? new AbortController() : null;
+    if(ctrl) setTimeout(function(){ ctrl.abort(); }, 9000);
+    var r = await fetch(url,{
+      method:"POST",
+      headers:{"Content-Type":"application/json","apikey":key},
+      body:JSON.stringify({numbers:nums}),
+      signal: ctrl ? ctrl.signal : undefined
+    });
+    if(!r.ok) return null;
+    var data = await r.json();
+    if(!Array.isArray(data)) return null;
+    // Evolution returns [{number:"551199...", exists:true/false, ...}]
+    var result={};
+    phones.forEach(function(p){
+      var n=(p||"").replace(/[^0-9]/g,"");
+      var nc=n.startsWith("55")&&n.length>=12?n:"55"+n;
+      var item=data.find(function(d){
+        var dn=(d.number||"").replace(/[^0-9]/g,"");
+        return dn===nc||dn.replace("@s.whatsapp.net","")===nc;
+      });
+      result[p]=item?item.exists!==false:null;
+    });
+    return result;
+  }catch(e){ return null; }
+}
+window.ghVerifyWANumbers=ghVerifyWANumbers;
+window.getWAVerifyUrl=getWAVerifyUrl;
+window.getWAVerifyKey=getWAVerifyKey;
+window.setWAVerifyUrl=setWAVerifyUrl;
+window.setWAVerifyKey=setWAVerifyKey;
+
 /* ── 2. TEMPERATURA DE DEALS (score × recência com decay) ──────── */
 function ghParseActDate(a){
   if(!a) return NaN;
