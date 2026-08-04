@@ -9,15 +9,16 @@
 -- ============================================================================
 
 create extension if not exists "pgcrypto";      -- gen_random_uuid()
-create extension if not exists "unaccent";       -- normalização de acentos no banco
 
--- ── Helper: normalização de nome (espelha src/lib/normalize.ts) ─────────────
--- lower + unaccent + remove pontuação + colapsa espaços. Usada em índices/erros
--- de duplicidade. A verdade do matching vive no código (testável); aqui é apoio.
+-- ── Helper: normalização de nome (apoio a índices/dedupe) ───────────────────
+-- lower + "&"→" e " + remove pontuação + colapsa espaços. 100% IMMUTABLE e
+-- portável (sem depender da extensão unaccent). A VERDADE do matching — que
+-- inclui remoção de acentos e variações — vive no código TS testado
+-- (src/lib/normalize.ts + blocklist.ts); aqui é só apoio de banco.
 create or replace function gh_norm(txt text)
 returns text language sql immutable as $$
   select trim(regexp_replace(
-           regexp_replace(lower(unaccent(coalesce(txt,''))), '&', ' e ', 'g'),
+           regexp_replace(lower(coalesce(txt,'')), '&', ' e ', 'g'),
            '[^a-z0-9]+', ' ', 'g'));
 $$;
 
