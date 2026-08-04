@@ -3711,7 +3711,7 @@ function App() {
     style: {
       gap: 4
     }
-  }, [["bomdias", "☀️ Bom Dia"], ["diario", "📓 Diário"], ["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["bomdias", "☀️ Bom Dia"], ["diario", "📓 Diário"], ["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["blocklist", "🚫 Blocklist"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
     key: v,
     onClick: () => switchView(v),
     style: {
@@ -3819,7 +3819,11 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), viewMode === "blocklist" ? /*#__PURE__*/React.createElement("div", {
+    className: "panel"
+  }, typeof BlocklistView !== "undefined" ? /*#__PURE__*/React.createElement(BlocklistView, null) : /*#__PURE__*/React.createElement("div", {
+    style: { color: "#9B9BB4", fontFamily: "IBM Plex Mono,monospace", fontSize: 12 }
+  }, "Carregando Blocklist…")) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,

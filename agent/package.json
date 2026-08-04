@@ -1,0 +1,19 @@
+{
+  "name": "agente-outbound-galeria",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Agente Outbound Galeria — sistema omnichannel de prospecção (email + WhatsApp + contatos) orquestrado por cadence engine. Supabase como fonte única da verdade.",
+  "engines": {
+    "node": ">=22.6.0"
+  },
+  "scripts": {
+    "test": "node --experimental-strip-types --test tests/*.test.ts",
+    "test:blocklist": "node --experimental-strip-types --test tests/normalize.test.ts tests/blocklist.test.ts tests/dryrun.blocklist.test.ts",
+    "dryrun:blocklist": "node --experimental-strip-types scripts/dryrun-blocklist.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}
