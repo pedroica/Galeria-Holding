@@ -1,0 +1,44 @@
+[
+  {
+    "id": "v1.pedro-pinto",
+    "firstName": "Pedro",
+    "lastName": "Pinto",
+    "jobTitle": { "title": "Global Director of Brand, Communication and Institutional Relations", "departments": ["Marketing"], "seniority": "Director" },
+    "company": { "name": "Gerdau", "domain": "www.gerdau.com.br" },
+    "location": { "country": "Brazil", "state": "São Paulo", "city": "São Paulo" },
+    "socialLinks": { "linkedin": "https://www.linkedin.com/in/pedro-moraes-torres-pinto-a84b4630" },
+    "has": ["firstName", "lastName", "jobTitle", "location", "socialLinks", "phones"],
+    "canReveal": [{ "field": "phones", "credits": 5 }]
+  },
+  {
+    "id": "v1.cesar-peres",
+    "firstName": "Cesar",
+    "lastName": "Peres",
+    "jobTitle": { "title": "Director of Sales and Marketing", "departments": ["Sales", "Marketing"], "seniority": "Director" },
+    "company": { "name": "Gerdau", "domain": "www.gerdau.com.br" },
+    "location": { "country": "Brazil", "state": "São Paulo", "city": "São Paulo" },
+    "socialLinks": { "linkedin": "https://www.linkedin.com/in/cesar-o-r-peres-b604241a" },
+    "has": ["firstName", "lastName", "jobTitle", "location", "socialLinks", "phones"],
+    "canReveal": [{ "field": "phones", "credits": 5 }]
+  },
+  {
+    "id": "v1.rafael-japur",
+    "firstName": "Rafael",
+    "lastName": "Japur",
+    "jobTitle": { "title": "Chief Financial Officer, Vice President of Investor Relations", "departments": ["Finance", "General Management"], "seniority": "C-Suite" },
+    "company": { "name": "Gerdau", "domain": "www.gerdau.com.br" },
+    "location": { "country": "Brazil", "state": "São Paulo", "city": "São Paulo" },
+    "has": ["firstName", "lastName", "jobTitle", "emails", "phones"],
+    "canReveal": [{ "field": "emails", "credits": 1 }, { "field": "phones", "credits": 5 }]
+  },
+  {
+    "id": "v1.marlon-fernandes",
+    "firstName": "Marlon",
+    "lastName": "Fernandes",
+    "jobTitle": { "title": "Global Head of Technology", "departments": ["Information Technology"], "seniority": "Director" },
+    "company": { "name": "Gerdau", "domain": "www.gerdau.com.br" },
+    "location": { "country": "Brazil", "state": "São Paulo", "city": "São Paulo" },
+    "has": ["firstName", "lastName", "jobTitle", "emails", "phones"],
+    "canReveal": [{ "field": "emails", "credits": 1 }, { "field": "phones", "credits": 5 }]
+  }
+]
