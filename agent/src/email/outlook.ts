@@ -39,7 +39,8 @@ export interface OutlookAuth {
 }
 
 const GRAPH = "https://graph.microsoft.com/v1.0";
-const SCOPE = "https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Read offline_access";
+// Mail.ReadWrite já cobre ler E escrever e-mail (rascunho + detecção de resposta).
+const SCOPE = "https://graph.microsoft.com/Mail.ReadWrite offline_access";
 
 /** Troca o refresh token por um access token (fluxo delegado). */
 export async function getAccessToken(auth: OutlookAuth, fetchImpl: typeof fetch = fetch): Promise<string> {
