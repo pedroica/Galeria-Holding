@@ -44,10 +44,17 @@
     return Array.isArray(src) ? src : [];
   }
 
+  // Normalização IDÊNTICA ao gh_norm() do Postgres (lower + &→e + remove
+  // não-alfanumérico + colapsa). Usada no dedup para nunca colidir com o
+  // índice único companies(gh_norm(name)) durante o upsert.
+  function dbNorm(s) {
+    return (s || "").toLowerCase().replace(/&/g, " e ").replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim();
+  }
+
   // Monta as linhas p/ `companies`, dedup por nome normalizado + marca blocklist
   function buildRows() {
     const bl = window.GH_BL;
-    const norm = bl ? bl.norm : function (s) { return (s || "").toLowerCase().trim(); };
+    const norm = dbNorm;
     const seen = new Set();
     const rows = [];
     let blocked = 0;
