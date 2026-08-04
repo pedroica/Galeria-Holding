@@ -187,4 +187,10 @@
 
   // expõe global para o block3.js referenciar no switch de views
   window.BlocklistView = BlocklistView;
+  // expõe o matcher pra outros blocos (ex: migração de empresas na aba Agente)
+  window.GH_BL = {
+    list: loadLocal,
+    norm: normName,
+    check: function (input) { return checkBlock(loadLocal(), input); },
+  };
 })();
