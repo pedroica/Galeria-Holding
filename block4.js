@@ -1398,14 +1398,19 @@ function KanbanDiario() {
   const [search, setSearch] = React.useState('');
   const [filtroEtapa, setFiltroEtapa] = React.useState('todas');
   const [filtroEmp, setFiltroEmp] = React.useState('Todos');
+  const [perdaRow, setPerdaRow] = React.useState(null); // empresa a marcar como perdida
+  const [verPerdidos, setVerPerdidos] = React.useState(false);
   const isGaia = aba === 'gaia';
-  const rows = data[aba] || [];
+  const allRows = data[aba] || [];
+  // Perdidos saem do pipeline ativo (tabela, filtros de etapa e KPIs)
+  const rows = allRows.filter(r => !ghIsPerdido(r));
+  const perdidos = allRows.filter(r => ghIsPerdido(r));
   const persist = newData => {
     setData(newData);
     hpSave(newData);
   };
   const updateRow = (id, changes) => {
-    const newRows = rows.map(r => r.id === id ? {
+    const newRows = allRows.map(r => r.id === id ? {
       ...r,
       ...changes,
       updatedAt: new Date().toLocaleDateString('pt-BR')
@@ -1419,13 +1424,43 @@ function KanbanDiario() {
     if (!window.confirm('Remover empresa do pipeline diário?')) return;
     persist({
       ...data,
-      [aba]: rows.filter(r => r.id !== id)
+      [aba]: allRows.filter(r => r.id !== id)
+    });
+  };
+  // ── Perdido / reativação ─────────────────────────────────────
+  const marcarPerdido = (motivoId, obs) => {
+    if (!perdaRow) return;
+    const alvo = perdaRow;
+    persist({
+      ...data,
+      [aba]: allRows.map(r => r.id === alvo.id ? ghMarcarPerdido(r, motivoId, obs, r.etapa) : r)
+    });
+    setPerdaRow(null);
+  };
+  const reativarRow = id => {
+    persist({
+      ...data,
+      [aba]: allRows.map(r => {
+        if (r.id !== id) return r;
+        const etapa = HP_ETAPAS.some(e => e.id === r.perdidoDe) ? r.perdidoDe : HP_ETAPAS[0].id;
+        return {
+          ...ghReativarPerdido(r),
+          etapa
+        };
+      })
+    });
+  };
+  const excluirRow = id => {
+    if (!window.confirm('Excluir definitivamente do histórico?')) return;
+    persist({
+      ...data,
+      [aba]: allRows.filter(r => r.id !== id)
     });
   };
   const addRow = row => {
     persist({
       ...data,
-      [aba]: [...rows, {
+      [aba]: [...allRows, {
         ...row,
         id: hpId(),
         updatedAt: new Date().toLocaleDateString('pt-BR')
@@ -1454,9 +1489,10 @@ function KanbanDiario() {
       pipeline,
       fechadas: fechadas.length,
       risco,
-      atencao
+      atencao,
+      perdidas: perdidos.length
     };
-  }, [rows]);
+  }, [rows, perdidos]);
   const etapaCount = etId => rows.filter(r => r.etapa === etId).length;
   const cellStyle = (row, etId) => {
     const isActive = row.etapa === etId;
@@ -1520,7 +1556,7 @@ function KanbanDiario() {
       borderRadius: 100,
       fontWeight: 400
     }
-  }, (data[id] || []).length)))), /*#__PURE__*/React.createElement("div", {
+  }, (data[id] || []).filter(r => !ghIsPerdido(r)).length)))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 8,
@@ -1529,7 +1565,7 @@ function KanbanDiario() {
       flexShrink: 0,
       flexWrap: 'wrap'
     }
-  }, [['Hot Pipeline', kbFmtVal(kpis.pipeline) || 'R$ 0', '#FF6B2B', true], ['Em Andamento', kpis.total - kpis.fechadas, '#60A5FA', false], ['Fechamentos', kpis.fechadas, '#34D399', false], ['Em Risco', kpis.risco, '#f87171', false], ['Atenção', kpis.atencao, '#fbbf24', false]].map(([label, val, color, big]) => /*#__PURE__*/React.createElement("div", {
+  }, [['Hot Pipeline', kbFmtVal(kpis.pipeline) || 'R$ 0', '#FF6B2B', true], ['Em Andamento', kpis.total - kpis.fechadas, '#60A5FA', false], ['Fechamentos', kpis.fechadas, '#34D399', false], ['Em Risco', kpis.risco, '#f87171', false], ['Atenção', kpis.atencao, '#fbbf24', false], ['Perdidos', kpis.perdidas, '#f87171', false]].map(([label, val, color, big]) => /*#__PURE__*/React.createElement("div", {
     key: label,
     style: {
       background: '#111827',
@@ -1587,7 +1623,34 @@ function KanbanDiario() {
       fontFamily: 'IBM Plex Mono,monospace',
       color: et.color
     }
-  }, etapaCount(et.id)))))), /*#__PURE__*/React.createElement("div", {
+  }, etapaCount(et.id)))), /*#__PURE__*/React.createElement("div", {
+    key: "perdidos",
+    onClick: () => setVerPerdidos(v => !v),
+    title: "Ver empresas marcadas como perdidas",
+    style: {
+      padding: '4px 10px',
+      borderRadius: 100,
+      background: verPerdidos ? 'rgba(248,113,113,.14)' : '#1A1A2E',
+      border: `.5px solid ${verPerdidos ? '#f87171' : '#2D2D44'}`,
+      cursor: 'pointer',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 5
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 8,
+      fontFamily: 'IBM Plex Mono,monospace',
+      color: verPerdidos ? '#f87171' : '#555'
+    }
+  }, "\u2715 Perdidos"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 9,
+      fontWeight: 700,
+      fontFamily: 'IBM Plex Mono,monospace',
+      color: '#f87171'
+    }
+  }, perdidos.length)))), /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 8,
@@ -1653,7 +1716,7 @@ function KanbanDiario() {
       flex: 1,
       overflow: 'auto'
     }
-  }, /*#__PURE__*/React.createElement("table", {
+  }, !verPerdidos && /*#__PURE__*/React.createElement("table", {
     style: {
       width: '100%',
       borderCollapse: 'collapse',
@@ -1765,8 +1828,18 @@ function KanbanDiario() {
       letterSpacing: 1,
       borderBottom: '.5px solid #2D2D44'
     }
-  }, "Nota / Próxima ação"))), /*#__PURE__*/React.createElement("tbody", null, filtered.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
-    colSpan: 10,
+  }, "Nota / Próxima ação"), /*#__PURE__*/React.createElement("th", {
+    style: {
+      width: 40,
+      padding: '9px 6px',
+      textAlign: 'center',
+      fontSize: 8,
+      fontFamily: 'IBM Plex Mono,monospace',
+      color: '#555',
+      borderBottom: '.5px solid #2D2D44'
+    }
+  }, ""))), /*#__PURE__*/React.createElement("tbody", null, filtered.length === 0 && /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", {
+    colSpan: 11,
     style: {
       textAlign: 'center',
       padding: 60,
@@ -1984,8 +2057,28 @@ function KanbanDiario() {
         width: '100%',
         cursor: 'text'
       }
-    })));
-  }))), filtered.length > 0 && /*#__PURE__*/React.createElement("div", {
+    })), /*#__PURE__*/React.createElement("td", {
+      style: {
+        padding: '0 6px',
+        borderBottom: '.5px solid #111827',
+        textAlign: 'center'
+      }
+    }, /*#__PURE__*/React.createElement("button", {
+      title: "Marcar como perdido",
+      onClick: () => setPerdaRow(row),
+      style: {
+        border: 'none',
+        background: 'transparent',
+        color: '#3d3d55',
+        fontSize: 12,
+        lineHeight: 1,
+        padding: '4px 6px',
+        cursor: 'pointer'
+      },
+      onMouseOver: e => e.currentTarget.style.color = '#f87171',
+      onMouseOut: e => e.currentTarget.style.color = '#3d3d55'
+    }, "\u2715")));
+  }))), !verPerdidos && filtered.length > 0 && /*#__PURE__*/React.createElement("div", {
     style: {
       padding: '10px 16px',
       borderTop: '.5px solid #2D2D44',
@@ -2013,10 +2106,25 @@ function KanbanDiario() {
       marginLeft: 'auto',
       color: '#2D2D44'
     }
-  }, "Atualizado: ", filtered[0]?.updatedAt || '—'))), addOpen && /*#__PURE__*/React.createElement(HpAddModal, {
+  }, "Atualizado: ", filtered[0]?.updatedAt || '—')), verPerdidos && /*#__PURE__*/React.createElement(GhPerdidosPanel, {
+    itens: perdidos.map(r => ({
+      key: r.id,
+      nome: r.nome,
+      tag: isGaia ? r.produto || null : r.empresa_galeria || null,
+      valor: +r.valor > 0 ? kbFmtVal(r.valor) : null,
+      resumo: ghResumoPerda(r)
+    })),
+    onReativar: reativarRow,
+    onExcluir: excluirRow,
+    vazio: "Nenhuma empresa perdida nesta aba. Use o \u2715 na linha para tirar do pipeline."
+  })), addOpen && /*#__PURE__*/React.createElement(HpAddModal, {
     isGaia: isGaia,
     onSave: addRow,
     onClose: () => setAddOpen(false)
+  }), perdaRow && /*#__PURE__*/React.createElement(GhPerdaModal, {
+    nome: perdaRow.nome,
+    onConfirm: marcarPerdido,
+    onClose: () => setPerdaRow(null)
   }));
 }
 function HpAddModal({

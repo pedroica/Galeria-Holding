@@ -2192,3 +2192,52 @@ var SETORES_LIST = [
   "Mobilidade","Farma","Mineracao","Utilidades","Outros"
 ];
 
+
+// ── PERDA DE OPORTUNIDADE ──────────────────────────────────────
+// Usado pelo Kanban Diário (block4) e pelos Pipelines GAIA/Holding
+// (block3). Marca a empresa como perdida sem apagá-la: ela sai do
+// pipeline ativo e fica consultável na visão "Perdidos", com motivo
+// e data, podendo ser reativada de volta para a etapa de origem.
+var GH_MOTIVOS_PERDA = [
+  {id:"sem_budget",   label:"Sem budget"},
+  {id:"concorrente",  label:"Escolheu concorrente"},
+  {id:"sem_resposta", label:"Sem resposta"},
+  {id:"timing",       label:"Timing errado"},
+  {id:"sem_fit",      label:"Sem fit"},
+  {id:"interno",      label:"Fez internamente"},
+  {id:"outro",        label:"Outro"}
+];
+function ghMotivoPerdaLabel(id){
+  var m=GH_MOTIVOS_PERDA.filter(function(x){return x.id===id;})[0];
+  return m?m.label:(id?String(id):"Não informado");
+}
+function ghHojeBR(){return new Date().toLocaleDateString("pt-BR");}
+function ghIsPerdido(item){
+  if(!item)return false;
+  return item.perdido===true||item.col==="perdido"||item.etapa==="perdido";
+}
+function ghMarcarPerdido(item,motivoId,obs,origem){
+  if(!item)return item;
+  var de=origem!=null?origem:(item.col!=null?item.col:item.etapa);
+  return Object.assign({},item,{
+    perdido:true,
+    perdaMotivo:motivoId||"outro",
+    perdaObs:(obs||"").trim(),
+    perdidoEm:ghHojeBR(),
+    perdidoDe:de
+  });
+}
+function ghReativarPerdido(item){
+  if(!item)return item;
+  var c=Object.assign({},item);
+  delete c.perdido;delete c.perdaMotivo;delete c.perdaObs;
+  delete c.perdidoEm;delete c.perdidoDe;
+  return c;
+}
+function ghResumoPerda(item){
+  if(!item||!ghIsPerdido(item))return "";
+  var s=ghMotivoPerdaLabel(item.perdaMotivo);
+  if(item.perdaObs)s+=" — "+item.perdaObs;
+  if(item.perdidoEm)s+=" · "+item.perdidoEm;
+  return s;
+}

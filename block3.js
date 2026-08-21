@@ -1941,7 +1941,9 @@ function LLMBoxV2({
       empresa_galeria: c.galeria || null,
       valor: c.value || 0,
       tag: c.tag || null,
-      nota: c.note || null
+      nota: c.note || null,
+      perdido: ghIsPerdido(c) || undefined,
+      motivo_perda: ghIsPerdido(c) ? ghResumoPerda(c) || c.motivoObs || null : undefined
     }));
     const gaia_pipeline = mapCards(gaiaTab);
     const holding_pipeline = mapCards(holdingTab);
@@ -1967,7 +1969,7 @@ function LLMBoxV2({
     });
 
     // ── Pipeline totais ────────────────────────────────────────
-    const holding_total_pipeline = holding_pipeline.filter(c => !['clienteativo'].includes(c.etapa)).reduce((s, c) => s + c.valor, 0);
+    const holding_total_pipeline = holding_pipeline.filter(c => !['clienteativo', 'perdido'].includes(c.etapa)).reduce((s, c) => s + c.valor, 0);
     const holding_clientes_ativos = holding_pipeline.filter(c => c.etapa === 'clienteativo');
     const holding_concorrencias = holding_pipeline.filter(c => c.etapa === 'concorrencia');
     const holding_negociando = holding_pipeline.filter(c => c.etapa === 'negociacao');
@@ -4237,6 +4239,250 @@ function App() {
    Visual kanban limpo, sem precisar clicar em botão extra
    ═══════════════════════════════════════════════════════════════ */
 
+// ── Lista de oportunidades perdidas (compartilhada) ────────────
+// itens: [{ key, nome, tag, tagColor, valor, resumo }]
+function GhPerdidosPanel({
+  itens,
+  onReativar,
+  onExcluir,
+  vazio
+}) {
+  if (!itens.length) return /*#__PURE__*/React.createElement("div", {
+    style: {
+      textAlign: 'center',
+      padding: 60,
+      color: '#444',
+      fontFamily: 'IBM Plex Mono,monospace',
+      fontSize: 11
+    }
+  }, vazio || 'Nenhuma empresa marcada como perdida.');
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 6,
+      padding: '12px 20px 24px',
+      maxWidth: 820
+    }
+  }, itens.map(it => /*#__PURE__*/React.createElement("div", {
+    key: it.key,
+    style: {
+      background: '#141018',
+      border: '.5px solid rgba(248,113,113,.22)',
+      borderRadius: 8,
+      padding: '10px 14px',
+      display: 'flex',
+      alignItems: 'center',
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      alignItems: 'center',
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 12,
+      fontWeight: 600,
+      color: '#9B9BB4',
+      textDecoration: 'line-through'
+    }
+  }, it.nome), it.tag && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 8,
+      fontFamily: 'IBM Plex Mono,monospace',
+      padding: '2px 7px',
+      borderRadius: 100,
+      background: it.tagColor || 'rgba(155,155,180,.25)',
+      color: '#fff',
+      whiteSpace: 'nowrap'
+    }
+  }, it.tag)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 10,
+      color: '#f87171',
+      fontFamily: 'IBM Plex Mono,monospace',
+      marginTop: 3
+    }
+  }, it.resumo || '—')), it.valor && /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 11,
+      fontFamily: 'IBM Plex Mono,monospace',
+      color: '#555',
+      textDecoration: 'line-through',
+      flexShrink: 0
+    }
+  }, it.valor), /*#__PURE__*/React.createElement("button", {
+    onClick: () => onReativar(it.key),
+    title: "Voltar para o pipeline",
+    style: {
+      padding: '5px 12px',
+      borderRadius: 8,
+      border: '.5px solid rgba(52,211,153,.35)',
+      background: 'rgba(52,211,153,.08)',
+      color: '#34D399',
+      fontSize: 10,
+      fontFamily: 'IBM Plex Mono,monospace',
+      cursor: 'pointer',
+      flexShrink: 0
+    }
+  }, "↩ Reativar"), onExcluir && /*#__PURE__*/React.createElement("button", {
+    onClick: () => onExcluir(it.key),
+    title: "Excluir definitivamente",
+    style: {
+      padding: '5px 10px',
+      borderRadius: 8,
+      border: '.5px solid #2D2D44',
+      background: 'transparent',
+      color: '#555',
+      fontSize: 10,
+      fontFamily: 'IBM Plex Mono,monospace',
+      cursor: 'pointer',
+      flexShrink: 0
+    }
+  }, "🗑"))));
+}
+
+// ── Modal "Marcar como perdido" (compartilhado) ────────────────
+// Usado pelo Kanban Diário (block4) e pelos Pipelines GAIA/Holding.
+function GhPerdaModal({
+  nome,
+  onConfirm,
+  onClose
+}) {
+  const [motivo, setMotivo] = React.useState(GH_MOTIVOS_PERDA[0].id);
+  const [obs, setObs] = React.useState('');
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: 'fixed',
+      inset: 0,
+      background: 'rgba(0,0,0,.88)',
+      zIndex: 2200,
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: 20
+    },
+    onClick: e => {
+      if (e.target === e.currentTarget) onClose();
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: '#111827',
+      border: '.5px solid rgba(248,113,113,.35)',
+      borderRadius: 12,
+      width: '100%',
+      maxWidth: 420,
+      padding: 22
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 15,
+      fontWeight: 600,
+      color: '#F5F5F5',
+      marginBottom: 3
+    }
+  }, "✕ Marcar como perdido"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: '#9B9BB4',
+      fontFamily: 'IBM Plex Mono,monospace',
+      marginBottom: 16
+    }
+  }, nome || '—', " sai do pipeline ativo (não é apagada)"), /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 9,
+      color: '#9B9BB4',
+      fontFamily: 'IBM Plex Mono,monospace',
+      textTransform: 'uppercase',
+      letterSpacing: .5
+    }
+  }, "Motivo da perda"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      flexWrap: 'wrap',
+      gap: 6,
+      margin: '8px 0 14px'
+    }
+  }, GH_MOTIVOS_PERDA.map(m => /*#__PURE__*/React.createElement("button", {
+    key: m.id,
+    onClick: () => setMotivo(m.id),
+    style: {
+      padding: '5px 11px',
+      borderRadius: 100,
+      border: `.5px solid ${motivo === m.id ? '#f87171' : '#2D2D44'}`,
+      background: motivo === m.id ? 'rgba(248,113,113,.14)' : 'transparent',
+      color: motivo === m.id ? '#f87171' : '#9B9BB4',
+      fontSize: 10,
+      fontFamily: 'IBM Plex Mono,monospace',
+      cursor: 'pointer'
+    }
+  }, m.label))), /*#__PURE__*/React.createElement("label", {
+    style: {
+      fontSize: 9,
+      color: '#9B9BB4',
+      fontFamily: 'IBM Plex Mono,monospace',
+      textTransform: 'uppercase',
+      letterSpacing: .5
+    }
+  }, "Observação (opcional)"), /*#__PURE__*/React.createElement("input", {
+    autoFocus: true,
+    value: obs,
+    onChange: e => setObs(e.target.value),
+    onKeyDown: e => e.key === 'Enter' && onConfirm(motivo, obs),
+    placeholder: "Detalhe o que aconteceu...",
+    style: {
+      width: '100%',
+      background: '#0D0D0D',
+      border: '.5px solid #2D2D44',
+      borderRadius: 8,
+      padding: '9px 12px',
+      color: '#F5F5F5',
+      fontSize: 12,
+      outline: 'none',
+      marginTop: 6
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: 'flex',
+      justifyContent: 'flex-end',
+      gap: 8,
+      marginTop: 18
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: onClose,
+    style: {
+      padding: '7px 16px',
+      borderRadius: 8,
+      border: '.5px solid #2D2D44',
+      background: 'transparent',
+      color: '#9B9BB4',
+      fontSize: 11,
+      fontFamily: 'IBM Plex Mono,monospace',
+      cursor: 'pointer'
+    }
+  }, "Cancelar"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => onConfirm(motivo, obs),
+    style: {
+      padding: '7px 18px',
+      borderRadius: 8,
+      border: 'none',
+      background: '#f87171',
+      color: '#0D0D0D',
+      fontSize: 11,
+      fontFamily: 'IBM Plex Mono,monospace',
+      fontWeight: 700,
+      cursor: 'pointer'
+    }
+  }, "Marcar perdido"))));
+}
+
 function PipelineView({
   tipo
 }) {
@@ -4258,6 +4504,8 @@ function PipelineView({
   const [editCard, setEditCard] = React.useState(null); // card obj | {_new, col}
   const [filterEmp, setFilterEmp] = React.useState('Todos');
   const [search, setSearch] = React.useState('');
+  const [perdaCard, setPerdaCard] = React.useState(null); // card a marcar como perdido
+  const [verPerdidos, setVerPerdidos] = React.useState(false);
   if (!tab) return null;
 
   // ── Persistência ─────────────────────────────────────────────
@@ -4275,7 +4523,7 @@ function PipelineView({
   };
 
   // ── Filtro ────────────────────────────────────────────────────
-  const cards = React.useMemo(() => {
+  const visiveis = React.useMemo(() => {
     return (tab.cards || []).filter(c => {
       if (search && !c.name.toLowerCase().includes(search.toLowerCase()) && !(c.nota || c.note || '').toLowerCase().includes(search.toLowerCase())) return false;
       if (!isGaia && filterEmp !== 'Todos' && (c.galeria || '') !== filterEmp) return false;
@@ -4283,6 +4531,10 @@ function PipelineView({
       return true;
     });
   }, [tab.cards, search, filterEmp]);
+  // Perdidos ficam fora do pipeline ativo (board, stats e totais)
+  const cards = React.useMemo(() => visiveis.filter(c => !ghIsPerdido(c)), [visiveis]);
+  const perdidos = React.useMemo(() => visiveis.filter(c => ghIsPerdido(c)), [visiveis]);
+  const totalPerdidos = (tab.cards || []).filter(c => ghIsPerdido(c)).length;
 
   // ── Stats ─────────────────────────────────────────────────────
   const stats = React.useMemo(() => {
@@ -4307,6 +4559,10 @@ function PipelineView({
         label: 'Total',
         val: cards.length,
         color: '#FF6B2B'
+      }, {
+        label: 'Perdidos',
+        val: totalPerdidos,
+        color: '#f87171'
       }];
     } else {
       const pipeline = cards.filter(c => c.col !== 'clienteativo').reduce((s, c) => s + (+c.value || 0), 0);
@@ -4333,9 +4589,13 @@ function PipelineView({
         label: 'Total',
         val: cards.length,
         color: '#eee'
+      }, {
+        label: 'Perdidos',
+        val: totalPerdidos,
+        color: '#f87171'
       }];
     }
-  }, [cards]);
+  }, [cards, totalPerdidos]);
 
   // ── Drag & Drop ───────────────────────────────────────────────
   const onDrop = colId => {
@@ -4386,6 +4646,44 @@ function PipelineView({
     setEditCard(null);
   };
 
+  // ── Perdido / reativação ─────────────────────────────────────
+  // Marca o card como perdido: ele sai do board ativo e vai para a
+  // coluna 'perdido' (compatível com o KanbanView antigo), guardando
+  // motivo, observação, data e a etapa de origem para reativar depois.
+  const marcarPerdido = (motivoId, obs) => {
+    if (!perdaCard) return;
+    const alvo = perdaCard;
+    persist({
+      ...tab,
+      cards: (tab.cards || []).map(c => c.id === alvo.id ? {
+        ...ghMarcarPerdido(c, motivoId, obs, c.col),
+        col: 'perdido',
+        motivo: 'perdido',
+        motivoObs: ghMotivoPerdaLabel(motivoId) + ((obs || '').trim() ? ' — ' + obs.trim() : '')
+      } : c)
+    });
+    setPerdaCard(null);
+    setEditCard(null);
+  };
+  const reativarCard = card => {
+    const colsAtivas = (tab.cols || []).filter(c => c.id !== 'perdido');
+    const destino = colsAtivas.some(c => c.id === card.perdidoDe) ? card.perdidoDe : colsAtivas[0]?.id;
+    if (!destino) return;
+    persist({
+      ...tab,
+      cards: (tab.cards || []).map(c => {
+        if (c.id !== card.id) return c;
+        const limpo = ghReativarPerdido(c);
+        delete limpo.motivo;
+        delete limpo.motivoObs;
+        return {
+          ...limpo,
+          col: destino
+        };
+      })
+    });
+  };
+
   // ── Cores por coluna ─────────────────────────────────────────
   const ACCENT = {
     purple: '#a5a0f5',
@@ -4400,7 +4698,7 @@ function PipelineView({
     rose: '#fca5a5'
   };
   const colColor = col => ACCENT[col.accent || 'gray'] || '#9ca3af';
-  const colVal = colId => (tab.cards || []).filter(c => c.col === colId).reduce((s, c) => s + (+c.value || 0), 0);
+  const colVal = colId => (tab.cards || []).filter(c => c.col === colId && !ghIsPerdido(c)).reduce((s, c) => s + (+c.value || 0), 0);
 
   // ── GAIA tag labels ──────────────────────────────────────────
   const TAG_MAP = {
@@ -4521,6 +4819,20 @@ function PipelineView({
       color: filterEmp === f ? '#FF6B2B' : '#9B9BB4'
     }
   }, f)), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setVerPerdidos(v => !v),
+    title: "Ver empresas marcadas como perdidas",
+    style: {
+      padding: '4px 10px',
+      borderRadius: 100,
+      border: '.5px solid',
+      fontSize: 9,
+      fontFamily: 'IBM Plex Mono,monospace',
+      cursor: 'pointer',
+      borderColor: verPerdidos ? '#f87171' : '#2D2D44',
+      background: verPerdidos ? 'rgba(248,113,113,.12)' : 'transparent',
+      color: verPerdidos ? '#f87171' : '#9B9BB4'
+    }
+  }, "\u2715 Perdidos (", totalPerdidos, ")"), /*#__PURE__*/React.createElement("button", {
     onClick: () => setEditCard({
       _new: true,
       col: (tab.cols || [])[0]?.id || '',
@@ -4545,10 +4857,24 @@ function PipelineView({
     style: {
       flex: 1,
       overflowX: 'auto',
-      overflowY: 'hidden',
-      padding: '12px 20px 24px'
+      overflowY: verPerdidos ? 'auto' : 'hidden',
+      padding: verPerdidos ? 0 : '12px 20px 24px'
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, verPerdidos ? /*#__PURE__*/React.createElement(GhPerdidosPanel, {
+    itens: perdidos.map(c => ({
+      key: c.id,
+      nome: c.name,
+      tag: c.galeria || c.product || null,
+      valor: +c.value > 0 ? kbFmtVal(c.value) : null,
+      resumo: c.perdaMotivo ? ghResumoPerda(c) : c.motivoObs || (c.motivo === 'hold' ? 'Em hold — arquivado' : 'Arquivado (sem motivo registrado)')
+    })),
+    onReativar: id => {
+      const alvo = (tab.cards || []).find(c => c.id === id);
+      if (alvo) reativarCard(alvo);
+    },
+    onExcluir: id => deleteCard(id),
+    vazio: "Nenhuma empresa perdida ainda. Use o \u2715 no card para tirar do pipeline."
+  }) : /*#__PURE__*/React.createElement("div", {
     style: {
       display: 'flex',
       gap: 10,
@@ -4556,9 +4882,9 @@ function PipelineView({
       minWidth: 'max-content',
       height: '100%'
     }
-  }, (tab.cols || []).map(col => {
+  }, (tab.cols || []).filter(col => col.id !== 'perdido').map(col => {
     const colCards = cards.filter(c => c.col === col.id);
-    const allColCards = (tab.cards || []).filter(c => c.col === col.id);
+    const allColCards = (tab.cards || []).filter(c => c.col === col.id && !ghIsPerdido(c));
     const cc = colColor(col);
     const cv = colVal(col.id);
     const isOver = overCol === col.id;
@@ -4703,7 +5029,25 @@ function PipelineView({
           whiteSpace: 'nowrap',
           flexShrink: 0
         }
-      }, galLabel)), (card.note || card.nota) && /*#__PURE__*/React.createElement("div", {
+      }, galLabel), /*#__PURE__*/React.createElement("button", {
+        title: "Marcar como perdido",
+        onClick: e => {
+          e.stopPropagation();
+          setPerdaCard(card);
+        },
+        style: {
+          border: 'none',
+          background: 'transparent',
+          color: '#3d3d55',
+          fontSize: 11,
+          lineHeight: 1,
+          padding: '1px 2px',
+          cursor: 'pointer',
+          flexShrink: 0
+        },
+        onMouseOver: e => e.currentTarget.style.color = '#f87171',
+        onMouseOut: e => e.currentTarget.style.color = '#3d3d55'
+      }, "\u2715")), (card.note || card.nota) && /*#__PURE__*/React.createElement("div", {
         style: {
           fontSize: 10,
           color: '#555',
@@ -4769,6 +5113,10 @@ function PipelineView({
     onSave: saveCard,
     onDelete: editCard.id && !editCard._new ? () => deleteCard(editCard.id) : null,
     onClose: () => setEditCard(null)
+  }), perdaCard && /*#__PURE__*/React.createElement(GhPerdaModal, {
+    nome: perdaCard.name,
+    onConfirm: marcarPerdido,
+    onClose: () => setPerdaCard(null)
   }));
 }
 function PipelineCardModal({

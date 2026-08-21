@@ -371,6 +371,63 @@
       });
     });
 
+    // ── T7 · marcação de perda (Kanban Diário + Pipelines) ────────────────
+    describe("T7 — perda de oportunidade", function() {
+      it("ghMarcarPerdido guarda motivo, obs, data e etapa de origem", function() {
+        var c = { id: 7, name: "Kenner", col: "negociacao", value: 50000 };
+        var p = ghMarcarPerdido(c, "sem_budget", "  cortaram a verba  ", c.col);
+        assertEqual(p.perdido, true);
+        assertEqual(p.perdaMotivo, "sem_budget");
+        assertEqual(p.perdaObs, "cortaram a verba", "obs deve vir sem espaços nas pontas");
+        assertEqual(p.perdidoDe, "negociacao");
+        assert(!!p.perdidoEm, "deve registrar a data da perda");
+        assertEqual(p.name, "Kenner", "não pode alterar os demais campos");
+        assertEqual(c.perdido, undefined, "não pode mutar o objeto original");
+      });
+      it("sem motivo informado cai em 'outro'", function() {
+        assertEqual(ghMarcarPerdido({ id: 1 }, "", "").perdaMotivo, "outro");
+      });
+      it("ghIsPerdido reconhece flag, coluna e etapa legadas", function() {
+        assertEqual(ghIsPerdido({ perdido: true }), true);
+        assertEqual(ghIsPerdido({ col: "perdido" }), true, "cards antigos do KanbanView");
+        assertEqual(ghIsPerdido({ etapa: "perdido" }), true);
+        assertEqual(ghIsPerdido({ col: "negociacao" }), false);
+        assertEqual(ghIsPerdido(null), false);
+      });
+      it("ghReativarPerdido limpa todos os campos de perda", function() {
+        var p = ghMarcarPerdido({ id: 3, nome: "Vivara", etapa: "proposta" }, "timing", "voltar em Q1");
+        var r = ghReativarPerdido(p);
+        assertEqual(ghIsPerdido(r), false);
+        assertEqual(r.perdaMotivo, undefined);
+        assertEqual(r.perdaObs, undefined);
+        assertEqual(r.perdidoEm, undefined);
+        assertEqual(r.perdidoDe, undefined);
+        assertEqual(r.nome, "Vivara", "dados da empresa continuam intactos");
+      });
+      it("etapa de origem é inferida quando não é passada", function() {
+        assertEqual(ghMarcarPerdido({ etapa: "reuniao" }, "timing", "").perdidoDe, "reuniao");
+        assertEqual(ghMarcarPerdido({ col: "concorrencia" }, "timing", "").perdidoDe, "concorrencia");
+      });
+      it("ghMotivoPerdaLabel traduz ids conhecidos e tolera desconhecidos", function() {
+        assertEqual(ghMotivoPerdaLabel("concorrente"), "Escolheu concorrente");
+        assertEqual(ghMotivoPerdaLabel("zzz"), "zzz");
+        assertEqual(ghMotivoPerdaLabel(""), "Não informado");
+      });
+      it("ghResumoPerda monta motivo + obs + data, e é vazio se não perdido", function() {
+        var p = ghMarcarPerdido({ id: 9, etapa: "proposta" }, "concorrente", "foi pra agência X");
+        assert(p.perdidoEm && ghResumoPerda(p).indexOf("Escolheu concorrente") === 0, "começa pelo motivo");
+        assert(ghResumoPerda(p).indexOf("foi pra agência X") > 0, "inclui a observação");
+        assert(ghResumoPerda(p).indexOf(p.perdidoEm) > 0, "inclui a data");
+        assertEqual(ghResumoPerda({ id: 9, etapa: "proposta" }), "");
+      });
+      it("todos os motivos têm id e label", function() {
+        assert(GH_MOTIVOS_PERDA.length > 0, "lista não pode estar vazia");
+        GH_MOTIVOS_PERDA.forEach(function(m) {
+          assert(!!m.id && !!m.label, "motivo sem id/label: " + JSON.stringify(m));
+        });
+      });
+    });
+
     // ── Render ────────────────────────────────────────────────────────────
     var totalPass = 0, totalFail = 0;
     var html = SUITES.map(function(suite) {
