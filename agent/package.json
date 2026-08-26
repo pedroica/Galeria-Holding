@@ -11,9 +11,15 @@
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "test:blocklist": "node --experimental-strip-types --test tests/normalize.test.ts tests/blocklist.test.ts tests/dryrun.blocklist.test.ts",
     "dryrun:blocklist": "node --experimental-strip-types scripts/dryrun-blocklist.ts",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:agentes": "node --experimental-strip-types --test tests/whatsapp.test.ts tests/routing.test.ts tests/loop.test.ts tests/llm-translate.test.ts tests/cmo.test.ts tests/session.test.ts",
+    "probe:lusha": "node --experimental-strip-types scripts/probe-lusha.ts"
   },
   "devDependencies": {
+    "@types/node": "^26.3.0",
     "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.120.0"
   }
 }
