@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#0D0D0D">
+<title>Board GAIA — CR.IA & BrandSync</title>
+<link rel="icon" href="icon-192.png">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Syne',sans-serif;background:#0D0D0D;color:#F5F5F5;min-height:100vh;display:flex;flex-direction:column}
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-thumb{background:#2D2D44;border-radius:3px}
+.mono{font-family:'IBM Plex Mono',monospace}
+
+/* ── Portão de acesso ─────────────────────────────────────────── */
+#gate{flex:1;display:flex;align-items:center;justify-content:center;padding:24px}
+.gatebox{width:100%;max-width:380px;background:#111827;border:.5px solid #2D2D44;border-radius:14px;padding:30px 26px}
+.glogo{display:flex;align-items:center;gap:9px;margin-bottom:6px}
+.gdot{width:9px;height:9px;border-radius:50%;background:#A78BFA;animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+.gtitle{font-size:16px;font-weight:700;letter-spacing:.3px}
+.gsub{font-size:10px;color:#6B6B85;margin-bottom:22px;line-height:1.6}
+.glabel{font-size:9px;color:#6B6B85;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:7px;display:block}
+#code{width:100%;background:#0D0D0D;border:.5px solid #2D2D44;border-radius:8px;padding:11px 13px;color:#F5F5F5;font-family:'IBM Plex Mono',monospace;font-size:13px;outline:none;letter-spacing:1px}
+#code:focus{border-color:#A78BFA}
+#enter{width:100%;margin-top:12px;padding:11px;border:none;border-radius:8px;background:#A78BFA;color:#0D0D0D;font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;cursor:pointer;letter-spacing:.5px}
+#enter:hover{background:#b9a4fb}
+#enter:disabled{opacity:.5;cursor:default}
+.gerr{margin-top:12px;font-size:10.5px;color:#f87171;line-height:1.6;font-family:'IBM Plex Mono',monospace}
+.ghint{margin-top:16px;padding-top:14px;border-top:.5px solid #22223A;font-size:9.5px;color:#4A4A63;line-height:1.7;font-family:'IBM Plex Mono',monospace}
+
+/* ── Board ────────────────────────────────────────────────────── */
+#board{flex:1;display:none;flex-direction:column;overflow:hidden}
+.hd{display:flex;gap:8px;padding:11px 20px;border-bottom:.5px solid #2D2D44;flex-shrink:0;flex-wrap:wrap;align-items:center}
+.hdtitle{font-size:13px;font-weight:600;margin-right:6px;display:flex;align-items:center;gap:7px}
+.robadge{font-size:8px;font-family:'IBM Plex Mono',monospace;padding:2px 8px;border-radius:100px;border:.5px solid #2D2D44;color:#6B6B85;letter-spacing:.8px}
+.stat{background:#111827;border:.5px solid #2D2D44;border-radius:8px;padding:6px 14px;display:flex;flex-direction:column;gap:1px}
+.stat b{font-size:20px;font-weight:700;font-family:'IBM Plex Mono',monospace;line-height:1}
+.stat span{font-size:8px;color:#555;font-family:'IBM Plex Mono',monospace;text-transform:uppercase;letter-spacing:.5px}
+.hdright{margin-left:auto;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+#search{background:#1A1A2E;border:.5px solid #2D2D44;border-radius:6px;padding:5px 10px;color:#F5F5F5;font-size:11px;font-family:'IBM Plex Mono',monospace;outline:none;width:150px}
+#search:focus{border-color:#A78BFA}
+.chip{padding:4px 11px;border-radius:100px;border:.5px solid #2D2D44;background:transparent;color:#9B9BB4;font-size:9px;font-family:'IBM Plex Mono',monospace;cursor:pointer}
+.chip.on{border-color:#A78BFA;background:rgba(167,139,250,.12);color:#A78BFA}
+.stamp{font-size:9px;color:#4A4A63;font-family:'IBM Plex Mono',monospace}
+.cols{flex:1;overflow-x:auto;overflow-y:hidden;padding:12px 20px 24px}
+.colrow{display:flex;gap:10px;align-items:flex-start;min-width:max-content;height:100%}
+.col{width:230px;flex-shrink:0;display:flex;flex-direction:column;height:100%;max-height:calc(100vh - 150px)}
+.colhd{background:#111827;border:.5px solid #2D2D44;border-bottom:none;border-radius:8px 8px 0 0;padding:8px 11px;display:flex;align-items:center;justify-content:space-between;gap:6}
+.colname{display:flex;align-items:center;gap:6px}
+.coldot{width:7px;height:7px;border-radius:50%}
+.collbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.8px;font-family:'IBM Plex Mono',monospace}
+.colcount{font-size:10px;font-family:'IBM Plex Mono',monospace;background:rgba(255,255,255,.06);color:#9B9BB4;padding:1px 7px;border-radius:100px}
+.colbody{flex:1;overflow-y:auto;background:#0f1623;border:.5px solid #2D2D44;border-top:none;border-radius:0 0 8px 8px;padding:7px 8px;display:flex;flex-direction:column;gap:6px}
+.kcard{background:#1A1A2E;border:.5px solid #2D2D44;border-radius:8px;padding:10px 11px}
+.krow{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;margin-bottom:4px}
+.kname{font-size:12px;font-weight:600;color:#F5F5F5;line-height:1.3}
+.kprod{font-size:8px;font-family:'IBM Plex Mono',monospace;padding:2px 7px;border-radius:100px;color:#fff;white-space:nowrap;flex-shrink:0}
+.knote{font-size:10px;color:#6B6B85;line-height:1.5;margin-bottom:4px;font-family:'IBM Plex Mono',monospace}
+.kfoot{display:flex;align-items:center;justify-content:space-between;gap:4px;margin-top:2px}
+.kval{font-size:11px;font-weight:700;color:#34D399;font-family:'IBM Plex Mono',monospace}
+.ktag{font-size:8px;font-family:'IBM Plex Mono',monospace;padding:1px 6px;border-radius:100px;margin-left:auto}
+.empty{font-size:9px;color:#2D2D44;font-family:'IBM Plex Mono',monospace;text-align:center;padding:10px 0}
+.ft{padding:8px 20px;border-top:.5px solid #22223A;font-size:9px;color:#3A3A50;font-family:'IBM Plex Mono',monospace;display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.lnk{background:none;border:none;color:#4A4A63;font:inherit;cursor:pointer;text-decoration:underline}
+.lnk:hover{color:#A78BFA}
+@media(max-width:640px){.col{width:min(84vw,260px)}.hdright{width:100%;margin-left:0}#search{flex:1;width:auto}}
+</style>
+</head>
+<body>
+
+<div id="gate">
+  <div class="gatebox">
+    <div class="glogo"><span class="gdot"></span><span class="gtitle">Board GAIA</span></div>
+    <div class="gsub">CR.IA &amp; BrandSync — pipeline comercial.<br>Acesso restrito: informe o código recebido do Pedro.</div>
+    <label class="glabel" for="code">Código de acesso</label>
+    <input id="code" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="••••••••">
+    <button id="enter">Abrir board</button>
+    <div class="gerr" id="gerr" hidden></div>
+    <div class="ghint">Somente leitura. Este board não dá acesso ao CRM, à base de empresas nem aos contatos.</div>
+  </div>
+</div>
+
+<div id="board">
+  <div class="hd">
+    <div class="hdtitle">⚡ <span id="btitle">Pipeline GAIA</span> <span class="robadge">SOMENTE LEITURA</span></div>
+    <div id="stats" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+    <div class="hdright">
+      <span class="stamp" id="stamp"></span>
+      <input id="search" placeholder="Buscar..." autocomplete="off">
+      <div id="chips" style="display:flex;gap:6px"></div>
+    </div>
+  </div>
+  <div class="cols"><div class="colrow" id="colrow"></div></div>
+  <div class="ft">
+    <span>GAIA — Galeria Holding · board compartilhado</span>
+    <button class="lnk" id="lock">Sair / bloquear</button>
+  </div>
+</div>
+
+<script src="gaia-share-core.js"></script>
+<script>
+(function () {
+  "use strict";
+  var G = window.GaiaShare;
+  var $ = function (id) { return document.getElementById(id); };
+
+  var ACCENT = {
+    purple:"#a5a0f5", teal:"#34d399", blue:"#60a5fa", amber:"#fbbf24", green:"#86efac",
+    red:"#f87171", orange:"#fb923c", gray:"#9ca3af", violet:"#c4b5fd", rose:"#fca5a5"
+  };
+  var PROD_COLOR = {
+    "CR.IA":"rgba(83,74,183,.85)", "BrandSync":"rgba(15,110,86,.85)", "GAIA":"rgba(167,139,250,.8)"
+  };
+  var TAG_LABEL = { mrr:"MRR", "poc-paga":"POC paga", "poc-free":"POC free", prop:"Proposta", camp:"Campanha" };
+  var TAG_COLOR = { mrr:"#86efac", "poc-paga":"#60a5fa", "poc-free":"#9ca3af", prop:"#a5a0f5", camp:"#fbbf24" };
+
+  function fmtVal(v) {
+    v = +v || 0;
+    if (!v) return "";
+    if (v >= 1000000) return "R$ " + (v / 1000000).toFixed(v % 1000000 ? 1 : 0).replace(".", ",") + "M";
+    if (v >= 1000) return "R$ " + Math.round(v / 1000) + "k";
+    return "R$ " + v;
+  }
+  function fmtDate(ms) {
+    if (!ms) return "";
+    try {
+      return new Date(ms).toLocaleString("pt-BR", {
+        day:"2-digit", month:"2-digit", year:"2-digit", hour:"2-digit", minute:"2-digit"
+      });
+    } catch (e) { return ""; }
+  }
+  function el(tag, cls, txt) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (txt != null) n.textContent = txt;   // textContent: nunca injeta HTML
+    return n;
+  }
+
+  /* ── estado ───────────────────────────────────────────────────────────── */
+  var board = null;      // { title, updatedAt, cols, cards }
+  var filter = "Todos";
+  var search = "";
+
+  /* ── render ───────────────────────────────────────────────────────────── */
+  function visibleCards() {
+    var q = search.trim().toLowerCase();
+    return board.cards.filter(function (c) {
+      if (filter !== "Todos" && (c.product || "") !== filter) return false;
+      if (q && (c.name || "").toLowerCase().indexOf(q) < 0
+            && (c.note || "").toLowerCase().indexOf(q) < 0) return false;
+      return true;
+    });
+  }
+
+  function renderStats(cards) {
+    var box = $("stats");
+    box.innerHTML = "";
+    var by = function (id) { return cards.filter(function (c) { return c.col === id; }).length; };
+    var defs = [
+      ["Clientes Ativos", by("clientes"), "#34D399"],
+      ["POC / Piloto", by("poc"), "#60a5fa"],
+      ["Em Reunião", by("reuniao"), "#A78BFA"],
+      ["Proposta", by("proposta"), "#fbbf24"],
+      ["Aguardando", by("aguardando"), "#9ca3af"],
+      ["Total", cards.length, "#FF6B2B"]
+    ].filter(function (d, i) {
+      // esconde stat de coluna que não veio no board compartilhado
+      var ids = ["clientes","poc","reuniao","proposta","aguardando"];
+      if (i >= ids.length) return true;
+      return board.cols.some(function (c) { return c.id === ids[i]; });
+    });
+    defs.forEach(function (d) {
+      var s = el("div", "stat");
+      var b = el("b", null, String(d[1])); b.style.color = d[2];
+      s.appendChild(b);
+      s.appendChild(el("span", null, d[0]));
+      box.appendChild(s);
+    });
+  }
+
+  function renderChips() {
+    var box = $("chips");
+    box.innerHTML = "";
+    var prods = ["Todos"].concat(
+      board.cards.map(function (c) { return c.product || ""; })
+        .filter(function (p, i, a) { return p && a.indexOf(p) === i; })
+        .sort()
+    );
+    if (prods.length <= 1) return;
+    prods.forEach(function (p) {
+      var b = el("button", "chip" + (filter === p ? " on" : ""), p);
+      b.onclick = function () { filter = p; render(); };
+      box.appendChild(b);
+    });
+  }
+
+  function renderCols(cards) {
+    var row = $("colrow");
+    row.innerHTML = "";
+    board.cols.forEach(function (col) {
+      var cc = ACCENT[col.accent] || "#9ca3af";
+      var mine = cards.filter(function (c) { return c.col === col.id; });
+
+      var wrap = el("div", "col");
+      var hd = el("div", "colhd");
+      var nm = el("div", "colname");
+      var dot = el("span", "coldot"); dot.style.background = cc;
+      var lbl = el("span", "collbl", col.label); lbl.style.color = cc;
+      nm.appendChild(dot); nm.appendChild(lbl);
+      hd.appendChild(nm);
+      hd.appendChild(el("span", "colcount", String(mine.length)));
+      wrap.appendChild(hd);
+
+      var body = el("div", "colbody");
+      if (!mine.length) body.appendChild(el("div", "empty", "vazio"));
+      mine.forEach(function (c) {
+        var k = el("div", "kcard");
+        var r = el("div", "krow");
+        r.appendChild(el("span", "kname", c.name));
+        if (c.product) {
+          var p = el("span", "kprod", c.product);
+          p.style.background = PROD_COLOR[c.product] || "rgba(155,155,180,.6)";
+          r.appendChild(p);
+        }
+        k.appendChild(r);
+        if (c.note) k.appendChild(el("div", "knote", c.note));
+        if (c.value > 0 || (c.tag && TAG_LABEL[c.tag])) {
+          var f = el("div", "kfoot");
+          if (c.value > 0) f.appendChild(el("span", "kval", fmtVal(c.value)));
+          if (c.tag && TAG_LABEL[c.tag]) {
+            var t = el("span", "ktag", TAG_LABEL[c.tag]);
+            t.style.background = TAG_COLOR[c.tag] + "22";
+            t.style.color = TAG_COLOR[c.tag];
+            t.style.border = ".5px solid " + TAG_COLOR[c.tag] + "44";
+            f.appendChild(t);
+          }
+          k.appendChild(f);
+        }
+        body.appendChild(k);
+      });
+      wrap.appendChild(body);
+      row.appendChild(wrap);
+    });
+  }
+
+  function render() {
+    var cards = visibleCards();
+    $("btitle").textContent = board.title;
+    $("stamp").textContent = board.updatedAt ? "atualizado " + fmtDate(board.updatedAt) : "";
+    document.title = board.title + " — somente leitura";
+    renderStats(cards);
+    renderChips();
+    renderCols(cards);
+  }
+
+  function show(b) {
+    board = b;
+    $("gate").style.display = "none";
+    $("board").style.display = "flex";
+    render();
+  }
+
+  /* ── origem dos dados ─────────────────────────────────────────────────────
+     1) #s=<cifrado>  → snapshot embutido no próprio link
+     2) /api/gaia-board → board publicado (link fixo)                        */
+  function hashBlob() {
+    var m = /[#&]s=([A-Za-z0-9\-_]+)/.exec(location.hash || "");
+    return m ? m[1] : null;
+  }
+
+  var err = $("gerr");
+  function fail(msg) {
+    err.textContent = msg;
+    err.hidden = false;
+  }
+
+  var publishedBlob = null;   // cache do blob vindo do servidor
+  var publishedErr = null;
+
+  async function getBlob() {
+    var h = hashBlob();
+    if (h) return h;
+    if (publishedBlob) return publishedBlob;
+    if (publishedErr) throw publishedErr;
+    try {
+      var j = await G.fetchPublished();
+      publishedBlob = j.blob;
+      return publishedBlob;
+    } catch (e) {
+      publishedErr = e;
+      throw e;
+    }
+  }
+
+  var SESSION_KEY = "gaia_board_code";
+
+  async function open(code, fromSession) {
+    var btn = $("enter");
+    err.hidden = true;
+    btn.disabled = true;
+    btn.textContent = "Abrindo...";
+    try {
+      var blob = await getBlob();
+      var data = await G.decrypt(blob, code);
+      try { sessionStorage.setItem(SESSION_KEY, code); } catch (e) {}
+      show(G.unpack(data));
+    } catch (e) {
+      if (fromSession) { try { sessionStorage.removeItem(SESSION_KEY); } catch (e2) {} }
+      else fail(e.message || "Não foi possível abrir o board.");
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Abrir board";
+    }
+  }
+
+  $("enter").onclick = function () {
+    var c = $("code").value;
+    if (!c) return fail("Digite o código de acesso.");
+    open(c, false);
+  };
+  $("code").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") $("enter").click();
+  });
+  $("search").addEventListener("input", function (e) {
+    search = e.target.value; render();
+  });
+  $("lock").onclick = function () {
+    try { sessionStorage.removeItem(SESSION_KEY); } catch (e) {}
+    location.reload();
+  };
+
+  // reabre sem pedir o código de novo enquanto a aba estiver viva
+  var saved = null;
+  try { saved = sessionStorage.getItem(SESSION_KEY); } catch (e) {}
+  if (saved) open(saved, true);
+  $("code").focus();
+})();
+</script>
+</body>
+</html>
