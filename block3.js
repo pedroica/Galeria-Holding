@@ -4258,6 +4258,7 @@ function PipelineView({
   const [editCard, setEditCard] = React.useState(null); // card obj | {_new, col}
   const [filterEmp, setFilterEmp] = React.useState('Todos');
   const [search, setSearch] = React.useState('');
+  const [shareOpen, setShareOpen] = React.useState(false);
   if (!tab) return null;
 
   // ── Persistência ─────────────────────────────────────────────
@@ -4541,7 +4542,21 @@ function PipelineView({
       cursor: 'pointer',
       fontWeight: 600
     }
-  }, "+ Card"))), /*#__PURE__*/React.createElement("div", {
+  }, "+ Card"), isGaia && /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShareOpen(true),
+    title: "Gerar acesso somente leitura deste board para o time",
+    style: {
+      padding: '5px 14px',
+      borderRadius: 8,
+      border: '.5px solid rgba(167,139,250,.4)',
+      background: 'rgba(167,139,250,.12)',
+      color: '#A78BFA',
+      fontSize: 11,
+      fontFamily: 'IBM Plex Mono,monospace',
+      cursor: 'pointer',
+      fontWeight: 600
+    }
+  }, "\u{1F517} Compartilhar"))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       overflowX: 'auto',
@@ -4769,6 +4784,9 @@ function PipelineView({
     onSave: saveCard,
     onDelete: editCard.id && !editCard._new ? () => deleteCard(editCard.id) : null,
     onClose: () => setEditCard(null)
+  }), shareOpen && window.GaiaShareModal && /*#__PURE__*/React.createElement(window.GaiaShareModal, {
+    tab: tab,
+    onClose: () => setShareOpen(false)
   }));
 }
 function PipelineCardModal({

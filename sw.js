@@ -1,7 +1,8 @@
 // Service worker — cache básico para abrir rápido e funcionar offline (consulta).
-const CACHE = "crm-galeria-v3-3";
+const CACHE = "crm-galeria-v3-4";
 const ASSETS = ["/", "/index.html", "/seed.json", "/gh-core.js",
-  "/block0_util.js", "/block1.js", "/block2.js", "/block3.js", "/block6.js", "/block7.js", "/block4.js", "/block5.js", "/block_blocklist.js", "/block_agente.js"];
+  "/block0_util.js", "/block1.js", "/block2.js", "/block3.js", "/block6.js", "/block7.js", "/block4.js", "/block5.js", "/block_blocklist.js", "/block_agente.js",
+  "/gaia-share-core.js", "/block_gaia_share.js", "/gaia.html"];
 self.addEventListener("install", e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS).catch(()=>{})));
   self.skipWaiting();
