@@ -1,0 +1,432 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow,noarchive">
+<meta name="theme-color" content="#0E1017">
+<link rel="icon" href="icon-192.png">
+<!-- Board GAIA aberto: sem código de acesso, para consulta rápida do time.
+     A versão com acesso restrito (cifrada, exige código) fica em /gaia.html. -->
+<title>Board GAIA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --ground:#F4F3F8;
+  --surface:#FFFFFF;
+  --card:#FFFFFF;
+  --line:#DCD9E6;
+  --line-soft:#E9E7F0;
+  --ink:#191A24;
+  --ink-dim:#5C5E74;
+  --ink-faint:#8B8DA3;
+  --accent:#6D4AE0;
+  --accent-soft:rgba(109,74,224,.10);
+  --lane:#EDEBF3;
+  --c-green:#0E9F6E; --c-blue:#2563EB; --c-violet:#7C3AED;
+  --c-amber:#B45309; --c-gray:#64748B; --c-red:#DC2626;
+  --shadow:0 1px 2px rgba(25,26,36,.06), 0 1px 1px rgba(25,26,36,.04);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --ground:#0E1017;
+    --surface:#151926;
+    --card:#1B2030;
+    --line:#2A3143;
+    --line-soft:#222839;
+    --ink:#E9EBF2;
+    --ink-dim:#949BB2;
+    --ink-faint:#6B7288;
+    --accent:#A78BFA;
+    --accent-soft:rgba(167,139,250,.13);
+    --lane:#11141E;
+    --c-green:#34D399; --c-blue:#60A5FA; --c-violet:#A78BFA;
+    --c-amber:#FBBF24; --c-gray:#94A3B8; --c-red:#F87171;
+    --shadow:none;
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0E1017;
+  --surface:#151926;
+  --card:#1B2030;
+  --line:#2A3143;
+  --line-soft:#222839;
+  --ink:#E9EBF2;
+  --ink-dim:#949BB2;
+  --ink-faint:#6B7288;
+  --accent:#A78BFA;
+  --accent-soft:rgba(167,139,250,.13);
+  --lane:#11141E;
+  --c-green:#34D399; --c-blue:#60A5FA; --c-violet:#A78BFA;
+  --c-amber:#FBBF24; --c-gray:#94A3B8; --c-red:#F87171;
+  --shadow:none;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+body{
+  background:var(--ground);
+  color:var(--ink);
+  font-family:'Syne',system-ui,-apple-system,sans-serif;
+  min-height:100vh;
+  display:flex;
+  flex-direction:column;
+  -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'IBM Plex Mono',ui-monospace,'SFMono-Regular',Menlo,monospace}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px}
+@media (prefers-reduced-motion:reduce){*{transition:none !important;animation:none !important}}
+
+/* ── cabeçalho ─────────────────────────────────────────────── */
+.top{
+  padding:22px 26px 0;
+  display:flex;flex-direction:column;gap:18px;
+  border-bottom:1px solid var(--line);
+  background:var(--surface);
+}
+.ident{display:flex;align-items:flex-start;justify-content:space-between;gap:20px;flex-wrap:wrap}
+.eyebrow{
+  font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:500;
+  letter-spacing:.22em;text-transform:uppercase;color:var(--ink-faint);
+  margin-bottom:5px;
+}
+h1{font-size:27px;font-weight:800;letter-spacing:-.02em;line-height:1;text-wrap:balance}
+.meta{display:flex;flex-direction:column;align-items:flex-end;gap:7px;text-align:right}
+.pill{
+  font-family:'IBM Plex Mono',monospace;font-size:9.5px;font-weight:500;
+  letter-spacing:.13em;text-transform:uppercase;
+  padding:4px 10px;border-radius:999px;
+  border:1px solid var(--line);color:var(--ink-dim);white-space:nowrap;
+}
+.stamp{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-faint)}
+
+/* resumo: três estados reais do board */
+.summary{display:flex;gap:9px;flex-wrap:wrap}
+.tile{
+  flex:1 1 168px;background:var(--card);border:1px solid var(--line);
+  border-radius:9px;padding:11px 14px 12px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;gap:2px;
+}
+.tile-n{font-family:'IBM Plex Mono',monospace;font-size:26px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums}
+.tile-l{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.13em;text-transform:uppercase;color:var(--ink-faint);margin-top:3px}
+.tile-s{font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-dim);margin-top:5px}
+.split{display:flex;height:3px;border-radius:2px;overflow:hidden;margin-top:8px;background:var(--line-soft)}
+.split i{display:block;height:100%}
+
+/* controles */
+.controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding-bottom:16px}
+#q{
+  font-family:'IBM Plex Mono',monospace;font-size:12px;
+  background:var(--ground);color:var(--ink);
+  border:1px solid var(--line);border-radius:7px;
+  padding:7px 12px;width:210px;outline:none;transition:border-color .15s;
+}
+#q:focus{border-color:var(--accent)}
+#q::placeholder{color:var(--ink-faint)}
+.chip{
+  font-family:'IBM Plex Mono',monospace;font-size:10.5px;font-weight:500;
+  padding:6px 13px;border-radius:999px;cursor:pointer;
+  border:1px solid var(--line);background:transparent;color:var(--ink-dim);
+  transition:border-color .15s,color .15s,background .15s;
+}
+.chip:hover{color:var(--ink);border-color:var(--ink-faint)}
+.chip[aria-pressed="true"]{border-color:var(--accent);color:var(--accent);background:var(--accent-soft)}
+.count{margin-left:auto;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--ink-faint);font-variant-numeric:tabular-nums}
+
+/* ── kanban ────────────────────────────────────────────────── */
+.board{flex:1;overflow-x:auto;padding:18px 26px 30px}
+.lanes{display:flex;gap:11px;align-items:flex-start;min-width:max-content}
+.lane{width:252px;flex-shrink:0;display:flex;flex-direction:column}
+.lane-hd{
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
+  padding:9px 12px;background:var(--surface);
+  border:1px solid var(--line);border-bottom:none;border-radius:9px 9px 0 0;
+  position:sticky;top:0;
+}
+.lane-nm{display:flex;align-items:center;gap:7px;min-width:0}
+.dot{width:7px;height:7px;border-radius:50%;flex-shrink:0}
+.lane-lb{
+  font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:600;
+  letter-spacing:.1em;text-transform:uppercase;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;
+}
+.lane-ct{
+  font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--ink-dim);
+  font-variant-numeric:tabular-nums;flex-shrink:0;
+}
+.lane-bd{
+  background:var(--lane);border:1px solid var(--line);border-top:none;
+  border-radius:0 0 9px 9px;padding:9px;
+  display:flex;flex-direction:column;gap:8px;min-height:64px;
+}
+.k{
+  background:var(--card);border:1px solid var(--line);border-left:2px solid;
+  border-radius:7px;padding:11px 12px;box-shadow:var(--shadow);
+  display:flex;flex-direction:column;gap:6px;
+}
+.k-hd{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.k-nm{font-size:13.5px;font-weight:700;letter-spacing:-.01em;line-height:1.25}
+.prod{
+  font-family:'IBM Plex Mono',monospace;font-size:8.5px;font-weight:500;
+  letter-spacing:.05em;padding:3px 7px;border-radius:999px;
+  white-space:nowrap;flex-shrink:0;border:1px solid;
+}
+.k-note{font-family:'IBM Plex Mono',monospace;font-size:10.5px;line-height:1.55;color:var(--ink-dim)}
+.tag{
+  font-family:'IBM Plex Mono',monospace;font-size:9px;font-weight:500;
+  letter-spacing:.06em;padding:2px 8px;border-radius:999px;
+  align-self:flex-start;border:1px solid;
+}
+.vazio{
+  font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-faint);
+  text-align:center;padding:10px 0;opacity:.7;
+}
+.nores{
+  font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--ink-dim);
+  padding:36px 26px;
+}
+
+/* ── rodapé ────────────────────────────────────────────────── */
+footer{
+  border-top:1px solid var(--line);background:var(--surface);
+  padding:13px 26px;display:flex;justify-content:space-between;gap:16px;flex-wrap:wrap;
+  font-family:'IBM Plex Mono',monospace;font-size:10px;color:var(--ink-faint);line-height:1.6;
+}
+
+@media (max-width:680px){
+  .top,.board,footer{padding-left:16px;padding-right:16px}
+  h1{font-size:22px}
+  .ident{flex-direction:column;gap:12px}
+  .meta{align-items:flex-start;text-align:left}
+  .lane{width:min(80vw,262px)}
+  #q{width:100%}
+}
+</style>
+
+</head>
+<body>
+
+<div class="top">
+  <div class="ident">
+    <div>
+      <div class="eyebrow">GAIA · Galeria Holding</div>
+      <h1>Pipeline CR.IA &amp; BrandSync</h1>
+    </div>
+    <div class="meta">
+      <span class="pill">Somente leitura</span>
+      <span class="stamp">Snapshot de 03/08/2026</span>
+    </div>
+  </div>
+
+  <div class="summary" id="summary"></div>
+
+  <div class="controls">
+    <input id="q" type="search" placeholder="Buscar empresa ou nota..." autocomplete="off" aria-label="Buscar empresa ou nota">
+    <button class="chip" data-p="Todos" aria-pressed="true">Todos</button>
+    <button class="chip" data-p="CR.IA" aria-pressed="false">CR.IA</button>
+    <button class="chip" data-p="BrandSync" aria-pressed="false">BrandSync</button>
+    <span class="count" id="count"></span>
+  </div>
+</div>
+
+<div class="board"><div class="lanes" id="lanes"></div></div>
+
+<footer>
+  <span>Board compartilhado da GAIA · não editável · não dá acesso ao CRM, à base de empresas nem aos contatos</span>
+  <span>Dúvidas ou correção de card: falar com o Pedro</span>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  var COLS = [
+    ["clientes","Clientes Ativos","green"],
+    ["poc","POC / Piloto","blue"],
+    ["reuniao","Reunião Agendada","violet"],
+    ["proposta","Proposta Enviada","amber"],
+    ["aguardando","Aguardando Retorno","gray"],
+    ["hold","On Hold","red"]
+  ];
+
+  // [empresa, coluna, produto, tag, nota]
+  var CARDS = [
+    ["CVC","clientes","CR.IA","mrr","MRR ativo"],
+    ["Ella","clientes","CR.IA","mrr","MRR ativo"],
+    ["Natura","clientes","CR.IA","camp","Campanhas"],
+    ["Mequi","clientes","BrandSync","","Melhorar critérios, + franqueados, Módulo Mídia"],
+    ["Havaianas","clientes","BrandSync","","Próx. passos: Módulo Mídia"],
+    ["Gemini","clientes","CR.IA","camp","Campanha feita — Pedro fatura"],
+    ["OLX","poc","CR.IA","poc-paga","POC paga — modelo de serviço OK"],
+    ["T&F","poc","BrandSync","","Aguardando ok POC"],
+    ["Trousseau","reuniao","CR.IA","","Aguardando KV"],
+    ["Reckitt","reuniao","CR.IA","","Reunião agendada"],
+    ["Stellantis","reuniao","CR.IA","","Reunião agendada 21/05"],
+    ["Ser Educação","reuniao","CR.IA","","Reunião agendada 18/05"],
+    ["Bauducco","reuniao","BrandSync","","Reunião marcada — preço"],
+    ["Mequi","reuniao","CR.IA","","Reunião Marangoni"],
+    ["Crefisa + Fama","reuniao","CR.IA","","Aguardando retorno Superintendente"],
+    ["Unilever","reuniao","CR.IA","","A Giovanna ficou de marcar reunião com a Fernanda"],
+    ["All Set","reuniao","CR.IA","","Agendar um próximo papo"],
+    ["99 app","reuniao","CR.IA","","Reunião agendada"],
+    ["Vivo","reuniao","BrandSync","","Eles ficaram de trazer internamente o que esperam da POC — Pedro vai procurar ativamente"],
+    ["Dominos","proposta","CR.IA","prop","Proposta enviada com Milà — aguardando"],
+    ["Accor","proposta","CR.IA","prop","Proposta enviada com Caramelo"],
+    ["XP Investimentos","aguardando","CR.IA","prop","Aguardando retorno proposta"],
+    ["MGMBet","aguardando","CR.IA","prop","Aguardando retorno proposta"],
+    ["Itaú","aguardando","CR.IA","","Aguardando retorno"],
+    ["Veste S.A.","aguardando","CR.IA","","Aguardando KVs"],
+    ["GM","aguardando","CR.IA","","Aguardando contato Ica"],
+    ["Carrefour","aguardando","CR.IA","","FUP bid folheto"],
+    ["Bet Nacional","aguardando","CR.IA","","Ver com Losso: Globo Play ou Performance"],
+    ["Keta","aguardando","CR.IA","","Ica tentando falar com Igor"],
+    ["Royal Face","aguardando","BrandSync","",""],
+    ["Oralsin","aguardando","BrandSync","",""],
+    ["Central Ar","hold","CR.IA","poc-free","POC free — modelo SaaS"],
+    ["Wine","hold","CR.IA","poc-free","POC free — modelo SaaS"],
+    ["KPI","hold","CR.IA","","Formato parceria + mostrar ferramenta designers"],
+    ["Globo / ANCINE","hold","CR.IA","","On hold"]
+  ];
+
+  var TAGS = {
+    "mrr":["MRR","green"], "poc-paga":["POC paga","blue"], "poc-free":["POC free","gray"],
+    "prop":["Proposta","violet"], "camp":["Campanha","amber"]
+  };
+  function hue(name){
+    return getComputedStyle(document.documentElement).getPropertyValue("--c-"+name).trim();
+  }
+
+  var state = { q:"", prod:"Todos" };
+
+  function matches(c){
+    if (state.prod !== "Todos" && c[2] !== state.prod) return false;
+    var q = state.q.trim().toLowerCase();
+    if (!q) return true;
+    return c[0].toLowerCase().indexOf(q) >= 0 || c[4].toLowerCase().indexOf(q) >= 0;
+  }
+
+  function el(tag, cls, txt){
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (txt != null) n.textContent = txt;
+    return n;
+  }
+
+  /* ── resumo: três estados reais, não um funil inventado ── */
+  function renderSummary(){
+    var box = document.getElementById("summary");
+    box.textContent = "";
+    var groups = [
+      ["Clientes ativos", ["clientes"], "green"],
+      ["Em negociação", ["poc","reuniao","proposta","aguardando"], "blue"],
+      ["Parados", ["hold"], "red"]
+    ];
+    groups.forEach(function(g){
+      var set = CARDS.filter(function(c){ return g[1].indexOf(c[1]) >= 0; });
+      var cria = set.filter(function(c){ return c[2] === "CR.IA"; }).length;
+      var bs = set.length - cria;
+
+      var t = el("div","tile");
+      var n = el("div","tile-n", String(set.length));
+      n.style.color = hue(g[2]);
+      t.appendChild(n);
+      t.appendChild(el("div","tile-l", g[0]));
+      t.appendChild(el("div","tile-s", cria + " CR.IA · " + bs + " BrandSync"));
+
+      var sp = el("div","split");
+      var a = el("i"); a.style.width = (set.length ? cria/set.length*100 : 0) + "%";
+      a.style.background = hue(g[2]);
+      var b = el("i"); b.style.flex = "1";
+      b.style.background = hue(g[2]); b.style.opacity = ".33";
+      sp.appendChild(a); sp.appendChild(b);
+      t.appendChild(sp);
+      box.appendChild(t);
+    });
+  }
+
+  function card(c){
+    var accent = hue((COLS.filter(function(x){ return x[0] === c[1]; })[0] || [,,"gray"])[2]);
+    var k = el("div","k");
+    k.style.borderLeftColor = accent;
+
+    var hd = el("div","k-hd");
+    hd.appendChild(el("div","k-nm", c[0]));
+    if (c[2]){
+      var p = el("span","prod", c[2]);
+      var ph = c[2] === "BrandSync" ? hue("green") : hue("violet");
+      p.style.color = ph;
+      p.style.borderColor = ph;
+      p.style.background = "transparent";
+      hd.appendChild(p);
+    }
+    k.appendChild(hd);
+
+    if (c[4]) k.appendChild(el("div","k-note", c[4]));
+
+    if (TAGS[c[3]]){
+      var t = el("span","tag", TAGS[c[3]][0]);
+      var th = hue(TAGS[c[3]][1]);
+      t.style.color = th;
+      t.style.borderColor = th;
+      k.appendChild(t);
+    }
+    return k;
+  }
+
+  function render(){
+    var visible = CARDS.filter(matches);
+    var lanes = document.getElementById("lanes");
+    lanes.textContent = "";
+
+    document.getElementById("count").textContent =
+      visible.length + " de " + CARDS.length + " cards";
+
+    if (!visible.length){
+      var nr = el("div","nores","Nenhum card corresponde à busca.");
+      lanes.appendChild(nr);
+      return;
+    }
+
+    COLS.forEach(function(col){
+      var mine = visible.filter(function(c){ return c[1] === col[0]; });
+      var accent = hue(col[2]);
+
+      var lane = el("div","lane");
+      var hd = el("div","lane-hd");
+      var nm = el("div","lane-nm");
+      var dot = el("span","dot"); dot.style.background = accent;
+      var lb = el("span","lane-lb", col[1]); lb.style.color = accent;
+      nm.appendChild(dot); nm.appendChild(lb);
+      hd.appendChild(nm);
+      hd.appendChild(el("span","lane-ct", String(mine.length)));
+      lane.appendChild(hd);
+
+      var bd = el("div","lane-bd");
+      if (!mine.length) bd.appendChild(el("div","vazio","—"));
+      mine.forEach(function(c){ bd.appendChild(card(c)); });
+      lane.appendChild(bd);
+      lanes.appendChild(lane);
+    });
+  }
+
+  document.getElementById("q").addEventListener("input", function(e){
+    state.q = e.target.value; render();
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".chip"), function(b){
+    b.addEventListener("click", function(){
+      state.prod = b.dataset.p;
+      Array.prototype.forEach.call(document.querySelectorAll(".chip"), function(x){
+        x.setAttribute("aria-pressed", String(x === b));
+      });
+      render();
+    });
+  });
+
+  renderSummary();
+  render();
+})();
+</script>
+</body>
+</html>
