@@ -13,7 +13,10 @@
     "dryrun:blocklist": "node --experimental-strip-types scripts/dryrun-blocklist.ts",
     "typecheck": "tsc --noEmit",
     "test:agentes": "node --experimental-strip-types --test tests/whatsapp.test.ts tests/routing.test.ts tests/loop.test.ts tests/llm-translate.test.ts tests/cmo.test.ts tests/session.test.ts",
-    "probe:lusha": "node --experimental-strip-types scripts/probe-lusha.ts"
+    "probe:lusha": "node --experimental-strip-types scripts/probe-lusha.ts",
+    "worker": "node --experimental-strip-types src/worker/daemon.ts",
+    "worker:check": "node --experimental-strip-types scripts/worker-check.ts",
+    "mac:install": "./scripts/mac-install.sh"
   },
   "devDependencies": {
     "@types/node": "^26.3.0",

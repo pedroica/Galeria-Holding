@@ -1,15 +1,22 @@
 // Webhook do WhatsApp Cloud API.
 //
-// Assinatura Web (Request/Response) de propósito: só assim dá para ler o corpo
-// CRU e conferir o X-Hub-Signature-256. Com o parser clássico (req, res) o body
-// já chega desserializado e a assinatura nunca bate.
-//
 //   GET  → handshake de verificação da Meta (uma vez, na configuração)
 //   POST → mensagens recebidas
 //
 // Configuração na Meta: Webhook URL = https://<seu-dominio>/api/whatsapp
+//
+// A Vercel entrega o request ora como `Request` web, ora como `IncomingMessage`
+// estilo Node. Tudo que depende desse formato — header, URL, corpo cru,
+// resposta — passa por agent/src/channels/http.ts, que trata os dois.
 
 import { loadEnv, missingWhatsApp } from "../agent/src/config.ts";
+import {
+  absoluteUrl,
+  getHeader,
+  readRawBody,
+  reply,
+  type NodeLikeResponse,
+} from "../agent/src/channels/http.ts";
 import {
   createWhatsApp,
   handleVerification,
@@ -21,60 +28,57 @@ import { createRuntime, responder } from "../agent/src/agents/orchestrator.ts";
 import { claimMessage } from "../agent/src/session/store.ts";
 import { logEvent } from "../agent/src/tools/supabase.ts";
 
-function getHeader(req: Request, name: string): string | undefined {
-    const h: any = (req as any).headers;
-    if (h && typeof h.get === "function") return h.get(name) ?? undefined;
-    if (h && typeof h === "object") {
-          const key = Object.keys(h).find((k) => k.toLowerCase() === name.toLowerCase());
-          return key ? h[key] : undefined;
-    }
-    return undefined;
-}
-
-export const config = { maxDuration: 60 };
+// bodyParser desligado para o corpo cru chegar intacto — a assinatura da Meta
+// cobre os bytes exatos. Runtime que ignora esta config cai no fallback de
+// leitura de stream em readRawBody().
+export const config = { maxDuration: 60, api: { bodyParser: false } };
 
 // Deixa margem para responder antes de a função ser morta pela plataforma.
 const DEADLINE_MS = 45_000;
 
-export default async function handler(req: Request): Promise<Response> {
+export default async function handler(req: any, res?: NodeLikeResponse) {
   const env = loadEnv();
-    const url = new URL(req.url, `https://${getHeader(req, "host") ?? "localhost"}`);
+  const metodo = String(req?.method || "GET").toUpperCase();
 
   // ── Handshake de verificação ─────────────────────────────────────────────
-  if (req.method === "GET") {
-    const query = Object.fromEntries(url.searchParams.entries());
+  if (metodo === "GET") {
+    const query = Object.fromEntries(absoluteUrl(req).searchParams.entries());
     const v = handleVerification(query, env.waVerifyToken || "");
-    return v.ok
-      ? new Response(v.challenge, { status: 200, headers: { "Content-Type": "text/plain" } })
-      : new Response("forbidden", { status: 403 });
+    return v.ok ? reply(res, 200, v.challenge || "") : reply(res, 403, "forbidden");
   }
 
-  if (req.method !== "POST") {
-    return new Response("method not allowed", { status: 405 });
-  }
+  if (metodo !== "POST") return reply(res, 405, "method not allowed");
 
   const faltando = missingWhatsApp(env);
   if (faltando.length) {
     console.error("[whatsapp] faltam variáveis:", faltando.join(", "));
-    return new Response("misconfigured", { status: 500 });
+    return reply(res, 500, "misconfigured");
   }
 
-  const raw = await req.text();
-    if (!verifySignature(raw, getHeader(req, "x-hub-signature-256") || undefined, env.waAppSecret!)) {
+  const corpo = await readRawBody(req);
+  if (!corpo.ok) {
+    // Sem os bytes originais não há como provar que veio da Meta. Recusar é a
+    // única saída segura: aceitar aqui deixaria qualquer um que descubra a URL
+    // comandar os agentes fingindo ser você.
+    console.error("[whatsapp] corpo cru indisponível —", corpo.motivo);
+    return reply(res, 400, "raw body unavailable");
+  }
+
+  if (!verifySignature(corpo.raw, getHeader(req, "x-hub-signature-256"), env.waAppSecret!)) {
     console.warn("[whatsapp] assinatura inválida — requisição descartada");
-    return new Response("invalid signature", { status: 401 });
+    return reply(res, 401, "invalid signature");
   }
 
   let body: unknown;
   try {
-    body = JSON.parse(raw);
+    body = JSON.parse(corpo.raw);
   } catch {
-    return new Response("bad json", { status: 400 });
+    return reply(res, 400, "bad json");
   }
 
   const mensagens = parseInbound(body).filter((m) => m.from);
   // Confirmações de entrega/leitura e outros eventos: 200 e segue a vida.
-  if (!mensagens.length) return new Response("ok", { status: 200 });
+  if (!mensagens.length) return reply(res, 200, "ok");
 
   const wa = createWhatsApp({ token: env.waToken!, phoneNumberId: env.waPhoneNumberId! });
 
@@ -84,7 +88,7 @@ export default async function handler(req: Request): Promise<Response> {
   } catch (e) {
     console.error("[whatsapp] runtime:", e);
     // 200 para a Meta não reenviar em loop uma mensagem que vai falhar igual.
-    return new Response("ok", { status: 200 });
+    return reply(res, 200, "ok");
   }
 
   for (const msg of mensagens) {
@@ -105,10 +109,7 @@ export default async function handler(req: Request): Promise<Response> {
       await wa.markRead(msg.id);
 
       if (!msg.text) {
-        await wa.send(
-          msg.from,
-          "Por enquanto eu só leio texto. Manda escrito que eu resolvo. 🙂",
-        );
+        await wa.send(msg.from, "Por enquanto eu só leio texto. Manda escrito que eu resolvo. 🙂");
         continue;
       }
 
@@ -132,5 +133,5 @@ export default async function handler(req: Request): Promise<Response> {
     }
   }
 
-  return new Response("ok", { status: 200 });
+  return reply(res, 200, "ok");
 }

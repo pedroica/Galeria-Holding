@@ -7,7 +7,7 @@ um **cadence engine** por contato. Supabase é a fonte única da verdade.
 > aprovação ao final de cada fase. `DRY_RUN=true` por padrão — nada real sem OK.
 >
 > **Agentes de WhatsApp** (secretária, vendedor, buscador de CMOs): veja
-> [AGENTES.md](./AGENTES.md).
+> [AGENTES.md](./AGENTES.md). Para o worker 24h no Mac: [MAC.md](./MAC.md).
 
 ## Requisitos
 - Node.js ≥ 22.6 (usa `--experimental-strip-types`, roda TypeScript sem build).
@@ -36,7 +36,8 @@ agent/
 │  ├─ tools/                 # Supabase + ferramentas que os agentes chamam
 │  ├─ lusha/client.ts        # busca e revelação de decisores
 │  ├─ session/store.ts       # histórico de conversa por número
-│  └─ jobs/daily-cmo.ts      # buscador diário de CMOs
+│  ├─ jobs/                  # lote diário de CMOs + rotina diária compartilhada
+│  └─ worker/                # daemon 24h do Mac (agenda, .env, launchd)
 ├─ tests/                    # node:test (zero dependência)
 ├─ scripts/                  # dryrun-blocklist.ts, probe-lusha.ts
 ├─ supabase/migrations/      # 0000_init.sql, 0001_agents.sql
