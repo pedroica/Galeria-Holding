@@ -26,7 +26,13 @@ const { runCmoBatch, formatCmoReport, todayInSaoPaulo, getProgress } = await imp
 const { runDailyRoutine, lerSetting, gravarSetting, CHAVE_ULTIMA_RODADA, CHAVE_HEARTBEAT } =
   await import("../jobs/daily-routine.ts");
 const { decidirAcao, relogioSaoPaulo, AGENDA_PADRAO } = await import("./schedule.ts");
+const { criarServidor, CAMINHO_WEBHOOK } = await import("../server/http-server.ts");
+const { iniciarTunel } = await import("../server/tunnel.ts");
+const { registrarWebhook } = await import("../server/meta-webhook.ts");
 
+const PORTA = Number(process.env.PORT || 8787);
+// "worker" desliga o webhook (útil se ele estiver hospedado em outro lugar).
+const MODO = (process.env.WORKER_MODE || "all").toLowerCase();
 const TICK_MS = Math.max(60, Number(process.env.WORKER_TICK_MIN || 10) * 60) * 1000;
 const LOTE_CONTINUO = Math.max(1, Number(process.env.WORKER_BATCH || 5));
 const AGENDA = {
@@ -38,6 +44,8 @@ const AGENDA = {
 
 let parando = false;
 let ticksSemNada = 0;
+let urlPublica: string | null = null;
+let ultimoRegistro: string | null = null;
 
 function log(...args: unknown[]) {
   console.log(new Date().toISOString(), ...args);
@@ -126,13 +134,62 @@ async function main() {
   log(carga.erro ? `.env não lido (${carga.erro}) — usando só o ambiente` : `.env: ${carga.carregadas} variáveis de ${ENV_PATH}`);
 
   const env = loadEnv();
-  log(`DRY_RUN=${env.dryRun} · cota=${env.cmoDailyQuota}/dia · tick=${TICK_MS / 60000}min · janela ${AGENDA.janelaInicio}h-${AGENDA.janelaFim}h`);
+  log(`modo=${MODO} · DRY_RUN=${env.dryRun} · cota=${env.cmoDailyQuota}/dia · tick=${TICK_MS / 60000}min · janela ${AGENDA.janelaInicio}h-${AGENDA.janelaFim}h`);
 
   // Falha cedo e alto: sem Supabase não há o que fazer, e é melhor o launchd
   // reiniciar mostrando o erro do que o processo ficar de pé sem trabalhar.
   const rt = await createRuntime();
   const p = await getProgress(rt.db, env.cmoDailyQuota);
   log(`conectado · ${p.concluidas}/${p.totalElegiveis} empresas com decisor (${p.pct}%)`);
+
+  // ── Webhook: servidor local + túnel + registro na Meta ───────────────────
+  let pararTunel = () => {};
+  if (MODO === "all") {
+    const servidor = criarServidor({
+      porta: PORTA,
+      env,
+      runtime: rt,
+      log,
+      estado: () => ({ urlPublica, ultimoRegistro, dryRun: env.dryRun }),
+    });
+    await new Promise<void>((r) => servidor.listen(PORTA, "127.0.0.1", r));
+    log(`servidor ouvindo em 127.0.0.1:${PORTA} (só o túnel alcança)`);
+
+    const appId = process.env.WHATSAPP_APP_ID;
+    const tunel = iniciarTunel({
+      porta: PORTA,
+      urlFixa: process.env.PUBLIC_URL,
+      log,
+      // Chamado na primeira URL e a cada troca — o túnel gratuito muda de
+      // endereço a cada reinício, e a Meta precisa saber do novo.
+      aoMudarUrl: async (base) => {
+        urlPublica = base + CAMINHO_WEBHOOK;
+        if (!appId || !env.waAppSecret || !env.waVerifyToken) {
+          log(`webhook público em ${urlPublica} — registre na Meta (falta WHATSAPP_APP_ID?)`);
+          return;
+        }
+        const r = await registrarWebhook({
+          appId,
+          appSecret: env.waAppSecret,
+          verifyToken: env.waVerifyToken,
+          callbackUrl: urlPublica,
+          wabaId: process.env.WHATSAPP_BUSINESS_ACCOUNT_ID,
+          token: env.waToken,
+        });
+        ultimoRegistro = new Date().toISOString();
+        if (r.ok) {
+          log(`✓ webhook registrado na Meta: ${urlPublica}`);
+        } else {
+          for (const e of r.etapas.filter((x) => !x.ok)) {
+            log(`✗ registro na Meta (${e.etapa}): ${e.detalhe}`);
+          }
+        }
+      },
+    });
+    pararTunel = () => tunel.parar();
+  } else {
+    log("modo worker: webhook desligado (WORKER_MODE=worker)");
+  }
 
   while (!parando) {
     try {
@@ -148,6 +205,7 @@ async function main() {
       process.once("SIGINT", parar);
     });
   }
+  pararTunel();
   log("── encerrado ──");
 }
 

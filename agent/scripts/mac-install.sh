@@ -47,8 +47,21 @@ fi
 
 if [[ ! -f "$AGENT_DIR/.env" ]]; then
   echo "✗ Falta $AGENT_DIR/.env" >&2
-  echo "  Copie o exemplo e preencha:  cp .env.example .env" >&2
+  echo "  Rode o assistente, que pergunta cada valor e diz onde achar:" >&2
+  echo "    npm run setup" >&2
   exit 1
+fi
+
+# O túnel dá a URL pública que a Meta chama. Só é dispensável se você já tem
+# uma URL fixa própria (ngrok, Tailscale Funnel, domínio) em PUBLIC_URL.
+if ! grep -qE "^\s*(export\s+)?PUBLIC_URL=..*" "$AGENT_DIR/.env"; then
+  if ! command -v cloudflared >/dev/null 2>&1; then
+    echo "✗ cloudflared não encontrado — é ele que expõe o webhook para a Meta." >&2
+    echo "  Instale:  brew install cloudflared" >&2
+    echo "  (ou defina PUBLIC_URL no .env, se já tiver uma URL pública própria)" >&2
+    exit 1
+  fi
+  echo "→ Túnel: $(command -v cloudflared)"
 fi
 
 for obrigatoria in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
@@ -136,8 +149,12 @@ if launchctl list | grep -q "$LABEL"; then
   echo "  religar:        launchctl load $PLIST"
   echo "  desinstalar:    ./scripts/mac-install.sh --uninstall"
   echo
+  echo "  Em ~30s ele abre o túnel e registra o webhook na Meta sozinho."
+  echo "  Confirme no log a linha '✓ webhook registrado na Meta'."
+  echo
   echo "  ⚠  Impeça o Mac de dormir: Ajustes → Bateria/Energia →"
   echo "     'Impedir que o Mac entre em repouso automaticamente'."
+  echo "     Sem isso, o Mac dormindo = mensagens não respondidas."
 else
   echo "✗ o launchd não manteve o serviço de pé. Veja: $ERRLOG" >&2
   exit 1
