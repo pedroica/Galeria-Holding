@@ -21,6 +21,16 @@ import { createRuntime, responder } from "../agent/src/agents/orchestrator.ts";
 import { claimMessage } from "../agent/src/session/store.ts";
 import { logEvent } from "../agent/src/tools/supabase.ts";
 
+function getHeader(req: Request, name: string): string | undefined {
+    const h: any = (req as any).headers;
+    if (h && typeof h.get === "function") return h.get(name) ?? undefined;
+    if (h && typeof h === "object") {
+          const key = Object.keys(h).find((k) => k.toLowerCase() === name.toLowerCase());
+          return key ? h[key] : undefined;
+    }
+    return undefined;
+}
+
 export const config = { maxDuration: 60 };
 
 // Deixa margem para responder antes de a função ser morta pela plataforma.
@@ -28,7 +38,7 @@ const DEADLINE_MS = 45_000;
 
 export default async function handler(req: Request): Promise<Response> {
   const env = loadEnv();
-  const url = new URL(req.url, `https://${req.headers.get("host") ?? "localhost"}`);
+    const url = new URL(req.url, `https://${getHeader(req, "host") ?? "localhost"}`);
 
   // ── Handshake de verificação ─────────────────────────────────────────────
   if (req.method === "GET") {
@@ -50,7 +60,7 @@ export default async function handler(req: Request): Promise<Response> {
   }
 
   const raw = await req.text();
-  if (!verifySignature(raw, req.headers.get("x-hub-signature-256") || undefined, env.waAppSecret!)) {
+    if (!verifySignature(raw, getHeader(req, "x-hub-signature-256") || undefined, env.waAppSecret!)) {
     console.warn("[whatsapp] assinatura inválida — requisição descartada");
     return new Response("invalid signature", { status: 401 });
   }
