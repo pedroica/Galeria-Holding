@@ -5,6 +5,9 @@ um **cadence engine** por contato. Supabase é a fonte única da verdade.
 
 > **Status:** Fase 0 (Blocklist) concluída. Fases 1–4 em construção, com gate de
 > aprovação ao final de cada fase. `DRY_RUN=true` por padrão — nada real sem OK.
+>
+> **Agentes de WhatsApp** (secretária, vendedor, buscador de CMOs): veja
+> [AGENTES.md](./AGENTES.md).
 
 ## Requisitos
 - Node.js ≥ 22.6 (usa `--experimental-strip-types`, roda TypeScript sem build).
@@ -25,10 +28,18 @@ agent/
 │  │  ├─ normalize.ts        # normalização texto/domínio/telefone + validações
 │  │  └─ blocklist.ts        # BlocklistMatcher (domínio, nome, grupo econômico)
 │  ├─ data/blocklist.seed.ts # 16 clientes atuais da Holding
-│  └─ dryrun/blocklist-sim.ts
+│  ├─ dryrun/blocklist-sim.ts
+│  ├─ config.ts              # env + guardrails
+│  ├─ agents/                # personas, comandos de barra, orquestrador
+│  ├─ llm/                   # Claude, Qwen, roteador de modelo, loop de tool use
+│  ├─ channels/whatsapp.ts   # Cloud API: assinatura, parse, envio
+│  ├─ tools/                 # Supabase + ferramentas que os agentes chamam
+│  ├─ lusha/client.ts        # busca e revelação de decisores
+│  ├─ session/store.ts       # histórico de conversa por número
+│  └─ jobs/daily-cmo.ts      # buscador diário de CMOs
 ├─ tests/                    # node:test (zero dependência)
-├─ scripts/dryrun-blocklist.ts
-├─ supabase/migrations/0000_init.sql
+├─ scripts/                  # dryrun-blocklist.ts, probe-lusha.ts
+├─ supabase/migrations/      # 0000_init.sql, 0001_agents.sql
 └─ .env.example              # TODAS as credenciais/env vars (todas as fases)
 ```
 
