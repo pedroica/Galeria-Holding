@@ -28,7 +28,7 @@ const DEADLINE_MS = 45_000;
 
 export default async function handler(req: Request): Promise<Response> {
   const env = loadEnv();
-  const url = new URL(req.url);
+  const url = new URL(req.url, `https://${req.headers.get("host") ?? "localhost"}`);
 
   // ── Handshake de verificação ─────────────────────────────────────────────
   if (req.method === "GET") {
