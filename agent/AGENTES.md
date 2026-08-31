@@ -49,10 +49,10 @@ api/cron/agent-daily.ts  ── 7h30 BRT ──► lote de CMOs + lembretes + re
        └── agent/src/worker/daemon.ts ── Mac 24h, só saída ── ver MAC.md
 ```
 
-O webhook e o worker são independentes: o webhook responde suas mensagens na
-Vercel; o worker do Mac faz o trabalho pesado sem limite de tempo. Os dois
-compartilham `jobs/daily-routine.ts` e uma marca em `settings`, então a rotina
-do dia roda uma vez só, não importa quem chegou primeiro.
+O sistema roda inteiro num Mac ligado 24h — ver [MAC.md](./MAC.md). Os
+endpoints da Vercel continuam no repositório e funcionam como alternativa: os
+dois caminhos compartilham `jobs/daily-routine.ts` e uma marca em `settings`,
+então a rotina do dia roda uma vez só, não importa quem chegou primeiro.
 
 Cada camada tem uma responsabilidade e é testável sozinha: `llm/loop.ts` roda
 com um provider falso, `channels/whatsapp.ts` roda sem rede, `jobs/daily-cmo.ts`

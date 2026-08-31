@@ -1,112 +1,120 @@
-# O Mac 24h — worker dos agentes
+# Tudo no Mac
 
-O Mac não recebe mensagem. Ele **trabalha**.
+Um computador, um comando de configuração, um serviço, um log. O Mac recebe
+suas mensagens e faz o trabalho pesado.
 
 ```
-seu WhatsApp ──► Vercel /api/whatsapp ──┐
-                 (URL estável, não dorme)│
-                                         ├──► Supabase ◄──┐
-                                         │                │
-        relatórios e lotes ◄─────────────┘                │
-                                                          │
-              Mac 24h ─── só conexões de saída ───────────┘
-              (Lusha, Anthropic/Qwen, Graph API)
+   seu WhatsApp
+        │
+        ▼
+   Meta (Cloud API)
+        │  webhook assinado
+        ▼
+   túnel HTTPS ──► 127.0.0.1:8787 ──► agentes ──► Supabase
+   (cloudflared)     servidor local              Lusha
+                                                 Claude / Qwen
 ```
 
-Por que essa divisão: o webhook precisa de uma URL pública que nunca some — se
-o Mac dormir, cair a luz ou a operadora trocar seu IP, você perde mensagem. Já
-o trabalho pesado é o oposto: quer tempo, não disponibilidade. A Vercel mata
-qualquer execução em 60s; o Mac pode passar o dia num lote.
-
-**Nada de porta aberta, túnel, DDNS ou IP fixo.** O worker só faz chamadas de
-saída. Se o Mac ficar offline por um dia, o Vercel Cron cobre a rotina daquele
-dia sozinho — os dois usam a mesma marca em `settings` e não se atropelam.
-
-## O que ele faz
-
-| Quando | O quê |
-|---|---|
-| 7h30 (ou na primeira vez que ligar depois disso) | Rotina diária: lote de CMOs, lembretes do dia, relatório no seu WhatsApp |
-| A cada 10 min, das 8h às 20h, dias úteis | Lote pequeno de 5 empresas, até cumprir a cota do dia |
-| Todo tick | Grava um sinal de vida em `settings.worker_heartbeat` |
-| Você mandar "pausa o robô" | Para no tick seguinte — o kill switch vence tudo |
-
-A cota é a mesma `CMO_DAILY_QUOTA`. A diferença para o cron da Vercel é o
-ritmo: em vez de um pico às 7h30, o trabalho se espalha pelo dia, o que é mais
-gentil com o rate limit da Lusha e deixa você acompanhar o progresso ao vivo.
+O servidor escuta **só em 127.0.0.1**. Quem alcança de fora é o túnel — a
+máquina continua fechada, sem porta aberta no roteador, sem IP fixo, sem DDNS.
 
 ## Instalar
 
 No Mac que vai ficar ligado:
 
 ```bash
-# 1. Node 22+ (o código roda TypeScript direto, sem build)
-brew install node
+# 1. Node 22+ e o túnel
+brew install node cloudflared
 
-# 2. Clonar e instalar
+# 2. Clonar
 git clone https://github.com/pedroica/Galeria-Holding.git
-cd Galeria-Holding && npm install
+cd Galeria-Holding && npm install && cd agent
 
-# 3. Preencher o .env do worker
-cd agent
-cp .env.example .env
-$EDITOR .env      # SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, LUSHA_API_KEY,
-                  # WHATSAPP_* e ANTHROPIC_API_KEY
+# 3. Responder as perguntas (uma por vez, com dica de onde achar cada valor)
+npm run setup
 
-# 4. Conferir antes de virar serviço
-npm run worker:check
-
-# 5. Instalar como serviço do macOS
+# 4. Instalar o serviço
 ./scripts/mac-install.sh
 ```
 
-O instalador recusa a instalação se o Node for antigo, se faltar `.env` ou se
-o teste de conexão falhar — melhor parar aqui do que descobrir pelo log amanhã.
-Ele também dá `chmod 600` no `.env`, que guarda a *service_role* do Supabase.
+O `setup` escreve o `.env` com permissão 600, testa a conexão com o Supabase e
+só termina quando ela funciona. O `mac-install.sh` recusa a instalação se o Node
+for antigo, se faltar `.env` ou `cloudflared`, ou se o teste falhar — melhor
+parar aqui do que descobrir pelo log amanhã.
+
+**Você não abre o painel da Meta.** Ao subir, o serviço abre o túnel, descobre a
+URL pública e registra o webhook pela Graph API. Como o túnel gratuito troca de
+endereço a cada reinício, ele registra de novo sempre que muda.
+
+Confirme no log:
+
+```bash
+tail -f ~/Library/Logs/galeria-agentes.log
+# túnel: https://algo-assim.trycloudflare.com
+# ✓ webhook registrado na Meta: https://algo-assim.trycloudflare.com/webhook
+```
+
+Depois disso, mande `/ajuda` no WhatsApp para o número comercial.
+
+## O que ele faz sozinho
+
+| Quando | O quê |
+|---|---|
+| Ao subir, e sempre que a URL mudar | Registra o webhook na Meta |
+| Mensagem sua chegando | Responde na hora, sem limite de tempo de execução |
+| 7h30 (ou na primeira vez que ligar depois) | Lote de CMOs, lembretes, relatório |
+| A cada 10 min, 8h–20h, dias úteis | Lote de 5 empresas, até cumprir a cota |
+| Todo tick | Sinal de vida, que aparece no `/status` |
 
 ## Operar
 
 ```bash
-tail -f ~/Library/Logs/galeria-agentes.log      # acompanhar
-launchctl unload ~/Library/LaunchAgents/co.galeriaholding.agentes.plist   # parar
-launchctl load   ~/Library/LaunchAgents/co.galeriaholding.agentes.plist   # religar
-./scripts/mac-install.sh --uninstall            # remover o serviço
+tail -f ~/Library/Logs/galeria-agentes.log     # acompanhar
+curl localhost:8787/health                     # URL pública e último registro
+launchctl unload ~/Library/LaunchAgents/co.galeriaholding.agentes.plist  # parar
+launchctl load   ~/Library/LaunchAgents/co.galeriaholding.agentes.plist  # religar
+./scripts/mac-install.sh --uninstall           # remover
 ```
 
-Rodar na mão, sem serviço, para ver o comportamento: `npm run worker`.
+Rodar na mão para ver tudo acontecendo: `npm run worker`.
 
-## Duas coisas que derrubam o worker na prática
+## As três coisas que quebram na prática
 
-**O Mac dormindo.** Ajustes → Bateria (ou Energia) → ligar *"Impedir que o Mac
-entre em repouso automaticamente quando o monitor estiver desligado"*. Em
-MacBook, isso só vale na tomada. Alternativa sem mexer em ajuste:
-`caffeinate -dimsu &`.
+**O Mac dormindo.** É a causa número um. Ajustes → Bateria (ou Energia) →
+*"Impedir que o Mac entre em repouso automaticamente quando o monitor estiver
+desligado"*. Em MacBook isso só vale na tomada. Alternativa: `caffeinate -dimsu &`.
 
-**Atualizar o código e esquecer de reiniciar.** O launchd não recarrega sozinho
-depois de um `git pull`:
+**Endereço do túnel mudando.** Acontece a cada reinício do serviço, e é
+tratado sozinho — mas há uma janela de alguns segundos entre a URL nova e o
+registro em que uma mensagem se perde. Se incomodar, use uma URL fixa: crie uma
+conta no ngrok ou no Tailscale, pegue o endereço estático e ponha em
+`PUBLIC_URL` no `.env`. Aí o endereço nunca muda.
+
+**`git pull` sem recarregar.** O launchd não recarrega sozinho:
 
 ```bash
 git pull && launchctl unload ~/Library/LaunchAgents/co.galeriaholding.agentes.plist \
          && launchctl load ~/Library/LaunchAgents/co.galeriaholding.agentes.plist
 ```
 
-## Ajustes finos
-
-No `.env` do Mac:
+## Ajustes
 
 | Variável | Padrão | O que muda |
 |---|---|---|
-| `WORKER_TICK_MIN` | `10` | Minutos entre um lote e outro |
-| `WORKER_BATCH` | `5` | Empresas por lote contínuo |
-| `WORKER_WINDOW_START` / `_END` | `8` / `20` | Janela de trabalho, hora local |
-| `WORKER_WEEKEND` | `false` | `true` para trabalhar sábado e domingo |
-| `AGENT_ENV_FILE` | `./.env` | Caminho do .env, se você guardar em outro lugar |
+| `DRY_RUN` | `true` | `false` libera gasto de crédito e gravação de contato |
+| `CMO_DAILY_QUOTA` | `40` | Empresas por dia |
+| `WORKER_TICK_MIN` | `10` | Minutos entre lotes |
+| `WORKER_BATCH` | `5` | Empresas por lote |
+| `WORKER_WINDOW_START` / `_END` | `8` / `20` | Janela de trabalho |
+| `WORKER_WEEKEND` | `false` | `true` trabalha sábado e domingo |
+| `PUBLIC_URL` | vazio | URL fixa própria, no lugar do túnel gratuito |
+| `WORKER_MODE` | `all` | `worker` desliga o webhook (se hospedar em outro lugar) |
+| `PORT` | `8787` | Porta local |
 
-Para o Mac assumir mais volume que a Vercel aguentava, suba `CMO_DAILY_QUOTA` —
-o limite real passa a ser o seu crédito Lusha, não o tempo de execução.
+Mudou o `.env`? Recarregue o serviço (as duas linhas do `launchctl` acima).
 
 ## Está funcionando?
 
-Mande `/status` no WhatsApp: a resposta traz o último sinal de vida do worker.
-Sem sinal há mais de uma hora dentro da janela de trabalho, o Mac está dormindo
-ou o serviço caiu — o log diz qual dos dois.
+Mande `/status` no WhatsApp: a resposta traz o último sinal de vida. Sem sinal
+há mais de uma hora dentro da janela de trabalho, o Mac está dormindo ou o
+serviço caiu — `curl localhost:8787/health` e o log dizem qual dos dois.
