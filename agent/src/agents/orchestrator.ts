@@ -78,6 +78,24 @@ export async function createRuntime(envSrc = process.env): Promise<Runtime> {
   return { env, db, toolbox, lusha, blocklist };
 }
 
+/**
+ * Traduz o sinal de vida do worker do Mac em uma linha legível. Silêncio longo
+ * é a informação que importa: significa Mac dormindo ou serviço caído.
+ */
+export function descreverHeartbeat(hb: unknown, agora: Date = new Date()): string {
+  const em = hb && typeof hb === "object" ? (hb as any).em : undefined;
+  if (!em) return "sem sinal (nunca rodou)";
+  const t = Date.parse(String(em));
+  if (Number.isNaN(t)) return "sem sinal";
+  const min = Math.floor((agora.getTime() - t) / 60000);
+  if (min < 0) return "agora";
+  if (min < 2) return "ativo agora";
+  if (min < 60) return `ativo há ${min} min`;
+  const horas = Math.floor(min / 60);
+  if (horas < 24) return `*sem sinal há ${horas}h* — Mac dormindo ou serviço parado`;
+  return `*sem sinal há ${Math.floor(horas / 24)} dia(s)*`;
+}
+
 export interface RespostaAgente {
   texto: string;
   agentId: string;
@@ -117,7 +135,7 @@ export async function responder(
     const p = getPersona(sessao.agentId);
     const rota = decideBrain(p.id, p.brain, rt.env);
     const cfg = await rt.db
-      .select<any>("settings", "select=key,value&key=in.(agent_paused,dry_run)")
+      .select<any>("settings", "select=key,value&key=in.(agent_paused,dry_run,worker_heartbeat)")
       .catch(() => []);
     const mapa = Object.fromEntries((cfg as any[]).map((r) => [r.key, r.value]));
     return {
@@ -127,6 +145,7 @@ export async function responder(
           (rota.reason === "qwen_unavailable" ? " _(Qwen não configurado, caiu para Claude)_" : ""),
         `Robô de prospecção: ${mapa.agent_paused ? "*pausado*" : "ativo"}`,
         `DRY_RUN: ${rt.env.dryRun ? "*ligado* (nada externo acontece)" : "desligado"}`,
+        `Worker 24h: ${descreverHeartbeat(mapa.worker_heartbeat)}`,
         `Histórico: ${sessao.messages.length} mensagens`,
       ].join("\n"),
       agentId: sessao.agentId,
