@@ -52,7 +52,10 @@ export function iniciarTunel(opts: OpcoesTunel): Tunel {
 
   function subir() {
     if (parado) return;
-    const bin = opts.binario || "cloudflared";
+    // O launchd roda com um PATH mínimo, sem /opt/homebrew/bin — por isso o
+    // instalador grava o caminho absoluto aqui. "cloudflared" puro só funciona
+    // quando rodamos a partir do seu terminal.
+    const bin = opts.binario || process.env.CLOUDFLARED_BIN || "cloudflared";
     proc = spawn(bin, ["tunnel", "--url", `http://127.0.0.1:${opts.porta}`, "--no-autoupdate"], {
       stdio: ["ignore", "pipe", "pipe"],
     });

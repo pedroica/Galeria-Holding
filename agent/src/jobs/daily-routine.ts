@@ -28,8 +28,13 @@ export async function lerSetting<T = unknown>(
 export async function gravarSetting(db: SupabaseClient, key: string, value: unknown): Promise<void> {
   try {
     await db.upsert("settings", [{ key, value, updated_at: new Date().toISOString() }], "key");
-  } catch {
-    // Marca de estado não pode derrubar a rotina.
+  } catch (e) {
+    // Não derruba a rotina, mas também não some: se a marca de "já rodei hoje"
+    // não grava, a rotina repete o dia inteiro e ninguém fica sabendo por quê.
+    console.error(
+      `[settings] falhei ao gravar '${key}':`,
+      e instanceof Error ? e.message : String(e),
+    );
   }
 }
 

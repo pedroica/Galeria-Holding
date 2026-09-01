@@ -64,6 +64,12 @@ if ! grep -qE "^\s*(export\s+)?PUBLIC_URL=..*" "$AGENT_DIR/.env"; then
   echo "→ Túnel: $(command -v cloudflared)"
 fi
 
+# Caminhos absolutos: o serviço não herda o PATH do seu terminal.
+CLOUDFLARED_BIN="$(command -v cloudflared || true)"
+PATH_SERVICO="$(dirname "$NODE_BIN")"
+[[ -n "$CLOUDFLARED_BIN" ]] && PATH_SERVICO="$PATH_SERVICO:$(dirname "$CLOUDFLARED_BIN")"
+PATH_SERVICO="$PATH_SERVICO:/usr/bin:/bin:/usr/sbin:/sbin"
+
 for obrigatoria in SUPABASE_URL SUPABASE_SERVICE_ROLE_KEY; do
   if ! grep -qE "^\s*(export\s+)?$obrigatoria=..*" "$AGENT_DIR/.env"; then
     echo "✗ $obrigatoria não está preenchida no .env" >&2
@@ -112,6 +118,11 @@ cat > "$PLIST" <<PLISTEOF
     <string>$AGENT_DIR/.env</string>
     <key>NODE_NO_WARNINGS</key>
     <string>1</string>
+    <!-- launchd roda com PATH mínimo: sem estes dois o túnel não sobe. -->
+    <key>CLOUDFLARED_BIN</key>
+    <string>$CLOUDFLARED_BIN</string>
+    <key>PATH</key>
+    <string>$PATH_SERVICO</string>
   </dict>
 
   <!-- Sobe no login e reinicia se cair. -->

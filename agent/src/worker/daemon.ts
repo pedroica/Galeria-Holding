@@ -179,6 +179,7 @@ async function main() {
     const tunel = iniciarTunel({
       porta: PORTA,
       urlFixa: process.env.PUBLIC_URL,
+      binario: process.env.CLOUDFLARED_BIN,
       log,
       // Chamado na primeira URL e a cada troca — o túnel gratuito muda de
       // endereço a cada reinício, e a Meta precisa saber do novo.
