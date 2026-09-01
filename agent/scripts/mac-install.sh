@@ -138,9 +138,26 @@ cat > "$PLIST" <<PLISTEOF
 PLISTEOF
 
 launchctl load "$PLIST"
-sleep 2
 
-if launchctl list | grep -q "$LABEL"; then
+# O primeiro start pode demorar: o daemon conecta no Supabase e abre o túnel
+# antes de responder. Conferir em 2s dizia "falhou" num serviço saudável —
+# então esperamos ele atender de verdade, com uma janela generosa.
+PORTA="$(grep -E '^\s*(export\s+)?PORT=' "$AGENT_DIR/.env" | tail -1 | sed 's/.*=//' | tr -d '[:space:]')"
+PORTA="${PORTA:-8787}"
+
+printf "→ aguardando o serviço responder"
+subiu=0
+for _ in $(seq 1 30); do
+  sleep 2
+  printf "."
+  if curl -fsS --max-time 2 "http://127.0.0.1:$PORTA/health" >/dev/null 2>&1; then
+    subiu=1
+    break
+  fi
+done
+echo
+
+if (( subiu == 1 )); then
   echo
   echo "✓ worker instalado e rodando."
   echo
@@ -155,7 +172,15 @@ if launchctl list | grep -q "$LABEL"; then
   echo "  ⚠  Impeça o Mac de dormir: Ajustes → Bateria/Energia →"
   echo "     'Impedir que o Mac entre em repouso automaticamente'."
   echo "     Sem isso, o Mac dormindo = mensagens não respondidas."
+elif launchctl list | grep -q "$LABEL"; then
+  echo
+  echo "⚠ o serviço está carregado, mas ainda não respondeu na porta $PORTA."
+  echo "  Costuma ser o túnel demorando. Acompanhe:"
+  echo "    tail -f $LOG"
+  exit 0
 else
-  echo "✗ o launchd não manteve o serviço de pé. Veja: $ERRLOG" >&2
+  echo "✗ o launchd não manteve o serviço de pé." >&2
+  echo "  Erro em: $ERRLOG" >&2
+  echo "  Para ver na hora:  cd $AGENT_DIR && npm run worker" >&2
   exit 1
 fi

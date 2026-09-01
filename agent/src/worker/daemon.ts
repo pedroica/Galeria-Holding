@@ -152,7 +152,27 @@ async function main() {
       log,
       estado: () => ({ urlPublica, ultimoRegistro, dryRun: env.dryRun }),
     });
-    await new Promise<void>((r) => servidor.listen(PORTA, "127.0.0.1", r));
+    // Porta ocupada quase sempre significa "o serviço já está rodando" — vale
+    // uma frase explicando, não um stack trace. Sai com 0 para o launchd não
+    // entender como falha e entrar em ciclo de reinício.
+    const subiu = await new Promise<boolean>((resolve, reject) => {
+      const aoFalhar = (e: NodeJS.ErrnoException) => {
+        if (e.code === "EADDRINUSE") {
+          log(`✗ a porta ${PORTA} já está ocupada — o serviço do launchd provavelmente já está de pé.`);
+          log(`  Acompanhar:  tail -f ~/Library/Logs/galeria-agentes.log`);
+          log(`  Parar o serviço:  launchctl unload ~/Library/LaunchAgents/co.galeriaholding.agentes.plist`);
+          resolve(false);
+          return;
+        }
+        reject(e);
+      };
+      servidor.once("error", aoFalhar);
+      servidor.listen(PORTA, "127.0.0.1", () => {
+        servidor.off("error", aoFalhar);
+        resolve(true);
+      });
+    });
+    if (!subiu) process.exit(0);
     log(`servidor ouvindo em 127.0.0.1:${PORTA} (só o túnel alcança)`);
 
     const appId = process.env.WHATSAPP_APP_ID;
