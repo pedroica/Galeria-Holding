@@ -28,12 +28,26 @@ if [[ "$(uname -s)" != "Darwin" ]]; then
   exit 1
 fi
 
+# O Homebrew instala em lugares diferentes conforme o chip, e o instalador
+# dele NÃO mexe no PATH da sessão atual — então em Mac novo o `brew` "some"
+# logo depois de ser instalado. Procuramos nos dois caminhos antes de desistir.
+if ! command -v brew >/dev/null 2>&1; then
+  for candidato in /opt/homebrew/bin/brew /usr/local/bin/brew; do
+    if [[ -x "$candidato" ]]; then
+      eval "$("$candidato" shellenv)"
+      break
+    fi
+  done
+fi
+
 if ! command -v brew >/dev/null 2>&1; then
   verm "  Falta o Homebrew, que instala o resto."
   echo
-  echo "  Cole esta linha, espere terminar, e rode ./install.sh de novo:"
+  echo "  1) Cole esta linha e espere terminar (vai pedir sua senha do Mac):"
   echo
-  echo '    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+  echo '     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"'
+  echo
+  echo "  2) Depois rode de novo:  ./install.sh"
   echo
   exit 1
 fi
@@ -54,9 +68,22 @@ fi
 if (( ${#faltando[@]} > 0 )); then
   fraco "  Instalando: ${faltando[*]} (leva alguns minutos)"
   brew install "${faltando[@]}"
+  # Recarrega o ambiente do brew: recém-instalado pode não estar no PATH desta
+  # sessão, e aí o passo seguinte falharia dizendo "node não encontrado".
+  eval "$(brew shellenv)"
+  hash -r
 else
   verde "  ✓ Node e cloudflared já estão aqui"
 fi
+
+# Última checagem antes de seguir — errar aqui dá erro confuso lá na frente.
+for necessario in node npm cloudflared; do
+  if ! command -v "$necessario" >/dev/null 2>&1; then
+    verm "  '$necessario' não apareceu no PATH mesmo depois da instalação."
+    fraco "  Feche o Terminal, abra de novo e rode ./install.sh outra vez."
+    exit 1
+  fi
+done
 
 fraco "  Instalando dependências do projeto…"
 (cd "$RAIZ" && npm install --silent --no-audit --no-fund)
@@ -77,6 +104,8 @@ echo
 # ── 3. Serviço ─────────────────────────────────────────────────────────────
 info ""
 info "3/3  Ligando o serviço"
+# mac-install.sh já descarrega uma instalação anterior antes de recarregar,
+# então rodar o install.sh de novo é seguro e serve como "religar".
 (cd "$RAIZ/agent" && ./scripts/mac-install.sh)
 
 info ""
