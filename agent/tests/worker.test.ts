@@ -117,3 +117,18 @@ test("heartbeat ausente ou inválido não quebra o /status", () => {
   assert.match(descreverHeartbeat({ em: "banana" }, agora), /sem sinal/);
   assert.match(descreverHeartbeat(null, agora), /nunca rodou/);
 });
+
+// ── Colagem da URL do Supabase ─────────────────────────────────────────────
+import { limparUrlSupabase } from "../src/lib/normalize.ts";
+
+test("aceita a URL como o painel do Supabase mostra, com /rest/v1/", () => {
+  const esperado = "https://glwghgspotjyauwjvlem.supabase.co";
+  for (const colado of [
+    "https://glwghgspotjyauwjvlem.supabase.co/rest/v1/",
+    "https://glwghgspotjyauwjvlem.supabase.co/rest/v1",
+    "https://glwghgspotjyauwjvlem.supabase.co/",
+    "  https://GLWGHGSPOTJYAUWJVLEM.supabase.co  ",
+  ]) {
+    assert.equal(limparUrlSupabase(colado), esperado, colado);
+  }
+});

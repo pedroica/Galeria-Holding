@@ -13,6 +13,7 @@ import { existsSync, readFileSync, writeFileSync, chmodSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { resolve } from "node:path";
 import { parseEnvFile } from "../src/worker/env-file.ts";
+import { limparUrlSupabase } from "../src/lib/normalize.ts";
 
 const CAMINHO = resolve(process.cwd(), ".env");
 const rl = createInterface({ input: stdin, output: stdout });
@@ -32,6 +33,8 @@ interface Campo {
   obrigatorio?: boolean;
   padrao?: string;
   gerar?: () => string;
+  /** Corrige o valor antes de validar (colagem com sobra, por exemplo). */
+  normalizar?: (v: string) => string;
   validar?: (v: string) => string | null; // devolve mensagem de erro, ou null
 }
 
@@ -43,7 +46,13 @@ const CAMPOS: Campo[] = [
     pergunta: "URL do projeto Supabase",
     onde: "Supabase → Settings → API → Project URL (começa com https:// e termina em .supabase.co)",
     obrigatorio: true,
-    validar: (v) => (/^https:\/\/.+\.supabase\.co\/?$/.test(v) ? null : "não parece uma URL de projeto Supabase"),
+    // A tela do Supabase mostra a URL já com /rest/v1/ no fim, e é natural
+    // colar assim. Aceitamos e limpamos, em vez de reclamar.
+    normalizar: limparUrlSupabase,
+    validar: (v) =>
+      /^https:\/\/[a-z0-9-]+\.supabase\.co$/.test(limparUrlSupabase(v))
+        ? null
+        : "esperava algo como https://abcdxyz.supabase.co",
   },
   {
     chave: "SUPABASE_SERVICE_ROLE_KEY",
@@ -134,7 +143,8 @@ async function perguntar(c: Campo, atual?: string): Promise<string> {
 
   for (;;) {
     const resposta = (await rl.question(rotulo)).trim();
-    const valor = resposta || sugerido || "";
+    const bruto = resposta || sugerido || "";
+    const valor = c.normalizar ? c.normalizar(bruto) : bruto;
 
     if (!valor) {
       if (!c.obrigatorio) return "";
@@ -167,7 +177,7 @@ async function main() {
   }
 
   // Normaliza o que dá para normalizar sozinho.
-  valores.SUPABASE_URL = (valores.SUPABASE_URL || "").replace(/\/+$/, "");
+  valores.SUPABASE_URL = limparUrlSupabase(valores.SUPABASE_URL || "");
   valores.WHATSAPP_ALLOWED_NUMBERS = (valores.WHATSAPP_ALLOWED_NUMBERS || "")
     .split(",").map(soDigitos).filter(Boolean).join(",");
   valores.WHATSAPP_OWNER_NUMBER = valores.WHATSAPP_ALLOWED_NUMBERS.split(",")[0] || "";

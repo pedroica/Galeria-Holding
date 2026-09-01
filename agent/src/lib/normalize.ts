@@ -96,3 +96,14 @@ export function isGenericEmail(email: string): boolean {
   if (!local) return true;
   return GENERIC_LOCALPARTS.has(local);
 }
+
+/**
+ * Limpa a URL de um projeto Supabase colada do painel. A tela mostra o
+ * endereço já com /rest/v1/ no fim, e é natural copiar assim — então aqui
+ * sobra só https://ref.supabase.co, sem caminho nem barra final.
+ */
+export function limparUrlSupabase(v: string): string {
+  const t = (v || "").trim();
+  const m = t.match(/^https?:\/\/[^/\s]+/i);
+  return (m ? m[0] : t).replace(/\/+$/, "").toLowerCase();
+}
