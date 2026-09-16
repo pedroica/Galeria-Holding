@@ -2243,36 +2243,7 @@ function today() {
 function nowStr() {
   return new Date().toLocaleString("pt-BR");
 }
-async function sharedGet(k) {
-  try {
-    const v = localStorage.getItem("ghub_sh_" + k);
-    return v ? JSON.parse(v) : null;
-  } catch (e) {
-    return null;
-  }
-}
-async function sharedSet(k, v) {
-  try {
-    localStorage.setItem("ghub_sh_" + k, JSON.stringify(v));
-  } catch (e) {}
-}
-async function personalGet(k) {
-  try {
-    const v = localStorage.getItem("ghub_me_" + k);
-    return v ? JSON.parse(v) : null;
-  } catch (e) {
-    return null;
-  }
-}
-async function personalSet(k, v) {
-  try {
-    if (v === null) {
-      localStorage.removeItem("ghub_me_" + k);
-    } else {
-      localStorage.setItem("ghub_me_" + k, JSON.stringify(v));
-    }
-  } catch (e) {}
-}
+// sharedGet/Set e personalGet/Set agora vêm de gh-store.js (carregado antes)
 async function logActivity(curUser, empresa, grupoName, tipo, tipoLabel, decisor, nota) {
   const entry = {
     id: uid(),
@@ -3190,133 +3161,44 @@ function ModalPortal({
   if (!el || !ReactDOM.createPortal) return children;
   return ReactDOM.createPortal(children, el);
 }
-function LoginScreen({
-  onLogin
-}) {
-  const [name, setName] = useState("");
-  const [pass, setPass] = useState("");
-  const [err, setErr] = useState("");
+function MagicLinkScreen() {
+  const [email, setEmail] = useState("pedroica@gmail.com");
+  const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
-  const doLogin = async () => {
-    setErr("");
-    setLoading(true);
-    let users = (await sharedGet("users")) || {};
-    if (Object.keys(users).length === 0) {
-      const id = uid();
-      users[id] = {
-        id,
-        name: "Pedro Ica",
-        pass: "galeria2024",
-        role: "admin"
-      };
-      await sharedSet("users", users);
-    }
-    const u = Object.values(users).find(u => u.name.toLowerCase() === name.toLowerCase() && u.pass === pass);
-    if (!u) {
-      setErr("Nome ou senha incorretos.");
-      setLoading(false);
-      return;
-    }
-    await personalSet("session", {
-      uid: u.id,
-      name: u.name,
-      role: u.role
-    });
-    onLogin(u);
+  const [err, setErr] = useState("");
+  const send = async () => {
+    if (!email || !email.includes("@")) { setErr("E-mail inválido."); return; }
+    setErr(""); setLoading(true);
+    const res = await (window.__supaSendMagicLink || (async () => ({ error: new Error("gh-store não carregado") })))(email);
     setLoading(false);
+    if (res && res.error) { setErr(res.error.message || "Erro ao enviar."); return; }
+    setSent(true);
   };
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      height: "100vh",
-      background: "#060606"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: "100%",
-      maxWidth: 360,
-      padding: 36,
-      background: "#0e0e0e",
-      border: "1px solid #1e1e1e",
-      borderRadius: 12
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: "center",
-      marginBottom: 28
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 24,
-      fontWeight: 800,
-      fontFamily: "Syne,sans-serif",
-      letterSpacing: -1
-    }
-  }, "GALERIA HOLDING"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      fontFamily: "DM Mono,monospace",
-      color: "#333",
-      letterSpacing: 3,
-      marginTop: 4
-    }
-  }, "CENTRAL COMERCIAL")), /*#__PURE__*/React.createElement("div", {
-    className: "frow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flbl"
-  }, "NOME"), /*#__PURE__*/React.createElement("input", {
-    className: "finp",
-    placeholder: "Seu nome",
-    value: name,
-    onChange: e => setName(e.target.value)
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "frow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flbl"
-  }, "SENHA"), /*#__PURE__*/React.createElement("input", {
-    className: "finp",
-    type: "password",
-    placeholder: "Senha",
-    value: pass,
-    onChange: e => setPass(e.target.value),
-    onKeyDown: e => e.key === "Enter" && doLogin()
-  })), err && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: "#FF4757",
-      fontFamily: "DM Mono,monospace",
-      marginBottom: 12,
-      padding: "8px 12px",
-      background: "rgba(255,71,87,.06)",
-      border: "1px solid rgba(255,71,87,.2)",
-      borderRadius: 5
-    }
-  }, err), /*#__PURE__*/React.createElement("button", {
-    onClick: doLogin,
-    disabled: loading,
-    style: {
-      width: "100%",
-      padding: "11px 0",
-      borderRadius: 5,
-      border: "none",
-      background: "#E8C97A",
-      color: "#000",
-      fontWeight: 800,
-      fontSize: 13,
-      cursor: "pointer",
-      marginTop: 8
-    }
-  }, loading ? "Entrando..." : "Entrar"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      fontFamily: "DM Mono,monospace",
-      color: "#1a1a1a",
-      textAlign: "center",
-      marginTop: 12
-    }
-  }, "v2.0 — Galeria Holding")));
+  const s = { fontFamily: "'IBM Plex Mono',monospace" };
+  if (sent) return /*#__PURE__*/React.createElement("div", { style: { display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0D0D0D" } },
+    /*#__PURE__*/React.createElement("div", { style: { textAlign:"center",maxWidth:340,padding:36 } },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize:32,marginBottom:16 } }, "📬"),
+      /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:13,color:"#F5F5F5",marginBottom:8 } }, "Link enviado para"),
+      /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:11,color:"#FF6B2B",marginBottom:20 } }, email),
+      /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:10,color:"#9B9BB4",lineHeight:1.7 } }, "Verifique sua caixa de entrada e clique no link para entrar. Você pode fechar esta aba.")
+    )
+  );
+  return /*#__PURE__*/React.createElement("div", { style: { display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0D0D0D" } },
+    /*#__PURE__*/React.createElement("div", { style: { width:"100%",maxWidth:360,padding:36,background:"#1A1A2E",border:".5px solid #2D2D44",borderRadius:12 } },
+      /*#__PURE__*/React.createElement("div", { style: { textAlign:"center",marginBottom:28 } },
+        /*#__PURE__*/React.createElement("div", { style: { width:8,height:8,borderRadius:2,background:"#FF6B2B",margin:"0 auto 14px" } }),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize:20,fontWeight:500,color:"#F5F5F5",letterSpacing:"-.3px" } }, "Galeria Holding"),
+        /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:9,color:"#9B9BB4",letterSpacing:2,marginTop:4 } }, "CENTRAL COMERCIAL")
+      ),
+      /*#__PURE__*/React.createElement("div", { style: { marginBottom:10 } },
+        /*#__PURE__*/React.createElement("label", { style: { ...s,fontSize:9,color:"#9B9BB4",letterSpacing:.5,textTransform:"uppercase",display:"block",marginBottom:5 } }, "E-mail"),
+        /*#__PURE__*/React.createElement("input", { className:"gh-input", type:"email", placeholder:"seu@email.com", value:email, onChange:e=>setEmail(e.target.value), onKeyDown:e=>e.key==="Enter"&&send() })
+      ),
+      err && /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:10,color:"#E24B4A",marginBottom:10 } }, err),
+      /*#__PURE__*/React.createElement("button", { className:"gh-btn-primary", onClick:send, disabled:loading, style:{ width:"100%",marginTop:6 } }, loading ? "Enviando..." : "Enviar link de acesso"),
+      /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:9,color:"#2D2D44",textAlign:"center",marginTop:14 } }, "Acesso por magic link — sem senha")
+    )
+  );
 }
 function App() {
   const [curGrupo, setCurGrupo] = useState(GRUPO[0]);
@@ -3389,28 +3271,45 @@ function App() {
   const lastReview = loadSt("ghub_res_review", null);
   const showReminder = !lastReview || new Date() - new Date(lastReview) > 90 * 24 * 60 * 60 * 1000;
   useEffect(() => {
+    let sub = null;
     (async () => {
-      const sess = await personalGet("session");
-      if (sess) {
+      // Tenta sessão Supabase primeiro
+      const supaSess = await (window.__supaGetSession || (async () => null))();
+      if (supaSess) {
         setCurUser({
-          id: sess.uid || "pedro",
-          name: sess.name || "Pedro Ica",
-          role: sess.role || "admin"
+          id: supaSess.user.id,
+          name: (supaSess.user.user_metadata && supaSess.user.user_metadata.name) || supaSess.user.email || "Pedro Ica",
+          role: (supaSess.user.user_metadata && supaSess.user.user_metadata.role) || "admin"
         });
+        setSessLoading(false);
+      } else {
+        // Fallback: sessão cacheada no localStorage
+        const localSess = await personalGet("session");
+        if (localSess) {
+          setCurUser({ id: localSess.uid || "pedro", name: localSess.name || "Pedro Ica", role: localSess.role || "admin" });
+        }
+        setSessLoading(false);
       }
-      setSessLoading(false);
     })();
+    // Escuta mudanças de auth (magic link redirect)
+    if (window.__supaOnAuthChange) {
+      const { data } = window.__supaOnAuthChange((event, session) => {
+        if (session) {
+          setCurUser({
+            id: session.user.id,
+            name: (session.user.user_metadata && session.user.user_metadata.name) || session.user.email || "Pedro Ica",
+            role: (session.user.user_metadata && session.user.user_metadata.role) || "admin"
+          });
+        } else if (event === "SIGNED_OUT") {
+          setCurUser(null);
+        }
+      });
+      if (data && data.subscription) sub = data.subscription;
+    }
+    return () => { if (sub) sub.unsubscribe(); };
   }, []);
-  const onLogin = async user => {
-    setCurUser(user);
-    await personalSet("session", {
-      uid: user.id,
-      name: user.name,
-      role: user.role
-    });
-  };
   const logout = async () => {
-    await personalSet("session", null);
+    await (window.__supaSignOut || (async () => {}))();
     setCurUser(null);
   };
   const onActivitySaved = async (empresa, tipo, tipoLabel, decisor, nota) => {
@@ -3562,9 +3461,7 @@ function App() {
       fontSize: 12
     }
   }, "Carregando...");
-  if (!curUser) return /*#__PURE__*/React.createElement(LoginScreen, {
-    onLogin: onLogin
-  });
+  if (!curUser) return /*#__PURE__*/React.createElement(MagicLinkScreen, null);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
