@@ -4,8 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Galeria Holding — Central Comercial</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="lib/react.min.js"></script>
+<script src="lib/react-dom.min.js"></script>
 <style>
 @import url('https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Syne:wght@400;600;700;800&display=swap');
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap');
@@ -649,7 +649,7 @@ select.kes-input{cursor:pointer}
   }
   await migrarSeed();
   // scripts classicos (sem const globais duplicados)
-  for(var s0 of ['gh-core.js','gaia-share-core.js','block0_util.js','templates_agencias.js','block_regua.js','block_xp.js']){
+  for(var s0 of ['lib/supabase.min.js','gh-store.js','gh-core.js','gaia-share-core.js','block0_util.js','templates_agencias.js','block_regua.js','block_xp.js']){
     try{ await loadScript(s0); }catch(e){ console.error(e); }
   }
   // blocos react pre-compilados
