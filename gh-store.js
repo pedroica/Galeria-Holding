@@ -1,5 +1,6 @@
 /* ═══════════════════════════════════════════════════════════════
-   GH-STORE v2 — Camada de dados Supabase com bridge localStorage
+   GH-STORE v3 — Camada de dados Supabase com bridge localStorage
+   A2: kanbanLoadAll (anon read), kanbanUpsertCard, kanbanBatchUpsert
    Tabelas reais (central-galeria):
      crm_shared              — key TEXT PK, value JSONB
      crm_personal            — (user_id, key) PK, value JSONB
@@ -172,6 +173,91 @@
   }
 
   /* ── crm_kanban helpers ─────────────────────────────────────── */
+
+  // Carrega todos os cards (GAIA + Holding) sem exigir sessão (anon read)
+  // Retorna { gaia: [...], holding: [...] } no formato gh_hotpipeline_v1
+  async function kanbanLoadAll() {
+    if (!supa) return null;
+    try {
+      var res = await supa.from('crm_kanban')
+        .select('id, tab, col, nome, produto, nota, valor, responsavel, ordem, atualizado_em, empresa_id')
+        .order('tab')
+        .order('ordem', { ascending: true });
+      if (!res || !res.data || !res.data.length) return null;
+      var result = { gaia: [], holding: [] };
+      res.data.forEach(function(r) {
+        var tab = r.tab || 'gaia';
+        if (!result[tab]) result[tab] = [];
+        result[tab].push({
+          id:             String(r.id),
+          nome:           r.nome || '',
+          empresa_galeria: r.responsavel || '',
+          produto:        r.produto || '',
+          etapa:          r.col || 'contato',
+          valor:          r.valor || 0,
+          status:         '',
+          responsavel:    '',
+          nota:           r.nota || '',
+          updatedAt:      r.atualizado_em
+            ? new Date(r.atualizado_em).toLocaleDateString('pt-BR') : '',
+          _supaId:        r.id,
+          _empresaId:     r.empresa_id
+        });
+      });
+      return result;
+    } catch(e) { return null; }
+  }
+
+  // Upsert de um card individual (exige sessão)
+  // card: { _supaId?, nome, produto, etapa (=col), valor, nota, empresa_galeria (=responsavel), tab }
+  async function kanbanUpsertCard(tab, card) {
+    if (!supa) return;
+    try {
+      var sess = await getSession();
+      if (!sess) return;
+      var row = {
+        tab:         tab,
+        col:         card.etapa || 'contato',
+        nome:        card.nome || '',
+        produto:     card.produto || '',
+        nota:        card.nota || '',
+        valor:       card.valor || 0,
+        responsavel: card.empresa_galeria || '',
+        atualizado_em: new Date().toISOString()
+      };
+      if (card._supaId) {
+        await supa.from('crm_kanban').update(row).eq('id', card._supaId);
+      } else {
+        await supa.from('crm_kanban').insert(row);
+      }
+    } catch(e) {}
+  }
+
+  // Batch upsert (exige sessão) — para sync completo
+  async function kanbanBatchUpsert(tab, cards) {
+    if (!supa || !cards || !cards.length) return;
+    try {
+      var sess = await getSession();
+      if (!sess) return;
+      var rows = cards.map(function(card, idx) {
+        var row = {
+          tab:         tab,
+          col:         card.etapa || 'contato',
+          nome:        card.nome || '',
+          produto:     card.produto || '',
+          nota:        card.nota || '',
+          valor:       card.valor || 0,
+          responsavel: card.empresa_galeria || '',
+          ordem:       idx,
+          atualizado_em: new Date().toISOString()
+        };
+        if (card._supaId) row.id = card._supaId;
+        return row;
+      });
+      await supa.from('crm_kanban').upsert(rows, { onConflict: 'id', ignoreDuplicates: false });
+    } catch(e) {}
+  }
+
   // Move card para col='perdido' (desistimos)
   async function kanbanDescartar(id) {
     if (!supa) return;
@@ -250,8 +336,6 @@
   async function getEmpresaIdByNome(nome) {
     if (!supa) return null;
     try {
-      var sess = await getSession();
-      if (!sess) return null;
       var res = await supa.from('crm_kanban')
         .select('id, empresa_id').eq('nome', nome).maybeSingle();
       return (res && res.data) ? res.data : null;
@@ -323,6 +407,9 @@
   window.__filaHoje            = filaHoje;
   window.__filaAprovar         = filaAprovar;
   window.__filaDescartar       = filaDescartar;
+  window.__kanbanLoadAll       = kanbanLoadAll;
+  window.__kanbanUpsertCard    = kanbanUpsertCard;
+  window.__kanbanBatchUpsert   = kanbanBatchUpsert;
   window.__kanbanDescartar     = kanbanDescartar;
   window.__kanbanDeletar       = kanbanDeletar;
   window.__getEstrelas         = getEstrelas;
@@ -333,5 +420,5 @@
   window.__getToques           = getToques;
   window.__saveToque           = saveToque;
 
-  console.log('[gh-store v2] ok — supa:', supa ? 'conectado' : 'offline (localStorage only)');
+  console.log('[gh-store v3] ok — supa:', supa ? 'conectado' : 'offline (localStorage only)');
 })();

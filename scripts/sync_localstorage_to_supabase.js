@@ -55,8 +55,30 @@ function parseLS(raw) {
   try { return JSON.parse(raw); } catch { return null; }
 }
 
-// Extrai cards do formato gh_kanban_v3 → lista plana
+// Extrai cards do formato gh_hotpipeline_v1 (primário) ou gh_kanban_v3 (legado)
 function extractKanbanCards(ls) {
+  // Preferir gh_hotpipeline_v1 (formato atual)
+  const hp = parseLS(ls['gh_hotpipeline_v1']);
+  if (hp && (hp.gaia || hp.holding)) {
+    const cards = [];
+    for (const tab of ['gaia', 'holding']) {
+      for (const card of hp[tab] || []) {
+        cards.push({
+          tab,
+          col:     card.etapa || 'contato',
+          nome:    card.nome || '',
+          produto: card.produto || null,
+          tag:     null,
+          nota:    card.nota || null,
+          valor:   card.valor ? Number(card.valor) : null,
+          responsavel: card.empresa_galeria || null,
+          raw_legacy:  card
+        });
+      }
+    }
+    return cards;
+  }
+  // Fallback: gh_kanban_v3 (formato legado)
   const v3 = parseLS(ls['gh_kanban_v3']);
   if (!v3) return [];
   const tabs = v3.tabs || [];
@@ -64,14 +86,15 @@ function extractKanbanCards(ls) {
   for (const tab of tabs) {
     for (const card of tab.cards || []) {
       cards.push({
-        tab:     tab.id,           // 'gaia' | 'holding'
+        tab:     tab.id,
         col:     card.col,
         nome:    card.name || card.nome || '',
         produto: card.product || card.produto || null,
         tag:     card.tag || null,
         nota:    card.note || card.nota || null,
         valor:   card.value ? Number(card.value) : null,
-        raw_legacy: card
+        responsavel: card.galeria || null,
+        raw_legacy:  card
       });
     }
   }
@@ -159,14 +182,15 @@ async function main() {
 
   if (!DRY_RUN && newCards.length > 0) {
     const rows = newCards.map(c => ({
-      tab:       c.tab,
-      col:       c.col,
-      nome:      c.nome,
-      produto:   c.produto,
-      tag:       c.tag,
-      nota:      c.nota,
-      valor:     c.valor,
-      raw_legacy: c.raw_legacy,
+      tab:         c.tab,
+      col:         c.col,
+      nome:        c.nome,
+      produto:     c.produto,
+      tag:         c.tag,
+      nota:        c.nota,
+      valor:       c.valor,
+      responsavel: c.responsavel,
+      raw_legacy:  c.raw_legacy,
       atualizado_em: new Date().toISOString()
     }));
     const { error } = await supa.from('crm_kanban').insert(rows);

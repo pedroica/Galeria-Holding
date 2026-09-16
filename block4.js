@@ -1400,37 +1400,39 @@ function KanbanDiario() {
   const [filtroEmp, setFiltroEmp] = React.useState('Todos');
   const isGaia = aba === 'gaia';
   const rows = data[aba] || [];
-  const persist = newData => {
+
+  // Carrega do Supabase na montagem (anon read, sem sessão)
+  React.useEffect(() => {
+    if (typeof window.__kanbanLoadAll !== 'function') return;
+    window.__kanbanLoadAll().then(function(supData) {
+      if (!supData) return;
+      var total = (supData.gaia || []).length + (supData.holding || []).length;
+      if (total === 0) return;
+      setData(supData);
+      try { localStorage.setItem(HP_STORAGE, JSON.stringify(supData)); } catch(e) {}
+    });
+  }, []);
+
+  const persist = (newData, changedCard, changedTab) => {
     setData(newData);
     hpSave(newData);
+    // Sync para Supabase em background (requer sessão; silencioso se sem sessão)
+    if (changedCard && changedTab && typeof window.__kanbanUpsertCard === 'function') {
+      window.__kanbanUpsertCard(changedTab, changedCard);
+    }
   };
   const updateRow = (id, changes) => {
-    const newRows = rows.map(r => r.id === id ? {
-      ...r,
-      ...changes,
-      updatedAt: new Date().toLocaleDateString('pt-BR')
-    } : r);
-    persist({
-      ...data,
-      [aba]: newRows
-    });
+    const updated = { ...rows.find(r => r.id === id), ...changes, updatedAt: new Date().toLocaleDateString('pt-BR') };
+    const newRows = rows.map(r => r.id === id ? updated : r);
+    persist({ ...data, [aba]: newRows }, updated, aba);
   };
   const deleteRow = id => {
     if (!window.confirm('Remover empresa do pipeline diário?')) return;
-    persist({
-      ...data,
-      [aba]: rows.filter(r => r.id !== id)
-    });
+    persist({ ...data, [aba]: rows.filter(r => r.id !== id) });
   };
   const addRow = row => {
-    persist({
-      ...data,
-      [aba]: [...rows, {
-        ...row,
-        id: hpId(),
-        updatedAt: new Date().toLocaleDateString('pt-BR')
-      }]
-    });
+    const newCard = { ...row, id: hpId(), updatedAt: new Date().toLocaleDateString('pt-BR') };
+    persist({ ...data, [aba]: [...rows, newCard] }, newCard, aba);
     setAddOpen(false);
   };
 
@@ -1648,7 +1650,34 @@ function KanbanDiario() {
       cursor: 'pointer',
       fontWeight: 700
     }
-  }, "+ Adicionar")), /*#__PURE__*/React.createElement("div", {
+  }, "+ Adicionar"), /*#__PURE__*/React.createElement("button", {
+    title: "Exportar backup do localStorage",
+    onClick: () => {
+      try {
+        const dump = {};
+        for (let i = 0; i < localStorage.length; i++) {
+          const k = localStorage.key(i);
+          if (k) { try { dump[k] = JSON.parse(localStorage.getItem(k)); } catch { dump[k] = localStorage.getItem(k); } }
+        }
+        const ts = new Date().toISOString().replace(/[:.]/g,'-').slice(0,19);
+        const blob = new Blob([JSON.stringify(dump, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url; a.download = `galeria-holding-backup-${ts}.json`; a.click();
+        URL.revokeObjectURL(url);
+      } catch(e) { alert('Erro ao exportar: ' + e.message); }
+    },
+    style: {
+      padding: '6px 12px',
+      borderRadius: 8,
+      border: '.5px solid #2D2D44',
+      background: '#1A1A2E',
+      color: '#9B9BB4',
+      fontSize: 11,
+      fontFamily: 'IBM Plex Mono,monospace',
+      cursor: 'pointer'
+    }
+  }, "📤 Backup")), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       overflow: 'auto'
