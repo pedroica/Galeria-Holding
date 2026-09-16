@@ -4295,6 +4295,7 @@ function PipelineView({
   const [dragId, setDragId] = React.useState(null);
   const [overCol, setOverCol] = React.useState(null);
   const [editCard, setEditCard] = React.useState(null); // card obj | {_new, col}
+  const [empresaOpen, setEmpresaOpen] = React.useState(null); // card obj
   const [filterEmp, setFilterEmp] = React.useState('Todos');
   const [search, setSearch] = React.useState('');
   const [shareOpen, setShareOpen] = React.useState(false);
@@ -4719,15 +4720,13 @@ function PipelineView({
           setDragId(null);
           setOverCol(null);
         },
-        onClick: () => setEditCard({
-          ...card
-        }),
+        onClick: () => setEmpresaOpen({...card, _colLabel: col.label}),
         style: {
           background: '#1A1A2E',
           border: `.5px solid ${dragId === card.id ? cc : '#2D2D44'}`,
           borderRadius: 8,
           padding: '10px 11px',
-          cursor: 'grab',
+          cursor: 'pointer',
           transition: 'all .15s',
           opacity: dragId === card.id ? .4 : 1
         }
@@ -4746,7 +4745,8 @@ function PipelineView({
           color: '#F5F5F5',
           lineHeight: 1.3
         }
-      }, card.name), galLabel && /*#__PURE__*/React.createElement("span", {
+      }, card.name), /*#__PURE__*/React.createElement("div", {style:{display:'flex',alignItems:'center',gap:4,flexShrink:0}},
+      galLabel && /*#__PURE__*/React.createElement("span", {
         style: {
           fontSize: 8,
           fontFamily: 'IBM Plex Mono,monospace',
@@ -4754,10 +4754,14 @@ function PipelineView({
           borderRadius: 100,
           background: galColor,
           color: '#fff',
-          whiteSpace: 'nowrap',
-          flexShrink: 0
+          whiteSpace: 'nowrap'
         }
-      }, galLabel)), (card.note || card.nota) && /*#__PURE__*/React.createElement("div", {
+      }, galLabel),
+      /*#__PURE__*/React.createElement("span", {
+        title: 'Editar card',
+        onClick: e => { e.stopPropagation(); setEditCard({...card}); },
+        style: {fontSize:10, cursor:'pointer', color:'#4B4B6A', padding:'1px 3px', borderRadius:4, lineHeight:1}
+      }, '✏️'))), (card.note || card.nota) && /*#__PURE__*/React.createElement("div", {
         style: {
           fontSize: 10,
           color: '#555',
@@ -4816,7 +4820,26 @@ function PipelineView({
         fontFamily: 'IBM Plex Mono,monospace'
       }
     }, isOver ? 'Soltar aqui' : '+ novo card'))));
-  }))), editCard && /*#__PURE__*/React.createElement(PipelineCardModal, {
+  }))), empresaOpen && /*#__PURE__*/React.createElement(EmpresaDrawer, {
+    card: empresaOpen,
+    tab: tab,
+    onClose: () => setEmpresaOpen(null),
+    onDescartar: id => {
+      const fn = window.__kanbanDescartar || (async()=>{});
+      fn(id).then(() => {
+        persist({...tab, cards: (tab.cards||[]).map(c => c.id===id ? {...c, col:'perdido'} : c)});
+        setEmpresaOpen(null);
+      });
+    },
+    onDeletar: id => {
+      if (!window.confirm('Deletar este card permanentemente?')) return;
+      const fn = window.__kanbanDeletar || (async()=>{});
+      fn(id).then(() => {
+        persist({...tab, cards: (tab.cards||[]).filter(c => c.id!==id)});
+        setEmpresaOpen(null);
+      });
+    }
+  }), editCard && /*#__PURE__*/React.createElement(PipelineCardModal, {
     card: editCard,
     cols: tab.cols || [],
     isGaia: isGaia,
@@ -4827,6 +4850,220 @@ function PipelineView({
     tab: tab,
     onClose: () => setShareOpen(false)
   }));
+}
+function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
+  const nome = card.name || card.nome || '';
+  const [loading, setLoading]       = React.useState(true);
+  const [empresaId, setEmpresaId]   = React.useState(null);
+  const [kanbanId,  setKanbanId]    = React.useState(null);
+  const [decisores, setDecisores]   = React.useState([]);
+  const [toques,    setToques]      = React.useState([]);
+  const [activeTab, setActiveTab]   = React.useState('decisores');
+  const [showAddD,  setShowAddD]    = React.useState(false);
+  const [showAddT,  setShowAddT]    = React.useState(false);
+  const [novoD, setNovoD] = React.useState({nome:'',cargo:'',email:'',wa:''});
+  const [novoT, setNovoT] = React.useState({canal:'email',tema:'',resumo:'',resultado:''});
+  const [saving,  setSaving]        = React.useState(false);
+  const [copied,  setCopied]        = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const match = await (window.__getEmpresaIdByNome || (async()=>null))(nome);
+      if (cancelled) return;
+      const eid = match && match.empresa_id;
+      const kid = match && match.id;
+      setEmpresaId(eid); setKanbanId(kid);
+      if (eid) {
+        const [d, t] = await Promise.all([
+          (window.__getDecisores || (async()=>[]))(eid),
+          (window.__getToques    || (async()=>[]))(eid)
+        ]);
+        if (!cancelled) { setDecisores(d); setToques(t); }
+      }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [nome]);
+
+  const addDecisor = async () => {
+    if (!novoD.nome.trim() || !empresaId) return;
+    setSaving(true);
+    const saved = await (window.__saveDecisor||(async()=>null))({
+      empresa_id: empresaId, nome: novoD.nome.trim(),
+      cargo: novoD.cargo.trim()||null, email: novoD.email.trim()||null, wa: novoD.wa.trim()||null
+    });
+    setSaving(false);
+    if (saved) { setDecisores(p=>[...p, saved]); setNovoD({nome:'',cargo:'',email:'',wa:''}); setShowAddD(false); }
+  };
+
+  const addToque = async () => {
+    if (!novoT.resumo.trim() || !empresaId) return;
+    setSaving(true);
+    const saved = await (window.__saveToque||(async()=>null))({
+      empresa_id: empresaId, canal: novoT.canal, direcao: 'saida',
+      tema: novoT.tema.trim()||null, resumo: novoT.resumo.trim(),
+      resultado: novoT.resultado.trim()||null, data: new Date().toISOString()
+    });
+    setSaving(false);
+    if (saved) { setToques(p=>[saved,...p]); setNovoT({canal:'email',tema:'',resumo:'',resultado:''}); setShowAddT(false); }
+  };
+
+  const gerarEmail = () => {
+    const stage = card._colLabel || card.col || '';
+    const produto = card.product || card.produto || '';
+    const dList = decisores.map(d =>
+      `• ${d.nome}${d.cargo?' — '+d.cargo:''}${d.email?' | '+d.email:''}${d.wa?' | WA: '+d.wa:''}`
+    ).join('\n') || '(nenhum cadastrado)';
+    const ultT = toques[0];
+    const toqueStr = ultT
+      ? `${new Date(ultT.data).toLocaleDateString('pt-BR')} via ${ultT.canal}: ${ultT.resumo}${ultT.resultado?' → '+ultT.resultado:''}`
+      : 'Sem histórico';
+    const txt = `📌 Status: ${nome}\nEstágio: ${stage}${produto?' | '+produto:''}\n\nDecisores:\n${dList}\n\nÚltimo contato: ${toqueStr}\n\nNota: ${card.note||card.nota||'—'}`;
+    try { navigator.clipboard.writeText(txt); setCopied(true); setTimeout(()=>setCopied(false),2500); } catch(e){}
+  };
+
+  const S = {
+    overlay: {position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,.55)',display:'flex',justifyContent:'flex-end'},
+    drawer:  {width:420,maxWidth:'95vw',background:'#111827',borderLeft:'.5px solid #2D2D44',display:'flex',flexDirection:'column',height:'100%',overflowY:'auto'},
+    hdr:     {padding:'16px 18px 12px',borderBottom:'.5px solid #2D2D44',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8,flexShrink:0},
+    body:    {flex:1,padding:'0 18px 24px',overflowY:'auto'},
+    sec:     {marginTop:20},
+    secH:    {fontSize:10,fontWeight:700,letterSpacing:.8,textTransform:'uppercase',color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:10},
+    card:    {background:'#1A1A2E',border:'.5px solid #2D2D44',borderRadius:8,padding:'10px 12px',marginBottom:8},
+    lbl:     {fontSize:10,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2},
+    val:     {fontSize:12,color:'#F5F5F5'},
+    inp:     {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'6px 10px',color:'#F5F5F5',fontSize:12,outline:'none',boxSizing:'border-box'},
+    btn:     {padding:'6px 14px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:600},
+    tabBtn:  (active) => ({padding:'5px 14px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,background:active?'#7C3AED':'#1A1A2E',color:active?'#fff':'#9B9BB4'})
+  };
+
+  return /*#__PURE__*/React.createElement("div", {style:S.overlay, onClick:onClose},
+    /*#__PURE__*/React.createElement("div", {style:S.drawer, onClick:e=>e.stopPropagation()},
+      // ── Header
+      /*#__PURE__*/React.createElement("div", {style:S.hdr},
+        /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div", {style:{fontSize:16,fontWeight:700,color:'#F5F5F5',lineHeight:1.2}}, nome),
+          /*#__PURE__*/React.createElement("div", {style:{fontSize:10,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginTop:4}},
+            (card._colLabel||card.col||'')+(card.product||card.produto?' · '+(card.product||card.produto):'')
+          )
+        ),
+        /*#__PURE__*/React.createElement("button", {onClick:onClose,style:{background:'none',border:'none',color:'#9B9BB4',cursor:'pointer',fontSize:18,padding:'0 4px',lineHeight:1}}, '✕')
+      ),
+      // ── Tabs
+      /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:6,padding:'12px 18px 0',flexShrink:0}},
+        /*#__PURE__*/React.createElement("button", {style:S.tabBtn(activeTab==='decisores'), onClick:()=>setActiveTab('decisores')}, 'Decisores'+(decisores.length?' ('+decisores.length+')':'')),
+        /*#__PURE__*/React.createElement("button", {style:S.tabBtn(activeTab==='historico'),  onClick:()=>setActiveTab('historico')},  'Histórico'+(toques.length?' ('+toques.length+')':''))
+      ),
+      // ── Body
+      /*#__PURE__*/React.createElement("div", {style:S.body},
+        loading && /*#__PURE__*/React.createElement("div", {style:{color:'#9B9BB4',fontSize:12,marginTop:24,textAlign:'center'}}, 'Carregando…'),
+        !loading && activeTab==='decisores' && /*#__PURE__*/React.createElement("div", {style:S.sec},
+          decisores.length===0 && /*#__PURE__*/React.createElement("div", {style:{color:'#4B4B6A',fontSize:12,marginBottom:12}}, 'Nenhum decisor cadastrado.'),
+          decisores.map(d => /*#__PURE__*/React.createElement("div", {key:d.id, style:S.card},
+            /*#__PURE__*/React.createElement("div", {style:{fontWeight:600,fontSize:13,color:'#F5F5F5',marginBottom:4}}, d.nome),
+            d.cargo && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#A78BFA',marginBottom:4}}, d.cargo),
+            /*#__PURE__*/React.createElement("div", {style:{display:'flex',flexWrap:'wrap',gap:'4px 12px',marginTop:4}},
+              d.email && /*#__PURE__*/React.createElement("a", {href:'mailto:'+d.email,style:{fontSize:11,color:'#60A5FA',textDecoration:'none'}}, '✉ '+d.email),
+              d.wa    && /*#__PURE__*/React.createElement("a", {href:'https://wa.me/'+d.wa.replace(/\D/g,''),target:'_blank',rel:'noopener',style:{fontSize:11,color:'#34D399',textDecoration:'none'}}, '📱 '+d.wa),
+              d.linkedin_url && /*#__PURE__*/React.createElement("a", {href:d.linkedin_url,target:'_blank',rel:'noopener',style:{fontSize:11,color:'#9B9BB4',textDecoration:'none'}}, 'in')
+            ),
+            d.ultimo_toque_em && /*#__PURE__*/React.createElement("div", {style:{fontSize:10,color:'#4B4B6A',fontFamily:'IBM Plex Mono,monospace',marginTop:6}},
+              'Último contato: '+new Date(d.ultimo_toque_em).toLocaleDateString('pt-BR')+(d.ultimo_tema?' — '+d.ultimo_tema:'')
+            ),
+            d.gancho && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#fbbf24',marginTop:4,fontStyle:'italic'}}, '💡 '+d.gancho),
+            d.observacoes && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#9B9BB4',marginTop:4}}, d.observacoes)
+          )),
+          // Add decisor form
+          !showAddD && /*#__PURE__*/React.createElement("button", {
+            onClick:()=>setShowAddD(true),
+            style:{...S.btn,background:'#7C3AED22',color:'#A78BFA',border:'.5px solid #7C3AED44',marginTop:4,width:'100%'}
+          }, '+ Novo decisor'),
+          showAddD && /*#__PURE__*/React.createElement("div", {style:{...S.card,marginTop:8}},
+            /*#__PURE__*/React.createElement("div", {style:{fontSize:11,fontWeight:700,color:'#A78BFA',marginBottom:10}}, 'Novo decisor'),
+            ['nome','cargo','email','wa'].map(f => /*#__PURE__*/React.createElement("div", {key:f,style:{marginBottom:8}},
+              /*#__PURE__*/React.createElement("div", {style:S.lbl}, f==='wa'?'WhatsApp':f.charAt(0).toUpperCase()+f.slice(1)),
+              /*#__PURE__*/React.createElement("input", {
+                style:S.inp, placeholder: f==='nome'?'Nome completo':f==='cargo'?'Cargo / título':f==='email'?'email@empresa.com':'+55 11 9…',
+                value: novoD[f], onChange:e=>setNovoD(p=>({...p,[f]:e.target.value})),
+                onKeyDown: e=>{ if(e.key==='Enter' && f==='wa') addDecisor(); }
+              })
+            )),
+            /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8,marginTop:4}},
+              /*#__PURE__*/React.createElement("button", {onClick:addDecisor,disabled:saving,style:{...S.btn,background:'#7C3AED',color:'#fff',flex:1}}, saving?'Salvando…':'Salvar'),
+              /*#__PURE__*/React.createElement("button", {onClick:()=>setShowAddD(false),style:{...S.btn,background:'#1A1A2E',color:'#9B9BB4'}}, 'Cancelar')
+            )
+          )
+        ),
+        !loading && activeTab==='historico' && /*#__PURE__*/React.createElement("div", {style:S.sec},
+          toques.length===0 && /*#__PURE__*/React.createElement("div", {style:{color:'#4B4B6A',fontSize:12,marginBottom:12}}, 'Nenhum contato registrado.'),
+          toques.map(t => /*#__PURE__*/React.createElement("div", {key:t.id, style:S.card},
+            /*#__PURE__*/React.createElement("div", {style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}},
+              /*#__PURE__*/React.createElement("span", {style:{fontSize:10,fontFamily:'IBM Plex Mono,monospace',color:'#9B9BB4'}},
+                (t.data?new Date(t.data).toLocaleDateString('pt-BR'):'—')+' · '+t.canal
+              ),
+              t.resultado && /*#__PURE__*/React.createElement("span", {style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',background:'#34D39922',color:'#34D399',padding:'1px 6px',borderRadius:100}}, t.resultado)
+            ),
+            t.tema && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#A78BFA',marginBottom:3}}, t.tema),
+            /*#__PURE__*/React.createElement("div", {style:{fontSize:12,color:'#F5F5F5',lineHeight:1.5}}, t.resumo)
+          )),
+          // Add toque form
+          !showAddT && /*#__PURE__*/React.createElement("button", {
+            onClick:()=>setShowAddT(true),
+            style:{...S.btn,background:'#34D39922',color:'#34D399',border:'.5px solid #34D39944',marginTop:4,width:'100%'}
+          }, '+ Registrar contato'),
+          showAddT && /*#__PURE__*/React.createElement("div", {style:{...S.card,marginTop:8}},
+            /*#__PURE__*/React.createElement("div", {style:{fontSize:11,fontWeight:700,color:'#34D399',marginBottom:10}}, 'Novo contato'),
+            /*#__PURE__*/React.createElement("div", {style:{marginBottom:8}},
+              /*#__PURE__*/React.createElement("div", {style:S.lbl}, 'Canal'),
+              /*#__PURE__*/React.createElement("select", {
+                value:novoT.canal, onChange:e=>setNovoT(p=>({...p,canal:e.target.value})),
+                style:{...S.inp,appearance:'none'}
+              }, ['email','whatsapp','ligacao','reuniao','linkedin','outro'].map(c=>
+                /*#__PURE__*/React.createElement("option",{key:c,value:c}, c)
+              ))
+            ),
+            /*#__PURE__*/React.createElement("div", {style:{marginBottom:8}},
+              /*#__PURE__*/React.createElement("div", {style:S.lbl}, 'Tema / assunto'),
+              /*#__PURE__*/React.createElement("input", {style:S.inp, placeholder:'Ex: Proposta CR.IA, Follow-up reunião…', value:novoT.tema, onChange:e=>setNovoT(p=>({...p,tema:e.target.value}))})
+            ),
+            /*#__PURE__*/React.createElement("div", {style:{marginBottom:8}},
+              /*#__PURE__*/React.createElement("div", {style:S.lbl}, 'Resumo *'),
+              /*#__PURE__*/React.createElement("textarea", {
+                style:{...S.inp,minHeight:60,resize:'vertical'}, placeholder:'O que foi dito / decidido…',
+                value:novoT.resumo, onChange:e=>setNovoT(p=>({...p,resumo:e.target.value}))
+              })
+            ),
+            /*#__PURE__*/React.createElement("div", {style:{marginBottom:8}},
+              /*#__PURE__*/React.createElement("div", {style:S.lbl}, 'Resultado'),
+              /*#__PURE__*/React.createElement("input", {style:S.inp, placeholder:'Ex: reunião marcada, proposta enviada, sem resposta…', value:novoT.resultado, onChange:e=>setNovoT(p=>({...p,resultado:e.target.value}))})
+            ),
+            /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8,marginTop:4}},
+              /*#__PURE__*/React.createElement("button", {onClick:addToque,disabled:saving,style:{...S.btn,background:'#34D399',color:'#111',flex:1}}, saving?'Salvando…':'Salvar'),
+              /*#__PURE__*/React.createElement("button", {onClick:()=>setShowAddT(false),style:{...S.btn,background:'#1A1A2E',color:'#9B9BB4'}}, 'Cancelar')
+            )
+          )
+        )
+      ),
+      // ── Footer: email + descartar + deletar
+      /*#__PURE__*/React.createElement("div", {style:{borderTop:'.5px solid #2D2D44',padding:'12px 18px',display:'flex',flexDirection:'column',gap:8,flexShrink:0}},
+        /*#__PURE__*/React.createElement("button", {onClick:gerarEmail, style:{...S.btn,background:'#1e3a5f',color:'#60A5FA',border:'.5px solid #2563eb44',width:'100%'}},
+          copied ? '✅ Copiado!' : '📋 Copiar email de status'
+        ),
+        /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8}},
+          card.id && /*#__PURE__*/React.createElement("button", {
+            onClick:()=>onDescartar(card.id),
+            style:{...S.btn,background:'#78350f22',color:'#fbbf24',border:'.5px solid #78350f44',flex:1}
+          }, '🚫 Desistimos'),
+          card.id && /*#__PURE__*/React.createElement("button", {
+            onClick:()=>onDeletar(card.id),
+            style:{...S.btn,background:'#7f1d1d22',color:'#f87171',border:'.5px solid #7f1d1d44'}
+          }, '🗑 Deletar')
+        )
+      )
+    )
+  );
 }
 function PipelineCardModal({
   card,

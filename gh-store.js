@@ -245,6 +245,77 @@
     } catch (e) {}
   }
 
+  /* ── crm_kanban / crm_decisores / crm_toques ────────────────── */
+
+  async function getEmpresaIdByNome(nome) {
+    if (!supa) return null;
+    try {
+      var sess = await getSession();
+      if (!sess) return null;
+      var res = await supa.from('crm_kanban')
+        .select('id, empresa_id').eq('nome', nome).maybeSingle();
+      return (res && res.data) ? res.data : null;
+    } catch(e) { return null; }
+  }
+
+  async function getDecisores(empresaId) {
+    if (!supa || !empresaId) return [];
+    try {
+      var sess = await getSession();
+      if (!sess) return [];
+      var res = await supa.from('crm_decisores')
+        .select('id, nome, cargo, email, email_valido, wa, linkedin_url, status, ultimo_toque_em, ultimo_tema, gancho, observacoes')
+        .eq('empresa_id', empresaId)
+        .neq('status', 'inativo')
+        .order('nome');
+      return (res && res.data) ? res.data : [];
+    } catch(e) { return []; }
+  }
+
+  async function saveDecisor(data) {
+    if (!supa) return null;
+    try {
+      var sess = await getSession();
+      if (!sess) return null;
+      var row = Object.assign({}, data, { atualizado_em: new Date().toISOString() });
+      if (!row.id) {
+        row.fonte = 'manual';
+        row.status = 'ativo';
+        row.temperatura = 0;
+        row.wa_verificado = false;
+        row.criado_em = new Date().toISOString();
+      }
+      var res = await supa.from('crm_decisores')
+        .upsert(row, { onConflict: 'id' }).select().single();
+      return (res && res.data) ? res.data : null;
+    } catch(e) { return null; }
+  }
+
+  async function getToques(empresaId) {
+    if (!supa || !empresaId) return [];
+    try {
+      var sess = await getSession();
+      if (!sess) return [];
+      var res = await supa.from('crm_toques')
+        .select('id, decisor_id, canal, direcao, tema, assunto, resumo, data, resultado')
+        .eq('empresa_id', empresaId)
+        .order('data', { ascending: false })
+        .limit(50);
+      return (res && res.data) ? res.data : [];
+    } catch(e) { return []; }
+  }
+
+  async function saveToque(data) {
+    if (!supa) return null;
+    try {
+      var sess = await getSession();
+      if (!sess) return null;
+      var res = await supa.from('crm_toques')
+        .insert(Object.assign({}, data, { fonte: 'manual' })).select().single();
+      return (res && res.data) ? res.data : null;
+    } catch(e) { return null; }
+  }
+
   window.sharedGet             = sharedGet;
   window.sharedSet             = sharedSet;
   window.personalGet           = personalGet;
@@ -256,6 +327,11 @@
   window.__kanbanDeletar       = kanbanDeletar;
   window.__getEstrelas         = getEstrelas;
   window.__setEstrela          = setEstrela;
+  window.__getEmpresaIdByNome  = getEmpresaIdByNome;
+  window.__getDecisores        = getDecisores;
+  window.__saveDecisor         = saveDecisor;
+  window.__getToques           = getToques;
+  window.__saveToque           = saveToque;
 
   console.log('[gh-store v2] ok — supa:', supa ? 'conectado' : 'offline (localStorage only)');
 })();
