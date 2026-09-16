@@ -14,7 +14,8 @@
 | A4 — Sync dry-run + apply | ✅ | No-op — Supabase já canônico |
 | 0.2 — Magic link preview | ✅ | Confirmado pelo usuário |
 | 0.6 — Tag pre-etapa5 | ✅ | `git tag pre-etapa5 main` → commit 072d2b2 |
-| 0.6 — Merge etapa5→main | ⏳ | Aguardando aprovação do usuário |
+| 0.6 — Merge etapa5→main | ✅ | Merge 354b077 → fix 3d137af (gh-store.js no index.html) |
+| 0.6 — Produção confirmada | ✅ | Auth gate visível em galeria-holding.vercel.app |
 
 ---
 
