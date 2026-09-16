@@ -3309,8 +3309,23 @@ function App() {
   const switchGrupo = g => {
     setCurGrupo(g);
     setCurLead(null);
-    // Ao clicar numa empresa, vai direto para o pipeline dela
     setViewMode('hotpipeline');
+  };
+  // ── Fase B — navegação principal ──────────────────────────────
+  const [navSection, setNavSection] = useState('base'); // holding|agencia|aprovar|base|ferramentas
+  const [agenciaId, setAgenciaId] = useState('gaia');
+  const [agenciaTab, setAgenciaTab] = useState('pipeline'); // pipeline|noticias|servicos|cases|credenciais|textos
+  const ALL_AGENCIAS = [
+    ...(typeof GRUPO !== 'undefined' ? GRUPO : []),
+    {id:'atelie', name:'Ateliê', color:'#E879F9', rgb:'232,121,249'},
+    {id:'frame', name:'Frame', color:'#38BDF8', rgb:'56,189,248'},
+    {id:'studioga', name:'Studio GA', color:'#A3E635', rgb:'163,230,53'}
+  ];
+  const curAgencia = ALL_AGENCIAS.find(a => a.id === agenciaId) || ALL_AGENCIAS[0];
+  const navTo = (section, agId, tab) => {
+    setNavSection(section);
+    if (agId) { setAgenciaId(agId); setCurGrupo(GRUPO.find(g => g.id === agId) || GRUPO[0]); }
+    if (tab) setAgenciaTab(tab);
   };
   const [alertaBadge, setAlertaBadge] = useState(() => lsGet("gh_alertas_v2", []).filter(a => !a.lido).length);
   const [showTutorial, setShowTutorial] = useState(() => {
@@ -3641,124 +3656,29 @@ function App() {
       letterSpacing: .5,
       whiteSpace: "nowrap"
     }
-  }, "GALERIA HOLDING")), /*#__PURE__*/React.createElement("div", {
-    className: "tabs-row"
-  }, GRUPO.map(g => /*#__PURE__*/React.createElement("div", {
-    key: g.id,
-    className: "ctab" + (curGrupo.id === g.id ? " on" : ""),
-    style: {
-      "--tc": g.color
-    },
-    onClick: () => switchGrupo(g)
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "tdot",
-    style: {
-      background: g.color
-    }
-  }), /*#__PURE__*/React.createElement("span", {
-    className: "tname",
-    style: curGrupo.id === g.id ? {
-      color: g.color
-    } : {}
-  }, g.name)))), /*#__PURE__*/React.createElement("div", {
-    className: "tb-right",
-    style: {
-      gap: 4
-    }
-  }, [["aprovarhoje", "✅ Aprovar hoje"], ["estrelas", "⭐ Estrelas"], ["bomdias", "☀️ Bom Dia"], ["diario", "📓 Diário"], ["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["blocklist", "🚫 Blocklist"], ["agente", "🚀 Agente"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
-    key: v,
-    onClick: () => switchView(v),
-    style: {
-      padding: "4px 8px",
-      border: ".5px solid",
-      borderRadius: 4,
-      fontSize: 9,
-      fontFamily: "IBM Plex Mono,monospace",
-      cursor: "pointer",
-      whiteSpace: "nowrap",
-      borderColor: viewMode === v ? "#FF6B2B" : "#2D2D44",
-      background: viewMode === v ? "rgba(255,107,43,.1)" : "transparent",
-      color: viewMode === v ? "#FF6B2B" : "#9B9BB4"
-    }
-  }, l)), alertaBadge > 0 && /*#__PURE__*/React.createElement("span", {
-    style: {
-      background: "#E24B4A",
-      color: "#fff",
-      borderRadius: "50%",
-      width: 16,
-      height: 16,
-      fontSize: 9,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      flexShrink: 0
-    }
-  }, alertaBadge), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setToolsOpen(true),
-    style: {
-      padding: "4px 8px",
-      border: ".5px solid #2D2D44",
-      borderRadius: 4,
-      background: "transparent",
-      color: "#9B9BB4",
-      fontSize: 9,
-      fontFamily: "IBM Plex Mono,monospace",
-      cursor: "pointer"
-    },
-    title: "Backup & APIs"
-  }, "🛟"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setDashOpen(true),
-    style: {
-      padding: "4px 8px",
-      border: ".5px solid #2D2D44",
-      borderRadius: 4,
-      background: "transparent",
-      color: "#9B9BB4",
-      fontSize: 9,
-      fontFamily: "IBM Plex Mono,monospace",
-      cursor: "pointer"
-    }
-  }, "📊 Dash"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => setShowTutorial(true),
-    style: {
-      padding: "4px 8px",
-      border: ".5px solid #2D2D44",
-      borderRadius: 4,
-      background: "transparent",
-      color: "#9B9BB4",
-      fontSize: 9,
-      fontFamily: "IBM Plex Mono,monospace",
-      cursor: "pointer"
-    }
-  }, "?"), /*#__PURE__*/React.createElement("button", {
-    className: "cfgbtn",
-    onClick: () => {
-      setCfgPD(pdKey);
-      setCfgClaude(getClaudeKey());
-      setCfgOpen(true);
-    },
-    style: {
-      borderColor: getClaudeKey() ? "" : "rgba(255,107,43,.5)",
-      color: getClaudeKey() ? "" : "#FF6B2B"
-    },
-    title: getClaudeKey() ? "Configurações" : "⚠ Configure a Claude API Key"
-  }, "⚙", !getClaudeKey() && " ⚠"), /*#__PURE__*/React.createElement("button", {
-    className: "resbtn",
-    onClick: () => setResOpen(true)
-  }, "⚠"), /*#__PURE__*/React.createElement("button", {
-    onClick: logout,
-    style: {
-      padding: "4px 8px",
-      border: ".5px solid #2D2D44",
-      borderRadius: 4,
-      background: "transparent",
-      color: "#555",
-      fontSize: 9,
-      fontFamily: "IBM Plex Mono,monospace",
-      cursor: "pointer"
-    },
-    title: "Sair"
-  }, curUser?.name?.split(" ")[0] || "Sair", " ↩"))), showTutorial && /*#__PURE__*/React.createElement(TutorialOverlay, {
+  }, "GALERIA HOLDING")),
+  React.createElement("div", { style:{ display:'flex', alignItems:'stretch', flex:1 } },
+    [['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar hoje'],['base','Base'],['ferramentas','Ferramentas']].map(([s, l]) =>
+      React.createElement("div", {
+        key: s,
+        onClick: () => { if (s === 'ferramentas') { setToolsOpen(true); } else { navTo(s, null, null); } },
+        style: { display:'flex', alignItems:'center', padding:'0 16px', borderRight:'.5px solid #2D2D44', borderBottom: navSection === s ? '2px solid #FF6B2B' : '2px solid transparent', cursor:'pointer', fontFamily:'IBM Plex Mono,monospace', fontSize:10, color: navSection === s ? '#FF6B2B' : '#9B9BB4', letterSpacing:'.5px', transition:'all .15s', whiteSpace:'nowrap', flexShrink:0 }
+      }, l)
+    )
+  ),
+  React.createElement("div", { className:"tb-right", style:{ gap:6 } },
+    alertaBadge > 0 && React.createElement("span", { style:{ background:'#E24B4A', color:'#fff', borderRadius:'50%', width:16, height:16, fontSize:9, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 } }, alertaBadge),
+    React.createElement("button", { onClick:() => setToolsOpen(true), style:{ padding:'4px 8px', border:'.5px solid #2D2D44', borderRadius:4, background:'transparent', color:'#9B9BB4', fontSize:9, fontFamily:'IBM Plex Mono,monospace', cursor:'pointer' }, title:'Backup & APIs' }, "🛟"),
+    React.createElement("button", { className:'cfgbtn', onClick:() => { setCfgPD(pdKey); setCfgClaude(getClaudeKey()); setCfgOpen(true); }, style:{ borderColor: getClaudeKey() ? '' : 'rgba(255,107,43,.5)', color: getClaudeKey() ? '' : '#FF6B2B' }, title: getClaudeKey() ? 'Configurações' : '⚠ Configure a Claude API Key' }, "⚙", !getClaudeKey() && " ⚠"),
+    React.createElement("button", { className:'resbtn', onClick:() => setResOpen(true) }, "⚠"),
+    React.createElement("button", { onClick:logout, style:{ padding:'4px 8px', border:'.5px solid #2D2D44', borderRadius:4, background:'transparent', color:'#555', fontSize:9, fontFamily:'IBM Plex Mono,monospace', cursor:'pointer' }, title:'Sair' }, curUser?.name?.split(" ")[0] || "Sair", " ↩")
+  )), navSection === 'agencia' && React.createElement("div", { style:{ display:'flex', alignItems:'stretch', background:'#080810', borderBottom:'.5px solid #1A1A2E', paddingLeft:60, height:30 } },
+    ALL_AGENCIAS.map(a => React.createElement("div", { key:a.id, onClick:()=>navTo('agencia', a.id, null), style:{ display:'flex', alignItems:'center', padding:'0 12px', borderRight:'.5px solid #1A1A2E', borderBottom: agenciaId===a.id ? '2px solid '+a.color : '2px solid transparent', cursor:'pointer', fontFamily:'IBM Plex Mono,monospace', fontSize:9, color: agenciaId===a.id ? a.color : '#555', whiteSpace:'nowrap', flexShrink:0, transition:'all .15s' } }, a.name))
+  ), navSection === 'agencia' && React.createElement("div", { style:{ display:'flex', alignItems:'stretch', background:'#080810', borderBottom:'.5px solid #1A1A2E', paddingLeft:60, height:26 } },
+    [['pipeline','Pipeline'],['noticias','Notícias'],['servicos','Serviços'],['cases','Cases'],['credenciais','Credenciais'],['textos','Textos'],['enviar','Enviar pipeline']].map(([t,l]) =>
+      React.createElement("div", { key:t, onClick:()=>setAgenciaTab(t), style:{ display:'flex', alignItems:'center', padding:'0 12px', fontFamily:'IBM Plex Mono,monospace', fontSize:9, cursor:'pointer', borderBottom: agenciaTab===t ? '2px solid #FF6B2B' : '2px solid transparent', color: agenciaTab===t ? '#FF6B2B' : '#555', transition:'all .15s', whiteSpace:'nowrap' } }, l)
+    )
+  ), showTutorial && /*#__PURE__*/React.createElement(TutorialOverlay, {
     onClose: () => setShowTutorial(false)
   }), abordagemGlobal && /*#__PURE__*/React.createElement(AbordagemModal, {
     decisor: abordagemGlobal.decisor || {},
@@ -3773,7 +3693,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), viewMode === "blocklist" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'holding' ? React.createElement(HoldingHome, null) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel" }, React.createElement(AprovacaoHoje, null)) : viewMode === "blocklist" ? /*#__PURE__*/React.createElement("div", {
     className: "panel"
   }, typeof BlocklistView !== "undefined" ? /*#__PURE__*/React.createElement(BlocklistView, null) : /*#__PURE__*/React.createElement("div", {
     style: { color: "#9B9BB4", fontFamily: "IBM Plex Mono,monospace", fontSize: 12 }
@@ -4856,6 +4776,40 @@ function PipelineView({
     onClose: () => setShareOpen(false)
   }));
 }
+function HoldingHome() {
+  return React.createElement("div", { style:{ display:'flex', flex:1, flexDirection:'column', overflow:'hidden' } },
+    React.createElement("div", { style:{ display:'flex', gap:16, padding:'12px 20px', flexWrap:'wrap' } },
+      React.createElement("div", { style:{ background:'#0D0D1A', border:'.5px solid #1A1A2E', borderRadius:6, padding:'10px 16px', fontFamily:'IBM Plex Mono,monospace', fontSize:9, color:'#9B9BB4', flex:'0 0 auto' } },
+        React.createElement("div", { style:{ fontSize:18, color:'#FF6B2B', fontWeight:700, lineHeight:1 } }, "97"),
+        React.createElement("div", null, "cards kanban")
+      )
+    ),
+    React.createElement("div", { style:{ display:'flex', gap:16, flex:1, overflow:'hidden', padding:'0 20px 20px' } },
+      React.createElement("div", { style:{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', gap:8 } },
+        React.createElement("div", { style:{ fontFamily:'IBM Plex Mono,monospace', fontSize:9, color:'#555', marginBottom:4 } }, "GAIA PIPELINE"),
+        React.createElement(PipelineView, { tipo:'gaia' })
+      ),
+      React.createElement("div", { style:{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', gap:8 } },
+        React.createElement("div", { style:{ fontFamily:'IBM Plex Mono,monospace', fontSize:9, color:'#555', marginBottom:4 } }, "HOLDING PIPELINE"),
+        React.createElement(PipelineView, { tipo:'holding' })
+      )
+    )
+  );
+}
+
+function AgenciaHome({ agencia, tab, navTo }) {
+  const placeholder = React.createElement("div", { style:{ display:'flex', alignItems:'center', justifyContent:'center', flex:1, color:'#555', fontFamily:'IBM Plex Mono,monospace', fontSize:11 } }, tab, " — em breve");
+  return React.createElement("div", { style:{ display:'flex', flex:1, flexDirection:'column', overflow:'hidden' } },
+    React.createElement("div", { style:{ padding:'8px 20px 0', display:'flex', alignItems:'center', gap:8 } },
+      React.createElement("div", { style:{ width:8, height:8, borderRadius:'50%', background: agencia ? agencia.color : '#FF6B2B', flexShrink:0 } }),
+      React.createElement("span", { style:{ fontFamily:'IBM Plex Mono,monospace', fontSize:11, color:'#9B9BB4', fontWeight:700 } }, agencia ? agencia.name.toUpperCase() : '')
+    ),
+    tab === 'pipeline' ? React.createElement("div", { style:{ flex:1, overflow:'hidden', padding:'8px 20px 20px' } }, React.createElement(PipelineView, { tipo: agencia && agencia.id === 'galeria' ? 'gaia' : 'holding' })) :
+    tab === 'enviar' ? React.createElement("div", { className:'panel' }, React.createElement(AprovacaoHoje, null)) :
+    placeholder
+  );
+}
+
 function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
   const nome = card.name || card.nome || '';
   const [loading, setLoading]       = React.useState(true);
