@@ -2243,35 +2243,58 @@ function today() {
 function nowStr() {
   return new Date().toLocaleString("pt-BR");
 }
-async function sharedGet(k) {
-  try {
-    const v = localStorage.getItem("ghub_sh_" + k);
-    return v ? JSON.parse(v) : null;
-  } catch (e) {
-    return null;
-  }
-}
-async function sharedSet(k, v) {
-  try {
-    localStorage.setItem("ghub_sh_" + k, JSON.stringify(v));
-  } catch (e) {}
-}
-async function personalGet(k) {
-  try {
-    const v = localStorage.getItem("ghub_me_" + k);
-    return v ? JSON.parse(v) : null;
-  } catch (e) {
-    return null;
-  }
-}
-async function personalSet(k, v) {
-  try {
-    if (v === null) {
-      localStorage.removeItem("ghub_me_" + k);
-    } else {
-      localStorage.setItem("ghub_me_" + k, JSON.stringify(v));
-    }
-  } catch (e) {}
+// sharedGet/Set e personalGet/Set agora vêm de gh-store.js (carregado antes)
+
+function AprovacaoHoje() {
+  const [itens, setItens] = useState(null);
+  const [busy, setBusy] = useState({});
+  useEffect(() => {
+    (async () => {
+      const fn = window.__filaHoje;
+      if (fn) { const data = await fn(); setItens(data); }
+      else setItens([]);
+    })();
+  }, []);
+  const aprovar = async (id) => {
+    setBusy(p => ({ ...p, [id]: 'ok' }));
+    await (window.__filaAprovar || (async () => {}))(id);
+    setItens(p => p.filter(x => x.id !== id));
+  };
+  const descartar = async (id) => {
+    setBusy(p => ({ ...p, [id]: 'skip' }));
+    await (window.__filaDescartar || (async () => {}))(id);
+    setItens(p => p.filter(x => x.id !== id));
+  };
+  const s = { fontFamily: "'IBM Plex Mono',monospace" };
+  if (itens === null) return /*#__PURE__*/React.createElement("div", { style: { flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"#2D2D44",...s,fontSize:10 } }, "Carregando fila...");
+  if (itens.length === 0) return /*#__PURE__*/React.createElement("div", { style: { flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,opacity:.3 } },
+    /*#__PURE__*/React.createElement("div", { style: { fontSize:36 } }, "✅"),
+    /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:11,color:"#F5F5F5" } }, "Nada para aprovar hoje")
+  );
+  return /*#__PURE__*/React.createElement("div", { style: { flex:1,overflow:"hidden",display:"flex",flexDirection:"column" } },
+    /*#__PURE__*/React.createElement("div", { style: { padding:"14px 20px 10px",borderBottom:".5px solid #2D2D44",display:"flex",alignItems:"center",gap:10,flexShrink:0 } },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize:15,fontWeight:500,color:"#F5F5F5",letterSpacing:"-.3px" } }, "Aprovar hoje"),
+      /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:10,padding:"2px 9px",borderRadius:100,background:"rgba(255,107,43,.1)",color:"#FF6B2B",border:".5px solid rgba(255,107,43,.3)" } }, itens.length)
+    ),
+    /*#__PURE__*/React.createElement("div", { style: { flex:1,overflowY:"auto",padding:"14px 20px" } },
+      itens.map(item => /*#__PURE__*/React.createElement("div", { key:item.id, style: { background:"#1A1A2E",border:".5px solid #2D2D44",borderRadius:10,padding:14,marginBottom:10,display:"flex",alignItems:"flex-start",gap:12 } },
+        /*#__PURE__*/React.createElement("div", { style: { flex:1 } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize:12,fontWeight:600,color:"#F5F5F5",marginBottom:3 } }, item.empresa_nome),
+          item.decisor_nome && /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:10,color:"#FF6B2B",marginBottom:3 } }, item.decisor_nome, item.decisor_email ? " · " + item.decisor_email : ""),
+          /*#__PURE__*/React.createElement("div", { style: { display:"flex",gap:6,flexWrap:"wrap",marginTop:4 } },
+            item.canal && /*#__PURE__*/React.createElement("span", { style: { ...s,fontSize:8,padding:"2px 7px",borderRadius:100,background:"rgba(96,165,250,.1)",color:"#60A5FA",border:".5px solid rgba(96,165,250,.2)" } }, item.canal),
+            item.data_sugerida && /*#__PURE__*/React.createElement("span", { style: { ...s,fontSize:8,color:"#9B9BB4" } }, item.data_sugerida),
+            item.fonte && /*#__PURE__*/React.createElement("span", { style: { ...s,fontSize:8,color:"#2D2D44" } }, item.fonte)
+          ),
+          item.nota && /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:10,color:"#9B9BB4",marginTop:6,borderLeft:"2px solid #2D2D44",paddingLeft:7,lineHeight:1.6 } }, item.nota)
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { display:"flex",flexDirection:"column",gap:5,flexShrink:0 } },
+          /*#__PURE__*/React.createElement("button", { className:"gh-btn-primary", style:{ padding:"5px 14px",fontSize:11 }, onClick:()=>aprovar(item.id), disabled:!!busy[item.id] }, "✓ Aprovar"),
+          /*#__PURE__*/React.createElement("button", { className:"gh-btn-ghost", style:{ padding:"5px 14px",fontSize:11 }, onClick:()=>descartar(item.id), disabled:!!busy[item.id] }, "✗ Pular")
+        )
+      ))
+    )
+  );
 }
 async function logActivity(curUser, empresa, grupoName, tipo, tipoLabel, decisor, nota) {
   const entry = {
@@ -3190,133 +3213,44 @@ function ModalPortal({
   if (!el || !ReactDOM.createPortal) return children;
   return ReactDOM.createPortal(children, el);
 }
-function LoginScreen({
-  onLogin
-}) {
-  const [name, setName] = useState("");
-  const [pass, setPass] = useState("");
-  const [err, setErr] = useState("");
+function MagicLinkScreen() {
+  const [email, setEmail] = useState("pedroica@gmail.com");
+  const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
-  const doLogin = async () => {
-    setErr("");
-    setLoading(true);
-    let users = (await sharedGet("users")) || {};
-    if (Object.keys(users).length === 0) {
-      const id = uid();
-      users[id] = {
-        id,
-        name: "Pedro Ica",
-        pass: "galeria2024",
-        role: "admin"
-      };
-      await sharedSet("users", users);
-    }
-    const u = Object.values(users).find(u => u.name.toLowerCase() === name.toLowerCase() && u.pass === pass);
-    if (!u) {
-      setErr("Nome ou senha incorretos.");
-      setLoading(false);
-      return;
-    }
-    await personalSet("session", {
-      uid: u.id,
-      name: u.name,
-      role: u.role
-    });
-    onLogin(u);
+  const [err, setErr] = useState("");
+  const send = async () => {
+    if (!email || !email.includes("@")) { setErr("E-mail inválido."); return; }
+    setErr(""); setLoading(true);
+    const res = await (window.__supaSendMagicLink || (async () => ({ error: new Error("gh-store não carregado") })))(email);
     setLoading(false);
+    if (res && res.error) { setErr(res.error.message || "Erro ao enviar."); return; }
+    setSent(true);
   };
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      height: "100vh",
-      background: "#060606"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      width: "100%",
-      maxWidth: 360,
-      padding: 36,
-      background: "#0e0e0e",
-      border: "1px solid #1e1e1e",
-      borderRadius: 12
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: "center",
-      marginBottom: 28
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 24,
-      fontWeight: 800,
-      fontFamily: "Syne,sans-serif",
-      letterSpacing: -1
-    }
-  }, "GALERIA HOLDING"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      fontFamily: "DM Mono,monospace",
-      color: "#333",
-      letterSpacing: 3,
-      marginTop: 4
-    }
-  }, "CENTRAL COMERCIAL")), /*#__PURE__*/React.createElement("div", {
-    className: "frow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flbl"
-  }, "NOME"), /*#__PURE__*/React.createElement("input", {
-    className: "finp",
-    placeholder: "Seu nome",
-    value: name,
-    onChange: e => setName(e.target.value)
-  })), /*#__PURE__*/React.createElement("div", {
-    className: "frow"
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "flbl"
-  }, "SENHA"), /*#__PURE__*/React.createElement("input", {
-    className: "finp",
-    type: "password",
-    placeholder: "Senha",
-    value: pass,
-    onChange: e => setPass(e.target.value),
-    onKeyDown: e => e.key === "Enter" && doLogin()
-  })), err && /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 11,
-      color: "#FF4757",
-      fontFamily: "DM Mono,monospace",
-      marginBottom: 12,
-      padding: "8px 12px",
-      background: "rgba(255,71,87,.06)",
-      border: "1px solid rgba(255,71,87,.2)",
-      borderRadius: 5
-    }
-  }, err), /*#__PURE__*/React.createElement("button", {
-    onClick: doLogin,
-    disabled: loading,
-    style: {
-      width: "100%",
-      padding: "11px 0",
-      borderRadius: 5,
-      border: "none",
-      background: "#E8C97A",
-      color: "#000",
-      fontWeight: 800,
-      fontSize: 13,
-      cursor: "pointer",
-      marginTop: 8
-    }
-  }, loading ? "Entrando..." : "Entrar"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      fontFamily: "DM Mono,monospace",
-      color: "#1a1a1a",
-      textAlign: "center",
-      marginTop: 12
-    }
-  }, "v2.0 — Galeria Holding")));
+  const s = { fontFamily: "'IBM Plex Mono',monospace" };
+  if (sent) return /*#__PURE__*/React.createElement("div", { style: { display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0D0D0D" } },
+    /*#__PURE__*/React.createElement("div", { style: { textAlign:"center",maxWidth:340,padding:36 } },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize:32,marginBottom:16 } }, "📬"),
+      /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:13,color:"#F5F5F5",marginBottom:8 } }, "Link enviado para"),
+      /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:11,color:"#FF6B2B",marginBottom:20 } }, email),
+      /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:10,color:"#9B9BB4",lineHeight:1.7 } }, "Verifique sua caixa de entrada e clique no link para entrar. Você pode fechar esta aba.")
+    )
+  );
+  return /*#__PURE__*/React.createElement("div", { style: { display:"flex",alignItems:"center",justifyContent:"center",height:"100vh",background:"#0D0D0D" } },
+    /*#__PURE__*/React.createElement("div", { style: { width:"100%",maxWidth:360,padding:36,background:"#1A1A2E",border:".5px solid #2D2D44",borderRadius:12 } },
+      /*#__PURE__*/React.createElement("div", { style: { textAlign:"center",marginBottom:28 } },
+        /*#__PURE__*/React.createElement("div", { style: { width:8,height:8,borderRadius:2,background:"#FF6B2B",margin:"0 auto 14px" } }),
+        /*#__PURE__*/React.createElement("div", { style: { fontSize:20,fontWeight:500,color:"#F5F5F5",letterSpacing:"-.3px" } }, "Galeria Holding"),
+        /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:9,color:"#9B9BB4",letterSpacing:2,marginTop:4 } }, "CENTRAL COMERCIAL")
+      ),
+      /*#__PURE__*/React.createElement("div", { style: { marginBottom:10 } },
+        /*#__PURE__*/React.createElement("label", { style: { ...s,fontSize:9,color:"#9B9BB4",letterSpacing:.5,textTransform:"uppercase",display:"block",marginBottom:5 } }, "E-mail"),
+        /*#__PURE__*/React.createElement("input", { className:"gh-input", type:"email", placeholder:"seu@email.com", value:email, onChange:e=>setEmail(e.target.value), onKeyDown:e=>e.key==="Enter"&&send() })
+      ),
+      err && /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:10,color:"#E24B4A",marginBottom:10 } }, err),
+      /*#__PURE__*/React.createElement("button", { className:"gh-btn-primary", onClick:send, disabled:loading, style:{ width:"100%",marginTop:6 } }, loading ? "Enviando..." : "Enviar link de acesso"),
+      /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:9,color:"#2D2D44",textAlign:"center",marginTop:14 } }, "Acesso por magic link — sem senha")
+    )
+  );
 }
 function App() {
   const [curGrupo, setCurGrupo] = useState(GRUPO[0]);
@@ -3389,28 +3323,50 @@ function App() {
   const lastReview = loadSt("ghub_res_review", null);
   const showReminder = !lastReview || new Date() - new Date(lastReview) > 90 * 24 * 60 * 60 * 1000;
   useEffect(() => {
+    let sub = null;
     (async () => {
-      const sess = await personalGet("session");
-      if (sess) {
+      // Tenta sessão Supabase primeiro
+      const supaSess = await (window.__supaGetSession || (async () => null))();
+      if (supaSess) {
         setCurUser({
-          id: sess.uid || "pedro",
-          name: sess.name || "Pedro Ica",
-          role: sess.role || "admin"
+          id: supaSess.user.id,
+          name: (supaSess.user.user_metadata && supaSess.user.user_metadata.name) || supaSess.user.email || "Pedro Ica",
+          role: (supaSess.user.user_metadata && supaSess.user.user_metadata.role) || "admin"
         });
+        setSessLoading(false);
+        if (typeof window.__hydrateFromSupabase === 'function') window.__hydrateFromSupabase();
+      } else {
+        // Fallback: sessão cacheada no localStorage
+        const localSess = await personalGet("session");
+        if (localSess) {
+          setCurUser({ id: localSess.uid || "pedro", name: localSess.name || "Pedro Ica", role: localSess.role || "admin" });
+        }
+        setSessLoading(false);
       }
-      setSessLoading(false);
     })();
+    // Escuta mudanças de auth (magic link redirect)
+    if (window.__supaOnAuthChange) {
+      const { data } = window.__supaOnAuthChange((event, session) => {
+        if (session) {
+          setCurUser({
+            id: session.user.id,
+            name: (session.user.user_metadata && session.user.user_metadata.name) || session.user.email || "Pedro Ica",
+            role: (session.user.user_metadata && session.user.user_metadata.role) || "admin"
+          });
+          // Hidrata localStorage com dados do Supabase logo após o login
+          if (typeof window.__hydrateFromSupabase === 'function') {
+            window.__hydrateFromSupabase();
+          }
+        } else if (event === "SIGNED_OUT") {
+          setCurUser(null);
+        }
+      });
+      if (data && data.subscription) sub = data.subscription;
+    }
+    return () => { if (sub) sub.unsubscribe(); };
   }, []);
-  const onLogin = async user => {
-    setCurUser(user);
-    await personalSet("session", {
-      uid: user.id,
-      name: user.name,
-      role: user.role
-    });
-  };
   const logout = async () => {
-    await personalSet("session", null);
+    await (window.__supaSignOut || (async () => {}))();
     setCurUser(null);
   };
   const onActivitySaved = async (empresa, tipo, tipoLabel, decisor, nota) => {
@@ -3562,9 +3518,7 @@ function App() {
       fontSize: 12
     }
   }, "Carregando...");
-  if (!curUser) return /*#__PURE__*/React.createElement(LoginScreen, {
-    onLogin: onLogin
-  });
+  if (!curUser) return /*#__PURE__*/React.createElement(MagicLinkScreen, null);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -3711,7 +3665,7 @@ function App() {
     style: {
       gap: 4
     }
-  }, [["bomdias", "☀️ Bom Dia"], ["diario", "📓 Diário"], ["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["blocklist", "🚫 Blocklist"], ["agente", "🚀 Agente"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["aprovarhoje", "✅ Aprovar hoje"], ["estrelas", "⭐ Estrelas"], ["bomdias", "☀️ Bom Dia"], ["diario", "📓 Diário"], ["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["blocklist", "🚫 Blocklist"], ["agente", "🚀 Agente"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
     key: v,
     onClick: () => switchView(v),
     style: {
@@ -4050,7 +4004,13 @@ function App() {
     accs: accs,
     curGrupo: curGrupo,
     setView: switchView
-  })) : viewMode === "bomdias" ? /*#__PURE__*/React.createElement("div", {
+  })) : viewMode === "aprovarhoje" ? /*#__PURE__*/React.createElement("div", {
+    className: "ws",
+    style: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }
+  }, /*#__PURE__*/React.createElement(AprovacaoHoje, null)) : viewMode === "estrelas" ? /*#__PURE__*/React.createElement("div", {
+    className: "ws",
+    style: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }
+  }, /*#__PURE__*/React.createElement(EstrelasPorAgenciaView, { accs: accs, curGrupo: curGrupo })) : viewMode === "bomdias" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -4233,6 +4193,90 @@ function App() {
 }
 
 /* ═══════════════════════════════════════════════════════════════
+   ESTRELAS POR AGÊNCIA — rating de empresas por grupo/uuid
+   ═══════════════════════════════════════════════════════════════ */
+function StarWidget({ value, onChange, size }) {
+  const sz = size || 16;
+  return /*#__PURE__*/React.createElement("span", { style: { cursor: onChange ? "pointer" : "default", fontSize: sz, lineHeight: 1, whiteSpace: "nowrap" } },
+    [1,2,3,4,5].map(n => /*#__PURE__*/React.createElement("span", {
+      key: n,
+      title: n + " estrela" + (n > 1 ? "s" : ""),
+      onClick: onChange ? () => onChange(n === value ? 0 : n) : undefined,
+      style: { color: n <= (value || 0) ? "#FF6B2B" : "#2D2D44", transition: "color .12s" }
+    }, "★"))
+  );
+}
+
+function EstrelasPorAgenciaView({ accs, curGrupo }) {
+  const GRUPOS = typeof GRUPO !== "undefined" ? GRUPO : [];
+  const [estrelas, setEstrelas] = React.useState({});
+  const [search, setSearch] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+  const empresas = React.useMemo(() => {
+    return (typeof PROSP !== "undefined" ? PROSP : [])
+      .filter(e => e && e.nome && e.setor)
+      .filter(e => !search || e.nome.toLowerCase().includes(search.toLowerCase()))
+      .slice(0, 100);
+  }, [search]);
+
+  // Carrega estrelas do localStorage (Supabase é assíncrono; faz merge quando retorna)
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("gh_estrelas_v1");
+      if (raw) setEstrelas(JSON.parse(raw));
+    } catch (e) {}
+    setLoading(false);
+  }, []);
+
+  const handleStar = async (companyKey, grupoId, val) => {
+    // Atualiza local imediatamente
+    setEstrelas(prev => {
+      const next = { ...prev, [companyKey]: { ...(prev[companyKey] || {}), [grupoId]: val } };
+      try { localStorage.setItem("gh_estrelas_v1", JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
+    // Persiste em Supabase (com uuid=null por ora; uuid virá do companies)
+    if (window.__setEstrela) await window.__setEstrela(companyKey, grupoId, val, null);
+  };
+
+  const s = { fontFamily: "'IBM Plex Mono',monospace" };
+  return /*#__PURE__*/React.createElement("div", { style: { flex:1,overflow:"hidden",display:"flex",flexDirection:"column" } },
+    /*#__PURE__*/React.createElement("div", { style: { padding:"12px 20px 10px",borderBottom:".5px solid #2D2D44",display:"flex",alignItems:"center",gap:12,flexShrink:0,flexWrap:"wrap" } },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize:14,fontWeight:500,color:"#F5F5F5" } }, "Estrelas por Agência"),
+      /*#__PURE__*/React.createElement("input", { style: { ...s,background:"#1A1A2E",border:".5px solid #2D2D44",borderRadius:6,padding:"5px 11px",color:"#F5F5F5",fontSize:11,outline:"none",width:200 }, placeholder:"Buscar empresa...", value:search, onChange:e=>setSearch(e.target.value) })
+    ),
+    /*#__PURE__*/React.createElement("div", { style: { flex:1,overflowX:"auto",overflowY:"auto" } },
+      /*#__PURE__*/React.createElement("table", { style: { borderCollapse:"collapse",width:"100%",minWidth:600 } },
+        /*#__PURE__*/React.createElement("thead", null,
+          /*#__PURE__*/React.createElement("tr", { style: { position:"sticky",top:0,background:"#111827",zIndex:1 } },
+            /*#__PURE__*/React.createElement("th", { style: { ...s,fontSize:8,color:"#9B9BB4",textTransform:"uppercase",letterSpacing:1,padding:"10px 16px",textAlign:"left",borderBottom:".5px solid #2D2D44",minWidth:200,position:"sticky",left:0,background:"#111827" } }, "Empresa"),
+            GRUPOS.map(g => /*#__PURE__*/React.createElement("th", { key:g.id, style: { ...s,fontSize:8,color:g.id===curGrupo.id?"#FF6B2B":"#9B9BB4",textTransform:"uppercase",letterSpacing:1,padding:"10px 12px",textAlign:"center",borderBottom:".5px solid #2D2D44",whiteSpace:"nowrap" } }, g.name))
+          )
+        ),
+        /*#__PURE__*/React.createElement("tbody", null,
+          loading ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", { colSpan:GRUPOS.length+1, style:{textAlign:"center",padding:32,...s,fontSize:10,color:"#2D2D44"} }, "carregando..."))
+          : empresas.map(emp => {
+            const baseKey = curGrupo.id + "_" + emp.rank;
+            const compEstrelas = estrelas[baseKey] || {};
+            return /*#__PURE__*/React.createElement("tr", { key:emp.rank, style:{borderBottom:".5px solid #111827"} },
+              /*#__PURE__*/React.createElement("td", { style:{padding:"8px 16px",fontSize:11,color:"#F5F5F5",fontWeight:500,position:"sticky",left:0,background:"#0D0D0D",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"} }, emp.nome),
+              GRUPOS.map(g => {
+                const key = g.id + "_" + emp.rank;
+                const val = (estrelas[key] || {})[g.id] || 0;
+                const isMe = g.id === curGrupo.id;
+                return /*#__PURE__*/React.createElement("td", { key:g.id, style:{padding:"6px 12px",textAlign:"center"} },
+                  /*#__PURE__*/React.createElement(StarWidget, { value:val, size:13, onChange:isMe ? (v => handleStar(key, g.id, v)) : null })
+                );
+              })
+            );
+          })
+        )
+      )
+    )
+  );
+}
+
+/* ═══════════════════════════════════════════════════════════════
    PIPELINE VIEW — GAIA e Holding
    Visual kanban limpo, sem precisar clicar em botão extra
    ═══════════════════════════════════════════════════════════════ */
@@ -4256,6 +4300,7 @@ function PipelineView({
   const [dragId, setDragId] = React.useState(null);
   const [overCol, setOverCol] = React.useState(null);
   const [editCard, setEditCard] = React.useState(null); // card obj | {_new, col}
+  const [empresaOpen, setEmpresaOpen] = React.useState(null); // card obj
   const [filterEmp, setFilterEmp] = React.useState('Todos');
   const [search, setSearch] = React.useState('');
   const [shareOpen, setShareOpen] = React.useState(false);
@@ -4680,15 +4725,13 @@ function PipelineView({
           setDragId(null);
           setOverCol(null);
         },
-        onClick: () => setEditCard({
-          ...card
-        }),
+        onClick: () => setEmpresaOpen({...card, _colLabel: col.label}),
         style: {
           background: '#1A1A2E',
           border: `.5px solid ${dragId === card.id ? cc : '#2D2D44'}`,
           borderRadius: 8,
           padding: '10px 11px',
-          cursor: 'grab',
+          cursor: 'pointer',
           transition: 'all .15s',
           opacity: dragId === card.id ? .4 : 1
         }
@@ -4707,7 +4750,8 @@ function PipelineView({
           color: '#F5F5F5',
           lineHeight: 1.3
         }
-      }, card.name), galLabel && /*#__PURE__*/React.createElement("span", {
+      }, card.name), /*#__PURE__*/React.createElement("div", {style:{display:'flex',alignItems:'center',gap:4,flexShrink:0}},
+      galLabel && /*#__PURE__*/React.createElement("span", {
         style: {
           fontSize: 8,
           fontFamily: 'IBM Plex Mono,monospace',
@@ -4715,10 +4759,14 @@ function PipelineView({
           borderRadius: 100,
           background: galColor,
           color: '#fff',
-          whiteSpace: 'nowrap',
-          flexShrink: 0
+          whiteSpace: 'nowrap'
         }
-      }, galLabel)), (card.note || card.nota) && /*#__PURE__*/React.createElement("div", {
+      }, galLabel),
+      /*#__PURE__*/React.createElement("span", {
+        title: 'Editar card',
+        onClick: e => { e.stopPropagation(); setEditCard({...card}); },
+        style: {fontSize:10, cursor:'pointer', color:'#4B4B6A', padding:'1px 3px', borderRadius:4, lineHeight:1}
+      }, '✏️'))), (card.note || card.nota) && /*#__PURE__*/React.createElement("div", {
         style: {
           fontSize: 10,
           color: '#555',
@@ -4777,7 +4825,26 @@ function PipelineView({
         fontFamily: 'IBM Plex Mono,monospace'
       }
     }, isOver ? 'Soltar aqui' : '+ novo card'))));
-  }))), editCard && /*#__PURE__*/React.createElement(PipelineCardModal, {
+  }))), empresaOpen && /*#__PURE__*/React.createElement(EmpresaDrawer, {
+    card: empresaOpen,
+    tab: tab,
+    onClose: () => setEmpresaOpen(null),
+    onDescartar: id => {
+      const fn = window.__kanbanDescartar || (async()=>{});
+      fn(id).then(() => {
+        persist({...tab, cards: (tab.cards||[]).map(c => c.id===id ? {...c, col:'perdido'} : c)});
+        setEmpresaOpen(null);
+      });
+    },
+    onDeletar: id => {
+      if (!window.confirm('Deletar este card permanentemente?')) return;
+      const fn = window.__kanbanDeletar || (async()=>{});
+      fn(id).then(() => {
+        persist({...tab, cards: (tab.cards||[]).filter(c => c.id!==id)});
+        setEmpresaOpen(null);
+      });
+    }
+  }), editCard && /*#__PURE__*/React.createElement(PipelineCardModal, {
     card: editCard,
     cols: tab.cols || [],
     isGaia: isGaia,
@@ -4788,6 +4855,220 @@ function PipelineView({
     tab: tab,
     onClose: () => setShareOpen(false)
   }));
+}
+function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
+  const nome = card.name || card.nome || '';
+  const [loading, setLoading]       = React.useState(true);
+  const [empresaId, setEmpresaId]   = React.useState(null);
+  const [kanbanId,  setKanbanId]    = React.useState(null);
+  const [decisores, setDecisores]   = React.useState([]);
+  const [toques,    setToques]      = React.useState([]);
+  const [activeTab, setActiveTab]   = React.useState('decisores');
+  const [showAddD,  setShowAddD]    = React.useState(false);
+  const [showAddT,  setShowAddT]    = React.useState(false);
+  const [novoD, setNovoD] = React.useState({nome:'',cargo:'',email:'',wa:''});
+  const [novoT, setNovoT] = React.useState({canal:'email',tema:'',resumo:'',resultado:''});
+  const [saving,  setSaving]        = React.useState(false);
+  const [copied,  setCopied]        = React.useState(false);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      setLoading(true);
+      const match = await (window.__getEmpresaIdByNome || (async()=>null))(nome);
+      if (cancelled) return;
+      const eid = match && match.empresa_id;
+      const kid = match && match.id;
+      setEmpresaId(eid); setKanbanId(kid);
+      if (eid) {
+        const [d, t] = await Promise.all([
+          (window.__getDecisores || (async()=>[]))(eid),
+          (window.__getToques    || (async()=>[]))(eid)
+        ]);
+        if (!cancelled) { setDecisores(d); setToques(t); }
+      }
+      if (!cancelled) setLoading(false);
+    })();
+    return () => { cancelled = true; };
+  }, [nome]);
+
+  const addDecisor = async () => {
+    if (!novoD.nome.trim() || !empresaId) return;
+    setSaving(true);
+    const saved = await (window.__saveDecisor||(async()=>null))({
+      empresa_id: empresaId, nome: novoD.nome.trim(),
+      cargo: novoD.cargo.trim()||null, email: novoD.email.trim()||null, wa: novoD.wa.trim()||null
+    });
+    setSaving(false);
+    if (saved) { setDecisores(p=>[...p, saved]); setNovoD({nome:'',cargo:'',email:'',wa:''}); setShowAddD(false); }
+  };
+
+  const addToque = async () => {
+    if (!novoT.resumo.trim() || !empresaId) return;
+    setSaving(true);
+    const saved = await (window.__saveToque||(async()=>null))({
+      empresa_id: empresaId, canal: novoT.canal, direcao: 'saida',
+      tema: novoT.tema.trim()||null, resumo: novoT.resumo.trim(),
+      resultado: novoT.resultado.trim()||null, data: new Date().toISOString()
+    });
+    setSaving(false);
+    if (saved) { setToques(p=>[saved,...p]); setNovoT({canal:'email',tema:'',resumo:'',resultado:''}); setShowAddT(false); }
+  };
+
+  const gerarEmail = () => {
+    const stage = card._colLabel || card.col || '';
+    const produto = card.product || card.produto || '';
+    const dList = decisores.map(d =>
+      `• ${d.nome}${d.cargo?' — '+d.cargo:''}${d.email?' | '+d.email:''}${d.wa?' | WA: '+d.wa:''}`
+    ).join('\n') || '(nenhum cadastrado)';
+    const ultT = toques[0];
+    const toqueStr = ultT
+      ? `${new Date(ultT.data).toLocaleDateString('pt-BR')} via ${ultT.canal}: ${ultT.resumo}${ultT.resultado?' → '+ultT.resultado:''}`
+      : 'Sem histórico';
+    const txt = `📌 Status: ${nome}\nEstágio: ${stage}${produto?' | '+produto:''}\n\nDecisores:\n${dList}\n\nÚltimo contato: ${toqueStr}\n\nNota: ${card.note||card.nota||'—'}`;
+    try { navigator.clipboard.writeText(txt); setCopied(true); setTimeout(()=>setCopied(false),2500); } catch(e){}
+  };
+
+  const S = {
+    overlay: {position:'fixed',inset:0,zIndex:1000,background:'rgba(0,0,0,.55)',display:'flex',justifyContent:'flex-end'},
+    drawer:  {width:420,maxWidth:'95vw',background:'#111827',borderLeft:'.5px solid #2D2D44',display:'flex',flexDirection:'column',height:'100%',overflowY:'auto'},
+    hdr:     {padding:'16px 18px 12px',borderBottom:'.5px solid #2D2D44',display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:8,flexShrink:0},
+    body:    {flex:1,padding:'0 18px 24px',overflowY:'auto'},
+    sec:     {marginTop:20},
+    secH:    {fontSize:10,fontWeight:700,letterSpacing:.8,textTransform:'uppercase',color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:10},
+    card:    {background:'#1A1A2E',border:'.5px solid #2D2D44',borderRadius:8,padding:'10px 12px',marginBottom:8},
+    lbl:     {fontSize:10,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2},
+    val:     {fontSize:12,color:'#F5F5F5'},
+    inp:     {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'6px 10px',color:'#F5F5F5',fontSize:12,outline:'none',boxSizing:'border-box'},
+    btn:     {padding:'6px 14px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:600},
+    tabBtn:  (active) => ({padding:'5px 14px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,background:active?'#7C3AED':'#1A1A2E',color:active?'#fff':'#9B9BB4'})
+  };
+
+  return /*#__PURE__*/React.createElement("div", {style:S.overlay, onClick:onClose},
+    /*#__PURE__*/React.createElement("div", {style:S.drawer, onClick:e=>e.stopPropagation()},
+      // ── Header
+      /*#__PURE__*/React.createElement("div", {style:S.hdr},
+        /*#__PURE__*/React.createElement("div", null,
+          /*#__PURE__*/React.createElement("div", {style:{fontSize:16,fontWeight:700,color:'#F5F5F5',lineHeight:1.2}}, nome),
+          /*#__PURE__*/React.createElement("div", {style:{fontSize:10,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginTop:4}},
+            (card._colLabel||card.col||'')+(card.product||card.produto?' · '+(card.product||card.produto):'')
+          )
+        ),
+        /*#__PURE__*/React.createElement("button", {onClick:onClose,style:{background:'none',border:'none',color:'#9B9BB4',cursor:'pointer',fontSize:18,padding:'0 4px',lineHeight:1}}, '✕')
+      ),
+      // ── Tabs
+      /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:6,padding:'12px 18px 0',flexShrink:0}},
+        /*#__PURE__*/React.createElement("button", {style:S.tabBtn(activeTab==='decisores'), onClick:()=>setActiveTab('decisores')}, 'Decisores'+(decisores.length?' ('+decisores.length+')':'')),
+        /*#__PURE__*/React.createElement("button", {style:S.tabBtn(activeTab==='historico'),  onClick:()=>setActiveTab('historico')},  'Histórico'+(toques.length?' ('+toques.length+')':''))
+      ),
+      // ── Body
+      /*#__PURE__*/React.createElement("div", {style:S.body},
+        loading && /*#__PURE__*/React.createElement("div", {style:{color:'#9B9BB4',fontSize:12,marginTop:24,textAlign:'center'}}, 'Carregando…'),
+        !loading && activeTab==='decisores' && /*#__PURE__*/React.createElement("div", {style:S.sec},
+          decisores.length===0 && /*#__PURE__*/React.createElement("div", {style:{color:'#4B4B6A',fontSize:12,marginBottom:12}}, 'Nenhum decisor cadastrado.'),
+          decisores.map(d => /*#__PURE__*/React.createElement("div", {key:d.id, style:S.card},
+            /*#__PURE__*/React.createElement("div", {style:{fontWeight:600,fontSize:13,color:'#F5F5F5',marginBottom:4}}, d.nome),
+            d.cargo && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#A78BFA',marginBottom:4}}, d.cargo),
+            /*#__PURE__*/React.createElement("div", {style:{display:'flex',flexWrap:'wrap',gap:'4px 12px',marginTop:4}},
+              d.email && /*#__PURE__*/React.createElement("a", {href:'mailto:'+d.email,style:{fontSize:11,color:'#60A5FA',textDecoration:'none'}}, '✉ '+d.email),
+              d.wa    && /*#__PURE__*/React.createElement("a", {href:'https://wa.me/'+d.wa.replace(/\D/g,''),target:'_blank',rel:'noopener',style:{fontSize:11,color:'#34D399',textDecoration:'none'}}, '📱 '+d.wa),
+              d.linkedin_url && /*#__PURE__*/React.createElement("a", {href:d.linkedin_url,target:'_blank',rel:'noopener',style:{fontSize:11,color:'#9B9BB4',textDecoration:'none'}}, 'in')
+            ),
+            d.ultimo_toque_em && /*#__PURE__*/React.createElement("div", {style:{fontSize:10,color:'#4B4B6A',fontFamily:'IBM Plex Mono,monospace',marginTop:6}},
+              'Último contato: '+new Date(d.ultimo_toque_em).toLocaleDateString('pt-BR')+(d.ultimo_tema?' — '+d.ultimo_tema:'')
+            ),
+            d.gancho && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#fbbf24',marginTop:4,fontStyle:'italic'}}, '💡 '+d.gancho),
+            d.observacoes && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#9B9BB4',marginTop:4}}, d.observacoes)
+          )),
+          // Add decisor form
+          !showAddD && /*#__PURE__*/React.createElement("button", {
+            onClick:()=>setShowAddD(true),
+            style:{...S.btn,background:'#7C3AED22',color:'#A78BFA',border:'.5px solid #7C3AED44',marginTop:4,width:'100%'}
+          }, '+ Novo decisor'),
+          showAddD && /*#__PURE__*/React.createElement("div", {style:{...S.card,marginTop:8}},
+            /*#__PURE__*/React.createElement("div", {style:{fontSize:11,fontWeight:700,color:'#A78BFA',marginBottom:10}}, 'Novo decisor'),
+            ['nome','cargo','email','wa'].map(f => /*#__PURE__*/React.createElement("div", {key:f,style:{marginBottom:8}},
+              /*#__PURE__*/React.createElement("div", {style:S.lbl}, f==='wa'?'WhatsApp':f.charAt(0).toUpperCase()+f.slice(1)),
+              /*#__PURE__*/React.createElement("input", {
+                style:S.inp, placeholder: f==='nome'?'Nome completo':f==='cargo'?'Cargo / título':f==='email'?'email@empresa.com':'+55 11 9…',
+                value: novoD[f], onChange:e=>setNovoD(p=>({...p,[f]:e.target.value})),
+                onKeyDown: e=>{ if(e.key==='Enter' && f==='wa') addDecisor(); }
+              })
+            )),
+            /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8,marginTop:4}},
+              /*#__PURE__*/React.createElement("button", {onClick:addDecisor,disabled:saving,style:{...S.btn,background:'#7C3AED',color:'#fff',flex:1}}, saving?'Salvando…':'Salvar'),
+              /*#__PURE__*/React.createElement("button", {onClick:()=>setShowAddD(false),style:{...S.btn,background:'#1A1A2E',color:'#9B9BB4'}}, 'Cancelar')
+            )
+          )
+        ),
+        !loading && activeTab==='historico' && /*#__PURE__*/React.createElement("div", {style:S.sec},
+          toques.length===0 && /*#__PURE__*/React.createElement("div", {style:{color:'#4B4B6A',fontSize:12,marginBottom:12}}, 'Nenhum contato registrado.'),
+          toques.map(t => /*#__PURE__*/React.createElement("div", {key:t.id, style:S.card},
+            /*#__PURE__*/React.createElement("div", {style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:4}},
+              /*#__PURE__*/React.createElement("span", {style:{fontSize:10,fontFamily:'IBM Plex Mono,monospace',color:'#9B9BB4'}},
+                (t.data?new Date(t.data).toLocaleDateString('pt-BR'):'—')+' · '+t.canal
+              ),
+              t.resultado && /*#__PURE__*/React.createElement("span", {style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',background:'#34D39922',color:'#34D399',padding:'1px 6px',borderRadius:100}}, t.resultado)
+            ),
+            t.tema && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#A78BFA',marginBottom:3}}, t.tema),
+            /*#__PURE__*/React.createElement("div", {style:{fontSize:12,color:'#F5F5F5',lineHeight:1.5}}, t.resumo)
+          )),
+          // Add toque form
+          !showAddT && /*#__PURE__*/React.createElement("button", {
+            onClick:()=>setShowAddT(true),
+            style:{...S.btn,background:'#34D39922',color:'#34D399',border:'.5px solid #34D39944',marginTop:4,width:'100%'}
+          }, '+ Registrar contato'),
+          showAddT && /*#__PURE__*/React.createElement("div", {style:{...S.card,marginTop:8}},
+            /*#__PURE__*/React.createElement("div", {style:{fontSize:11,fontWeight:700,color:'#34D399',marginBottom:10}}, 'Novo contato'),
+            /*#__PURE__*/React.createElement("div", {style:{marginBottom:8}},
+              /*#__PURE__*/React.createElement("div", {style:S.lbl}, 'Canal'),
+              /*#__PURE__*/React.createElement("select", {
+                value:novoT.canal, onChange:e=>setNovoT(p=>({...p,canal:e.target.value})),
+                style:{...S.inp,appearance:'none'}
+              }, ['email','whatsapp','ligacao','reuniao','linkedin','outro'].map(c=>
+                /*#__PURE__*/React.createElement("option",{key:c,value:c}, c)
+              ))
+            ),
+            /*#__PURE__*/React.createElement("div", {style:{marginBottom:8}},
+              /*#__PURE__*/React.createElement("div", {style:S.lbl}, 'Tema / assunto'),
+              /*#__PURE__*/React.createElement("input", {style:S.inp, placeholder:'Ex: Proposta CR.IA, Follow-up reunião…', value:novoT.tema, onChange:e=>setNovoT(p=>({...p,tema:e.target.value}))})
+            ),
+            /*#__PURE__*/React.createElement("div", {style:{marginBottom:8}},
+              /*#__PURE__*/React.createElement("div", {style:S.lbl}, 'Resumo *'),
+              /*#__PURE__*/React.createElement("textarea", {
+                style:{...S.inp,minHeight:60,resize:'vertical'}, placeholder:'O que foi dito / decidido…',
+                value:novoT.resumo, onChange:e=>setNovoT(p=>({...p,resumo:e.target.value}))
+              })
+            ),
+            /*#__PURE__*/React.createElement("div", {style:{marginBottom:8}},
+              /*#__PURE__*/React.createElement("div", {style:S.lbl}, 'Resultado'),
+              /*#__PURE__*/React.createElement("input", {style:S.inp, placeholder:'Ex: reunião marcada, proposta enviada, sem resposta…', value:novoT.resultado, onChange:e=>setNovoT(p=>({...p,resultado:e.target.value}))})
+            ),
+            /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8,marginTop:4}},
+              /*#__PURE__*/React.createElement("button", {onClick:addToque,disabled:saving,style:{...S.btn,background:'#34D399',color:'#111',flex:1}}, saving?'Salvando…':'Salvar'),
+              /*#__PURE__*/React.createElement("button", {onClick:()=>setShowAddT(false),style:{...S.btn,background:'#1A1A2E',color:'#9B9BB4'}}, 'Cancelar')
+            )
+          )
+        )
+      ),
+      // ── Footer: email + descartar + deletar
+      /*#__PURE__*/React.createElement("div", {style:{borderTop:'.5px solid #2D2D44',padding:'12px 18px',display:'flex',flexDirection:'column',gap:8,flexShrink:0}},
+        /*#__PURE__*/React.createElement("button", {onClick:gerarEmail, style:{...S.btn,background:'#1e3a5f',color:'#60A5FA',border:'.5px solid #2563eb44',width:'100%'}},
+          copied ? '✅ Copiado!' : '📋 Copiar email de status'
+        ),
+        /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8}},
+          card.id && /*#__PURE__*/React.createElement("button", {
+            onClick:()=>onDescartar(card.id),
+            style:{...S.btn,background:'#78350f22',color:'#fbbf24',border:'.5px solid #78350f44',flex:1}
+          }, '🚫 Desistimos'),
+          card.id && /*#__PURE__*/React.createElement("button", {
+            onClick:()=>onDeletar(card.id),
+            style:{...S.btn,background:'#7f1d1d22',color:'#f87171',border:'.5px solid #7f1d1d44'}
+          }, '🗑 Deletar')
+        )
+      )
+    )
+  );
 }
 function PipelineCardModal({
   card,

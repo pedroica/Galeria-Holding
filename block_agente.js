@@ -1,31 +1,27 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   AGENTE OUTBOUND — aba "Agente" (Fase 1: config Supabase + migração empresas)
-   Isolado, prefixo .ag-. Roda no navegador (que alcança o Supabase).
-   Config em localStorage 'gh_supa_cfg_v1' (URL + publishable key — client-side).
-   Nas próximas fases esta aba ganha o funil/dashboard e o pausar/retomar.
+   AGENTE OUTBOUND — aba "Agente"
+   Usa window.__supaClient (gh-store.js) — URL e key hardcoded no gh-store.
    ═══════════════════════════════════════════════════════════════════════════ */
 (function () {
   const h = React.createElement;
   const { useState } = React;
-  const CFG_KEY = "gh_supa_cfg_v1";
 
-  function getCfg() {
-    try { return JSON.parse(localStorage.getItem(CFG_KEY) || "{}"); } catch (e) { return {}; }
-  }
-  function saveCfg(c) { localStorage.setItem(CFG_KEY, JSON.stringify(c)); }
-  function baseUrl() { return (getCfg().url || "").replace(/\/+$/, ""); }
+  // Usa o cliente Supabase centralizado do gh-store.js
+  const SUPA_URL  = "https://uetltlnjmobeiunxfsqi.supabase.co";
+  const SUPA_ANON = "sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r";
+
+  function baseUrl() { return SUPA_URL; }
   function headers(extra) {
-    const k = getCfg().anonKey || "";
-    return Object.assign({ apikey: k, Authorization: "Bearer " + k }, extra || {});
+    return Object.assign({ apikey: SUPA_ANON, Authorization: "Bearer " + SUPA_ANON }, extra || {});
   }
 
-  // ── Supabase REST (fetch, sem dependência) ────────────────────────────────
+  // ── Supabase REST ─────────────────────────────────────────────────────────
   async function supaCount(table) {
     const res = await fetch(baseUrl() + "/rest/v1/" + table + "?select=id", {
       headers: headers({ Prefer: "count=exact", Range: "0-0" }),
     });
     if (!res.ok) throw new Error("Supabase " + res.status + ": " + (await res.text()).slice(0, 200));
-    const cr = res.headers.get("content-range"); // "0-0/1234"
+    const cr = res.headers.get("content-range");
     return cr && cr.includes("/") ? parseInt(cr.split("/")[1], 10) : null;
   }
   async function supaUpsert(table, rows, onConflict) {
@@ -86,38 +82,36 @@
   }
 
   function AgenteView() {
-    const cfg0 = getCfg();
-    const [url, setUrl] = useState(cfg0.url || "");
-    const [anonKey, setAnonKey] = useState(cfg0.anonKey || "");
     const [status, setStatus] = useState("");
     const [busy, setBusy] = useState(false);
-    const configured = !!(baseUrl() && getCfg().anonKey);
-
-    function persist() { saveCfg({ url: url.trim(), anonKey: anonKey.trim() }); setStatus("✅ Config salva."); }
 
     async function testConn() {
-      persist(); setBusy(true); setStatus("Testando conexão…");
+      setBusy(true); setStatus("Testando conexão…");
       try {
-        const n = await supaCount("companies");
-        setStatus("✅ Conectado. Tabela companies: " + (n == null ? "?" : n) + " linhas.");
+        const n = await supaCount("crm_empresas");
+        setStatus("✅ Conectado — crm_empresas: " + (n == null ? "?" : n) + " linhas.");
       } catch (e) { setStatus("❌ " + e.message); }
       setBusy(false);
     }
 
     async function migrate() {
-      persist(); setBusy(true);
+      setBusy(true);
       try {
         const built = buildRows();
         setStatus("Migrando " + built.rows.length + " empresas (" + built.blocked + " bloqueadas)…");
         const CHUNK = 500; let done = 0;
         for (let i = 0; i < built.rows.length; i += CHUNK) {
-          await supaUpsert("companies", built.rows.slice(i, i + CHUNK), "crm_key");
+          // Mapeia para crm_empresas: nome, fonte, bloqueada
+          const rows = built.rows.slice(i, i + CHUNK).map(function(r) {
+            return { nome: r.name, fonte: 'prosp', bloqueada: r.blocked };
+          });
+          await supaUpsert("crm_empresas", rows, "nome");
           done += Math.min(CHUNK, built.rows.length - i);
           setStatus("Migrando… " + done + "/" + built.rows.length);
         }
-        const n = await supaCount("companies");
-        setStatus("✅ Migração concluída: " + built.rows.length + " enviadas (" + built.blocked +
-          " marcadas como blocklist). Total em companies: " + (n == null ? "?" : n) + ".");
+        const n = await supaCount("crm_empresas");
+        setStatus("✅ Concluído: " + built.rows.length + " enviadas (" + built.blocked +
+          " bloqueadas). Total em crm_empresas: " + (n == null ? "?" : n) + ".");
       } catch (e) { setStatus("❌ " + e.message); }
       setBusy(false);
     }
@@ -127,32 +121,24 @@
     return h("div", { className: "ag-wrap", style: { maxWidth: 820, margin: "0 auto" } },
       h("div", { style: { fontSize: 20, fontWeight: 600, color: "#F5F5F5", marginBottom: 4 } }, "🚀 Agente Outbound"),
       h("div", { style: { fontSize: 11, color: "#9B9BB4", marginBottom: 18, lineHeight: 1.6 } },
-        "Fase 1 — migração das empresas do CRM para o Supabase (fonte única da verdade). ",
-        "O enriquecimento Lusha e a esteira rodam no worker (Railway)."),
+        "Migração de empresas para Supabase (crm_empresas). Conexão via central-galeria — hardcoded."),
 
-      // Config Supabase
+      // Status conexão
       h("div", { style: { background: "#111827", border: ".5px solid #2D2D44", borderRadius: 10, padding: 16, marginBottom: 14 } },
-        h("div", { style: { fontSize: 9, fontFamily: "IBM Plex Mono,monospace", color: "#9B9BB4", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 } }, "Conexão Supabase"),
-        h("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
-          h("input", { className: "gh-input", placeholder: "SUPABASE_URL (https://xxxx.supabase.co)", value: url, onChange: function (e) { setUrl(e.target.value); } }),
-          h("input", { className: "gh-input", placeholder: "publishable key (sb_publishable_…)", value: anonKey, onChange: function (e) { setAnonKey(e.target.value); } })),
-        h("div", { style: { display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" } },
-          h("button", { className: "gh-btn-ghost", onClick: persist, disabled: busy }, "Salvar"),
+        h("div", { style: { fontSize: 9, fontFamily: "IBM Plex Mono,monospace", color: "#9B9BB4", letterSpacing: 1, textTransform: "uppercase", marginBottom: 10 } },
+          "Conexão: central-galeria (uetltlnjmobeiunxfsqi)"),
+        h("div", { style: { display: "flex", gap: 8 } },
           h("button", { className: "gh-btn-secondary", onClick: testConn, disabled: busy }, "Testar conexão"))),
 
       // Migração
       h("div", { style: { background: "#1A1A2E", border: ".5px solid #2D2D44", borderRadius: 10, padding: 16, marginBottom: 14 } },
         h("div", { style: { fontSize: 9, fontFamily: "IBM Plex Mono,monospace", color: "#9B9BB4", letterSpacing: 1, textTransform: "uppercase", marginBottom: 8 } }, "Empresas (" + nComp + " no CRM)"),
-        h("div", { style: { fontSize: 11, color: "#9B9BB4", marginBottom: 12, lineHeight: 1.6 } },
-          "Sobe as empresas para a tabela ", h("code", { style: { color: "#FF6B2B" } }, "companies"),
-          ", deduplicando por nome e já marcando as que caem na blocklist. Reexecutar é seguro (upsert)."),
         h("div", { style: { display: "flex", gap: 8, flexWrap: "wrap" } },
-          h("button", { className: "gh-btn-ghost", onClick: exportJson, disabled: busy }, "Exportar empresas (JSON)"),
-          h("button", { className: "gh-btn-primary", onClick: migrate, disabled: busy || !configured },
-            busy ? "Trabalhando…" : "Migrar → Supabase"))),
+          h("button", { className: "gh-btn-ghost", onClick: exportJson, disabled: busy }, "Exportar (JSON)"),
+          h("button", { className: "gh-btn-primary", onClick: migrate, disabled: busy },
+            busy ? "Trabalhando…" : "Migrar → crm_empresas"))),
 
-      status && h("div", { style: { background: "#0D0D0D", border: ".5px solid #2D2D44", borderRadius: 8, padding: "10px 14px", fontSize: 12, fontFamily: "IBM Plex Mono,monospace", color: "#F5F5F5", lineHeight: 1.6, whiteSpace: "pre-wrap" } }, status),
-      !configured && h("div", { style: { fontSize: 10, color: "#EF9F27", marginTop: 8, fontFamily: "IBM Plex Mono,monospace" } }, "Preencha e salve a conexão Supabase para habilitar a migração."));
+      status && h("div", { style: { background: "#0D0D0D", border: ".5px solid #2D2D44", borderRadius: 8, padding: "10px 14px", fontSize: 12, fontFamily: "IBM Plex Mono,monospace", color: "#F5F5F5", lineHeight: 1.6, whiteSpace: "pre-wrap" } }, status));
   }
 
   window.AgenteView = AgenteView;

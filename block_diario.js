@@ -5,19 +5,26 @@
   var Ce = React.createElement;
   var MONO = "IBM Plex Mono,monospace";
 
-  // Colunas FUP por tab do kanban
+  // Colunas FUP por tab do kanban (nomes alinhados ao crm_kanban)
   var GAIA_FUP = {
-    poc:        { label:"POC/Piloto",        color:"#60A5FA", pri:3 },
-    reuniao:    { label:"Reunião",           color:"#A78BFA", pri:1 },
-    proposta:   { label:"Proposta",          color:"#FBBF24", pri:2 },
-    aguardando: { label:"Aguardando Retorno",color:"#9CA3AF", pri:4 },
+    contato:    { label:"1º Contato",        color:"#60A5FA", pri:1 },
+    reuniao:    { label:"Reunião",           color:"#A78BFA", pri:2 },
+    proposta:   { label:"Proposta",          color:"#FBBF24", pri:3 },
+    negociacao: { label:"Negociação",        color:"#FB923C", pri:4 },
+    // Legado (gh_kanban_v3 antigo)
+    poc:        { label:"POC/Piloto",        color:"#60A5FA", pri:5 },
+    aguardando: { label:"Aguardando Retorno",color:"#9CA3AF", pri:6 },
   };
   var HOLDING_FUP = {
-    primreuniao:  { label:"1ª Reunião",       color:"#60A5FA", pri:1 },
-    contatodir:   { label:"Contato Direto",   color:"#34D399", pri:2 },
-    negocdiret:   { label:"Negoc. Direta",    color:"#FBBF24", pri:3 },
-    concorrencia: { label:"Concorrência",     color:"#FB923C", pri:4 },
-    negociacao:   { label:"Negociação",       color:"#F87171", pri:5 },
+    contato:      { label:"1º Contato",      color:"#60A5FA", pri:1 },
+    reuniao:      { label:"Reunião",         color:"#A78BFA", pri:2 },
+    proposta:     { label:"Proposta",        color:"#FBBF24", pri:3 },
+    negociacao:   { label:"Negociação",      color:"#F87171", pri:4 },
+    // Legado
+    primreuniao:  { label:"1ª Reunião",      color:"#60A5FA", pri:5 },
+    contatodir:   { label:"Contato Direto",  color:"#34D399", pri:6 },
+    negocdiret:   { label:"Negoc. Direta",   color:"#FBBF24", pri:7 },
+    concorrencia: { label:"Concorrência",    color:"#FB923C", pri:8 },
   };
 
   // ── helpers ────────────────────────────────────────────────────────────────
