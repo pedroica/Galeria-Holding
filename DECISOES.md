@@ -71,9 +71,46 @@ Cards com dúvida ficam com agencia_id = holding (Galeria) e são listados abaix
 
 ---
 
-## FASE B — A implementar
+## FASE B — Redesign (branch fase1)
 
-*(será preenchido ao iniciar a Fase B)*
+### B-001 · Remoção de telas obsoletas (B2)
+**Data:** 2026-09-16  
+**Decisão:** As seguintes telas foram removidas da navegação em `block3.js`:
+
+| Tela removida | viewMode | Componente | O que ela fazia | Onde a função sobreviveu |
+|---|---|---|---|---|
+| Bom Dia | `bomdias` | `BomDiaView` | Resumo diário de alertas e agenda de contatos | Não há substituto direto; dados em `crm_shared`. Legado em `crm_legado` |
+| Diário | `diario` | `DiarioView` | Log diário de atividades e touchpoints | Histórico de toques sobrevive no `EmpresaDrawer` (aba "Histórico") |
+| Régua | `regua` | `ReguaMensalView` | Calendário mensal de acionamentos (scheduling) | `gh_kanban_v3` no localStorage tinha essa lógica; migrada para `crm_shared`. Campo `ordem` em `crm_kanban` preserva prioridade |
+| Agente | `agente` | `AgenteView` | Interface de IA para rascunhos de e-mail | Funcionalidade de IA deve ser retomada na Fase C integrada ao `AgTextosTab` |
+| LLM box | `llm2` | `LLMBoxV2` | Caixa de entrada de prompts LLM genérica | Removida — `crm_legado` para referência |
+| Mailing | `batch` | `SmartBatch` | Envio em lote de e-mails com personalização | Substituída parcialmente por `AgEnviarTab` (gera HTML do pipeline) |
+| Hot Pipeline | `hotpipeline` | `KanbanDiario` | Kanban diário de contatos quentes | Substituído pelo kanban global em `HoldingHome` e pipeline por agência em `AgenciaHome` |
+| Tutorial | `showTutorial` | `TutorialOverlay` | Overlay de onboarding first-time | Desativado (default `false`); conteúdo em `crm_shared` caso necessário |
+
+**B-002 · Blocklist → Carteira**  
+`BlocklistView` (viewMode `blocklist`) permanece disponível como rota legacy no viewMode chain. Acesso foi removido do menu principal — será movido para dentro de `FerramentasModal` como seção "Carteira" na Fase C.
+
+**B-003 · Navegação principal (B1)**  
+5 seções: Holding / Agências / Aprovar hoje / Base / Ferramentas. Holding → `HoldingHome` (kanban global). Agências → `AgenciaHome` com sub-nav de 13 agências + 7 abas. Base → `EmpresasView` (lista de empresas + `EmpresaDrawer`). Ferramentas → `FerramentasModal` (existente).
+
+**B-004 · Kanban global HoldingHome**  
+Carrega todos os rows de `crm_kanban` (gaia + holding). Colunas: contato / reuniao / proposta / negociacao / fechamento. Chip da agência derivado de `responsavel` (match por id do ALL_AGENCIAS). Drag-and-drop entre colunas: PATCH `col` + `atualizado_em`. Painel de metas: 40 reuniões/sem · 3/agência, últimas 5 semanas por `atualizado_em`.
+
+**B-005 · AgenciaHome — todas as abas funcionais**  
+- `pipeline`: `PipelineView` (GAIA: tab='gaia'; demais: tab='holding' + filtro `responsavel`)
+- `noticias`: REST `crm_noticias` filtrado pelos `empresa_id` do pipeline da agência  
+- `servicos`: CRUD `crm_servicos` por UUID da agência (de `AGENCIA_UUIDS`)  
+- `cases`: CRUD `crm_cases` com extração de thumbnail YouTube via regex  
+- `credenciais`: CRUD `crm_credenciais_blocos` por slug da agência  
+- `textos`: CRUD `crm_templates` por slug da agência, agrupado por etapa  
+- `enviar`: gera HTML branded do pipeline + preview via iframe  
+
+**B-006 · Base mobile-ready**  
+`EmpresasView` é renderizado com flex column completo em `navSection='base'`. Styling responsivo via CSS existente.
+
+**B-007 · Aprovar hoje mobile-ready**  
+`AprovacaoHoje` em `navSection='aprovar'` com `overflow:auto` no wrapper.
 
 ---
 

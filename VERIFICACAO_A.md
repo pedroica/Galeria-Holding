@@ -1,5 +1,30 @@
 # VERIFICACAO_A.md — Verificação A4 (pré-merge etapa5)
 *Gerado: 2026-09-16T18:07 | Fonte: Supabase MCP (crm_kanban, crm_decisores, crm_empresas) + localStorage snapshot*
+*Confirmado: 2026-09-16T18:30 — export real do localStorage + dry-run sync*
+
+---
+
+## 0. Sync dry-run — 2026-09-16T18:30
+
+Export coletado via Claude Browser do navegador em `galeria-holding.vercel.app`.
+
+| Chave localStorage | Tamanho | Conteúdo |
+|---|---|---|
+| `gh_hotpipeline_v1` | ausente | Pipeline kanban → não existe no LS; dados canônicos no Supabase |
+| `gh_kanban_v3` | 588 bytes | Régua/scheduling (37 IDs para acionar em 2026-09-14), não pipeline |
+| `gh_decisores_v3` | 8MB | Objeto flat `{galeria_XXXX: {...}}` — formato incompatível com extractDecisores |
+| `ghub_accs` | 8MB | Idêntico a `gh_decisores_v3` |
+| `ghub_custom_leads` | 7KB | 36 empresas MMN (Natura, Avon, Hinode…) — não são pipeline cards |
+| `gh_autobk_data` | 9.4MB | Backup automático do app — contém cópia de `gh_decisores_v3` |
+
+**Resultado dry-run:**
+- Cards novos (LS→Supabase): **0**
+- Notas atualizadas: **0**
+- Decisores novos: **0**
+
+**Conclusão:** localStorage de produção **não tem dados adicionais** além do que já está no Supabase. O pipeline kanban (97 cards) e os decisores (2742) são canônicos no Supabase. Zero delta confirmado pela segunda vez.
+
+---
 
 ---
 

@@ -3291,17 +3291,7 @@ function App() {
   const [resOpen, setResOpen] = useState(false);
   const [dashOpen, setDashOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
-  const [viewMode, setViewMode] = useState(function() {
-    // Se é manhã (6h-11h) e ainda não abriu Bom Dia hoje → começa direto lá
-    var hora = new Date().getHours();
-    var hoje = new Date().toISOString().slice(0, 10);
-    var jaAbriu = localStorage.getItem("gh_bomdias_nav") === hoje;
-    if (hora >= 6 && hora < 11 && !jaAbriu) {
-      localStorage.setItem("gh_bomdias_nav", hoje);
-      return "bomdias";
-    }
-    return "hotpipeline";
-  });
+  const [viewMode, setViewMode] = useState("empresas");
   const switchView = v => {
     setViewMode(v);
     setCurLead(null);
@@ -3322,16 +3312,28 @@ function App() {
     {id:'studioga', name:'Studio GA', color:'#A3E635', rgb:'163,230,53'}
   ];
   const curAgencia = ALL_AGENCIAS.find(a => a.id === agenciaId) || ALL_AGENCIAS[0];
+  const AGENCIA_UUIDS = {
+    '404':        '14a057af-31c6-4606-8236-4c97d8067335',
+    'agente':     '910f125d-82f7-4fbc-889d-2eb9b33d8198',
+    'atelie':     '32e8bd8a-d698-4781-b9f4-7b9855132942',
+    'catalyst':   '74886b76-2650-41e1-8d46-3c742681fadd',
+    'cccaramelo': 'e8d734ba-b3e9-425b-942e-b8b56c98f56b',
+    'frame':      'e26e3106-33e8-43de-95c5-546477573186',
+    'gaia':       'a8aecdac-1001-4643-bcd4-e818307b6d92',
+    'galeria':    '960142b5-a688-41f8-8719-d516eeb843c6',
+    'gux':        'ac8b92de-ab48-4153-bf18-c23b5ea19bfe',
+    'mantiqueira':'1a67ab05-e42e-4975-be11-b6bf7f23ce03',
+    'mila':       'b0473d79-afd9-404e-8784-04b4556a5a2c',
+    'studioga':   'd1d6bc56-ee70-4b5c-bb2e-3a7e428ea70f',
+    'vitrine':    '2bb87ce9-b175-43d0-9213-1e1021661e54',
+  };
   const navTo = (section, agId, tab) => {
     setNavSection(section);
     if (agId) { setAgenciaId(agId); setCurGrupo(GRUPO.find(g => g.id === agId) || GRUPO[0]); }
     if (tab) setAgenciaTab(tab);
   };
   const [alertaBadge, setAlertaBadge] = useState(() => lsGet("gh_alertas_v2", []).filter(a => !a.lido).length);
-  const [showTutorial, setShowTutorial] = useState(() => {
-    const t = lsGet("gh_tutorial_v1", null);
-    return !t || !t.concluido;
-  });
+  const [showTutorial, setShowTutorial] = useState(false);
   const [abordagemGlobal, setAbordagemGlobal] = useState(null); // {decisor, empresa, setor}
   const [curUser, setCurUser] = useState(null);
   const [sessLoading, setSessLoading] = useState(true);
@@ -3693,15 +3695,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'holding' ? React.createElement(HoldingHome, null) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel" }, React.createElement(AprovacaoHoje, null)) : viewMode === "blocklist" ? /*#__PURE__*/React.createElement("div", {
-    className: "panel"
-  }, typeof BlocklistView !== "undefined" ? /*#__PURE__*/React.createElement(BlocklistView, null) : /*#__PURE__*/React.createElement("div", {
-    style: { color: "#9B9BB4", fontFamily: "IBM Plex Mono,monospace", fontSize: 12 }
-  }, "Carregando Blocklist…")) : viewMode === "agente" ? /*#__PURE__*/React.createElement("div", {
-    className: "panel"
-  }, typeof AgenteView !== "undefined" ? /*#__PURE__*/React.createElement(AgenteView, null) : /*#__PURE__*/React.createElement("div", {
-    style: { color: "#9B9BB4", fontFamily: "IBM Plex Mono,monospace", fontSize: 12 }
-  }, "Carregando Agente…")) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -3765,17 +3759,6 @@ function App() {
     alertas: lsGet("gh_alertas_v2", []),
     curGrupo: curGrupo,
     onEmpresaClick: () => switchView("figurinhas2")
-  })) : viewMode === "llm2" ? /*#__PURE__*/React.createElement("div", {
-    className: "ws",
-    style: {
-      flex: 1,
-      overflow: "hidden",
-      display: "flex",
-      flexDirection: "column"
-    }
-  }, /*#__PURE__*/React.createElement(LLMBoxV2, {
-    accs: accs,
-    curGrupo: curGrupo
   })) : viewMode === "alertas2" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
@@ -3790,20 +3773,6 @@ function App() {
       empresa: emp,
       setor: set
     })
-  })) : viewMode === "holding" ? /*#__PURE__*/React.createElement("div", {
-    className: "ws"
-  }, /*#__PURE__*/React.createElement(HoldingView, null)) : viewMode === "batch" ? /*#__PURE__*/React.createElement("div", {
-    className: "ws",
-    style: {
-      flex: 1,
-      overflow: "hidden",
-      display: "flex"
-    }
-  }, /*#__PURE__*/React.createElement(SmartBatch, {
-    grupo: curGrupo,
-    accs: accs,
-    pdKey: pdKey,
-    onActivitySaved: onActivitySaved
   })) : viewMode === "calls" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
@@ -3840,15 +3809,7 @@ function App() {
     curGrupo: curGrupo,
     alertas: lsGet("gh_alertas_v2", []),
     onKanbanAdd: d => switchView("ka2")
-  })) : viewMode === "hotpipeline" ? /*#__PURE__*/React.createElement("div", {
-    className: "ws",
-    style: {
-      flex: 1,
-      overflow: "hidden",
-      display: "flex",
-      flexDirection: "column"
-    }
-  }, /*#__PURE__*/React.createElement(KanbanDiario, null)) : viewMode === "pipeline_gaia" ? /*#__PURE__*/React.createElement("div", {
+  })) : viewMode === "pipeline_gaia" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -3899,49 +3860,13 @@ function App() {
   }, typeof RankingView !== "undefined" && /*#__PURE__*/React.createElement(RankingView, {
     accs: accs,
     curGrupo: curGrupo
-  })) : viewMode === "regua" ? /*#__PURE__*/React.createElement("div", {
-    className: "ws",
-    style: {
-      flex: 1,
-      overflow: "hidden",
-      display: "flex",
-      flexDirection: "column"
-    }
-  }, typeof ReguaMensalView !== "undefined" && /*#__PURE__*/React.createElement(ReguaMensalView, {
-    accs: accs,
-    curGrupo: curGrupo,
-    onDispatch: function(decisor, empresa, setor) {
-      setAbordagemGlobal({
-        decisor: decisor,
-        empresa: empresa,
-        setor: setor
-      });
-    }
-  })) : viewMode === "diario" ? /*#__PURE__*/React.createElement("div", {
-    className: "ws",
-    style: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }
-  }, typeof DiarioView !== "undefined" && /*#__PURE__*/React.createElement(DiarioView, {
-    accs: accs,
-    curGrupo: curGrupo,
-    setView: switchView
   })) : viewMode === "aprovarhoje" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }
   }, /*#__PURE__*/React.createElement(AprovacaoHoje, null)) : viewMode === "estrelas" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }
-  }, /*#__PURE__*/React.createElement(EstrelasPorAgenciaView, { accs: accs, curGrupo: curGrupo })) : viewMode === "bomdias" ? /*#__PURE__*/React.createElement("div", {
-    className: "ws",
-    style: {
-      flex: 1,
-      overflow: "hidden",
-      display: "flex",
-      flexDirection: "column"
-    }
-  }, typeof BomDiaView !== "undefined" && /*#__PURE__*/React.createElement(BomDiaView, {
-    accs: accs,
-    curGrupo: curGrupo
-  })) : /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(EstrelasPorAgenciaView, { accs: accs, curGrupo: curGrupo })) : /*#__PURE__*/React.createElement("div", {
     className: "ws"
   }, /*#__PURE__*/React.createElement("div", {
     className: "sb",
@@ -4776,37 +4701,540 @@ function PipelineView({
     onClose: () => setShareOpen(false)
   }));
 }
-function HoldingHome() {
-  return React.createElement("div", { style:{ display:'flex', flex:1, flexDirection:'column', overflow:'hidden' } },
-    React.createElement("div", { style:{ display:'flex', gap:16, padding:'12px 20px', flexWrap:'wrap' } },
-      React.createElement("div", { style:{ background:'#0D0D1A', border:'.5px solid #1A1A2E', borderRadius:6, padding:'10px 16px', fontFamily:'IBM Plex Mono,monospace', fontSize:9, color:'#9B9BB4', flex:'0 0 auto' } },
-        React.createElement("div", { style:{ fontSize:18, color:'#FF6B2B', fontWeight:700, lineHeight:1 } }, "97"),
-        React.createElement("div", null, "cards kanban")
+var SUPA_URL = 'https://uetltlnjmobeiunxfsqi.supabase.co';
+var SUPA_ANON = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
+function supaFetch(path, opts) {
+  var hdrs = Object.assign({'apikey': SUPA_ANON, 'Authorization': 'Bearer ' + SUPA_ANON, 'Content-Type': 'application/json'}, opts && opts.headers);
+  return fetch(SUPA_URL + path, Object.assign({}, opts, {headers: hdrs})).then(function(r){ return r.json(); });
+}
+
+function HoldingHome({ agencias }) {
+  var COLS = [
+    {id:'contato', label:'1º Contato'},
+    {id:'reuniao', label:'Reunião'},
+    {id:'proposta', label:'Proposta'},
+    {id:'negociacao', label:'Negociação'},
+    {id:'fechamento', label:'Fechamento'},
+  ];
+  var AG = Array.isArray(agencias) ? agencias : [];
+  var [cards, setCards] = React.useState([]);
+  var [loading, setLoading] = React.useState(true);
+  var [filterAg, setFilterAg] = React.useState('all');
+  var [filterCol, setFilterCol] = React.useState('all');
+  var [search, setSearch] = React.useState('');
+  var [dragging, setDragging] = React.useState(null);
+
+  React.useEffect(function() {
+    supaFetch('/rest/v1/crm_kanban?select=*&order=ordem.asc').then(function(d) {
+      setCards(Array.isArray(d) ? d : []);
+      setLoading(false);
+    }).catch(function() { setLoading(false); });
+  }, []);
+
+  function agenciaFromCard(card) {
+    var resp = (card.responsavel || '').toLowerCase().trim();
+    return AG.find(function(a) { return a.id.toLowerCase() === resp || (a.name || '').toLowerCase() === resp; })
+      || {id: resp, name: card.responsavel || '—', color: '#555'};
+  }
+
+  var visible = cards.filter(function(c) {
+    if (filterAg !== 'all') { var ag = agenciaFromCard(c); if (ag.id !== filterAg) return false; }
+    if (filterCol !== 'all' && c.col !== filterCol) return false;
+    if (search) { var q = search.toLowerCase(); if (!(c.nome||'').toLowerCase().includes(q) && !(c.produto||'').toLowerCase().includes(q) && !(c.responsavel||'').toLowerCase().includes(q)) return false; }
+    return true;
+  });
+
+  var weekGoals = React.useMemo(function() {
+    var weeks = [];
+    var now = new Date();
+    for (var w = 0; w < 5; w++) {
+      var wStart = new Date(now); wStart.setDate(wStart.getDate() - wStart.getDay() - w * 7); wStart.setHours(0,0,0,0);
+      var wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 7);
+      var wCards = cards.filter(function(c) { var d = new Date(c.atualizado_em); return c.col === 'reuniao' && d >= wStart && d < wEnd; });
+      var byAg = {}; wCards.forEach(function(c) { var ag = agenciaFromCard(c); byAg[ag.id] = (byAg[ag.id]||0) + 1; });
+      weeks.push({label: w===0?'Esta semana':'Sem -'+w, total: wCards.length, byAg: byAg});
+    }
+    return weeks;
+  }, [cards]);
+
+  function moveCard(cardId, newCol) {
+    setCards(function(p) { return p.map(function(c) { return c.id===cardId ? Object.assign({},c,{col:newCol}) : c; }); });
+    supaFetch('/rest/v1/crm_kanban?id=eq.'+cardId, {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({col:newCol, atualizado_em:new Date().toISOString()})});
+  }
+
+  function renderCard(card) {
+    var ag = agenciaFromCard(card);
+    return React.createElement("div", {key:card.id, draggable:true, onDragStart:function(){setDragging(card.id);}, onDragEnd:function(){setDragging(null);},
+      style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderLeft:'2px solid '+ag.color,borderRadius:6,padding:'8px 10px',cursor:'grab',marginBottom:6,userSelect:'none'}},
+      React.createElement("div",{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:4}},
+        React.createElement("div",{style:{fontSize:12,fontWeight:600,color:'#F5F5F5',lineHeight:1.3,flex:1}}, card.nome||'—'),
+        React.createElement("span",{style:{fontSize:8,fontFamily:'IBM Plex Mono,monospace',background:ag.color+'22',color:ag.color,padding:'1px 5px',borderRadius:100,flexShrink:0,marginTop:1}}, ag.name)
+      ),
+      card.produto && React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',marginTop:3}}, card.produto),
+      card.valor && React.createElement("div",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#34D399',marginTop:3}},
+        'R$ '+Number(card.valor).toLocaleString('pt-BR')
+      )
+    );
+  }
+
+  return React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden',background:'#060610'}},
+    React.createElement("div",{style:{display:'flex',alignItems:'center',gap:8,padding:'8px 16px',borderBottom:'.5px solid #1A1A2E',flexWrap:'wrap',flexShrink:0}},
+      COLS.map(function(c) {
+        var cnt = cards.filter(function(k){return k.col===c.id;}).length;
+        return React.createElement("div",{key:c.id,style:{display:'flex',alignItems:'center',gap:4,padding:'3px 10px',background:'#0D0D1A',borderRadius:4,border:'.5px solid #1A1A2E'}},
+          React.createElement("span",{style:{fontSize:14,fontWeight:700,color:'#FF6B2B',fontFamily:'IBM Plex Mono,monospace'}}, cnt),
+          React.createElement("span",{style:{fontSize:9,color:'#555',fontFamily:'IBM Plex Mono,monospace'}}, c.label)
+        );
+      }),
+      React.createElement("div",{style:{flex:1}}),
+      React.createElement("input",{value:search,onChange:function(e){setSearch(e.target.value);},placeholder:'Buscar…',style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:4,padding:'4px 8px',color:'#F5F5F5',fontSize:11,outline:'none',fontFamily:'IBM Plex Mono,monospace',width:130}}),
+      React.createElement("select",{value:filterAg,onChange:function(e){setFilterAg(e.target.value);},style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:4,padding:'4px 8px',color:'#9B9BB4',fontSize:11,outline:'none'}},
+        React.createElement("option",{value:'all'},'Todas agências'),
+        AG.map(function(a){return React.createElement("option",{key:a.id,value:a.id},a.name);})
+      ),
+      React.createElement("select",{value:filterCol,onChange:function(e){setFilterCol(e.target.value);},style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:4,padding:'4px 8px',color:'#9B9BB4',fontSize:11,outline:'none'}},
+        React.createElement("option",{value:'all'},'Todas etapas'),
+        COLS.map(function(c){return React.createElement("option",{key:c.id,value:c.id},c.label);})
       )
     ),
-    React.createElement("div", { style:{ display:'flex', gap:16, flex:1, overflow:'hidden', padding:'0 20px 20px' } },
-      React.createElement("div", { style:{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', gap:8 } },
-        React.createElement("div", { style:{ fontFamily:'IBM Plex Mono,monospace', fontSize:9, color:'#555', marginBottom:4 } }, "GAIA PIPELINE"),
-        React.createElement(PipelineView, { tipo:'gaia' })
+    React.createElement("div",{style:{display:'flex',flex:1,overflow:'hidden'}},
+      React.createElement("div",{style:{display:'flex',flex:1,overflow:'auto',gap:6,padding:'10px 12px'}},
+        COLS.map(function(col) {
+          var colCards = visible.filter(function(c){return c.col===col.id;});
+          return React.createElement("div",{key:col.id,
+            onDragOver:function(e){e.preventDefault();},
+            onDrop:function(e){e.preventDefault();if(dragging)moveCard(dragging,col.id);},
+            style:{flex:'0 0 190px',background:'#08080F',border:'.5px solid #1A1A2E',borderRadius:8,display:'flex',flexDirection:'column',maxHeight:'100%'}},
+            React.createElement("div",{style:{padding:'7px 10px',borderBottom:'.5px solid #1A1A2E',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}},
+              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:9,color:'#9B9BB4',fontWeight:700,letterSpacing:.5}}, col.label.toUpperCase()),
+              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:13,color:'#FF6B2B',fontWeight:700}}, colCards.length)
+            ),
+            React.createElement("div",{style:{overflowY:'auto',padding:'6px',flex:1}},
+              loading ? React.createElement("div",{style:{color:'#555',fontSize:11,textAlign:'center',marginTop:20}},'…') :
+              colCards.map(renderCard)
+            )
+          );
+        })
       ),
-      React.createElement("div", { style:{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column', gap:8 } },
-        React.createElement("div", { style:{ fontFamily:'IBM Plex Mono,monospace', fontSize:9, color:'#555', marginBottom:4 } }, "HOLDING PIPELINE"),
-        React.createElement(PipelineView, { tipo:'holding' })
+      React.createElement("div",{style:{width:210,borderLeft:'.5px solid #1A1A2E',background:'#08080F',display:'flex',flexDirection:'column',overflow:'auto',padding:'12px 14px',flexShrink:0}},
+        React.createElement("div",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:9,color:'#9B9BB4',fontWeight:700,letterSpacing:.5,marginBottom:4}}, 'METAS REUNIÕES'),
+        React.createElement("div",{style:{fontSize:8,color:'#555',fontFamily:'IBM Plex Mono,monospace',marginBottom:12}}, '40/sem · 3/agência'),
+        weekGoals.map(function(week, wi) {
+          return React.createElement("div",{key:wi,style:{marginBottom:14}},
+            React.createElement("div",{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}},
+              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:8,color:'#555'}}, week.label),
+              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:11,fontWeight:700,color:week.total>=40?'#34D399':'#E24B4A'}}, week.total+'/40')
+            ),
+            AG.map(function(a) {
+              var n = week.byAg[a.id] || 0;
+              return React.createElement("div",{key:a.id,style:{display:'flex',alignItems:'center',gap:4,marginBottom:2}},
+                React.createElement("div",{style:{width:4,height:4,borderRadius:'50%',background:a.color,flexShrink:0}}),
+                React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:8,color:'#666',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, a.id),
+                React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:8,color:n>=3?'#34D399':'#E24B4A',fontWeight:700}}, n+'/3')
+              );
+            })
+          );
+        })
       )
     )
   );
 }
 
-function AgenciaHome({ agencia, tab, navTo }) {
-  const placeholder = React.createElement("div", { style:{ display:'flex', alignItems:'center', justifyContent:'center', flex:1, color:'#555', fontFamily:'IBM Plex Mono,monospace', fontSize:11 } }, tab, " — em breve");
-  return React.createElement("div", { style:{ display:'flex', flex:1, flexDirection:'column', overflow:'hidden' } },
-    React.createElement("div", { style:{ padding:'8px 20px 0', display:'flex', alignItems:'center', gap:8 } },
-      React.createElement("div", { style:{ width:8, height:8, borderRadius:'50%', background: agencia ? agencia.color : '#FF6B2B', flexShrink:0 } }),
-      React.createElement("span", { style:{ fontFamily:'IBM Plex Mono,monospace', fontSize:11, color:'#9B9BB4', fontWeight:700 } }, agencia ? agencia.name.toUpperCase() : '')
+function AgNoticiasTab({ agencia, agenciaUuids }) {
+  var [noticias, setNoticias] = React.useState([]);
+  var [loading, setLoading] = React.useState(true);
+  var agId = agencia ? agencia.id : '';
+
+  React.useEffect(function() {
+    if (!agId) return;
+    supaFetch('/rest/v1/crm_kanban?select=empresa_id&responsavel=ilike.*'+encodeURIComponent(agId)+'*').then(function(rows) {
+      if (!Array.isArray(rows) || rows.length === 0) { setLoading(false); return; }
+      var ids = rows.map(function(r){return r.empresa_id;}).filter(Boolean);
+      if (ids.length === 0) { setLoading(false); return; }
+      var inClause = '('+ids.map(function(i){return '"'+i+'"';}).join(',')+')'
+      supaFetch('/rest/v1/crm_noticias?empresa_id=in.'+inClause+'&order=data.desc&limit=50').then(function(n) {
+        setNoticias(Array.isArray(n)?n:[]);
+        setLoading(false);
+      });
+    }).catch(function(){setLoading(false);});
+  }, [agId]);
+
+  function usarGancho(n) {
+    var txt = '[GANCHO] '+n.titulo+(n.resumo?'\n'+n.resumo:'')+(n.url?'\nLink: '+n.url:'');
+    try { navigator.clipboard.writeText(txt); } catch(e){}
+  }
+
+  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11,padding:20}},'Carregando notícias…');
+  if (noticias.length === 0) return React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11,padding:20}},'Nenhuma notícia para empresas do pipeline desta agência.');
+  return React.createElement("div",{style:{overflowY:'auto',flex:1,padding:'12px 20px'}},
+    noticias.map(function(n) {
+      return React.createElement("div",{key:n.id,style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,padding:'10px 14px',marginBottom:8}},
+        React.createElement("div",{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',gap:8}},
+          React.createElement("div",{style:{flex:1}},
+            React.createElement("div",{style:{fontSize:13,fontWeight:600,color:'#F5F5F5',lineHeight:1.3,marginBottom:4}}, n.titulo),
+            n.resumo && React.createElement("div",{style:{fontSize:11,color:'#9B9BB4',lineHeight:1.5,marginBottom:6}}, n.resumo),
+            React.createElement("div",{style:{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}},
+              n.fonte && React.createElement("span",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#555'}}, n.fonte),
+              n.data && React.createElement("span",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#555'}}, new Date(n.data).toLocaleDateString('pt-BR')),
+              n.sinal && React.createElement("span",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',background:'#FF6B2B22',color:'#FF6B2B',padding:'1px 6px',borderRadius:100}}, n.sinal),
+              n.url && React.createElement("a",{href:n.url,target:'_blank',rel:'noopener',style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#60A5FA',textDecoration:'none'}},'↗ Abrir')
+            )
+          ),
+          React.createElement("button",{onClick:function(){usarGancho(n);},style:{padding:'4px 10px',border:'.5px solid #FF6B2B44',borderRadius:4,background:'transparent',color:'#FF6B2B',fontSize:9,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer',flexShrink:0,whiteSpace:'nowrap'}}, 'Usar como gancho')
+        )
+      );
+    })
+  );
+}
+
+function AgServicosTab({ agencia, agenciaUuids }) {
+  var [servicos, setServicos] = React.useState([]);
+  var [loading, setLoading] = React.useState(true);
+  var [form, setForm] = React.useState(null);
+  var [saving, setSaving] = React.useState(false);
+  var agUuid = agenciaUuids && agencia ? (agenciaUuids[agencia.id] || null) : null;
+
+  React.useEffect(function() {
+    if (!agUuid) { setLoading(false); return; }
+    supaFetch('/rest/v1/crm_servicos?agencia_id=eq.'+agUuid+'&order=nome.asc').then(function(d) {
+      setServicos(Array.isArray(d)?d:[]); setLoading(false);
+    }).catch(function(){setLoading(false);});
+  }, [agUuid]);
+
+  function save() {
+    if (!form || !form.nome) return;
+    setSaving(true);
+    if (form.id) {
+      supaFetch('/rest/v1/crm_servicos?id=eq.'+form.id, {method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify({nome:form.nome,descricao:form.descricao,preco_min:form.preco_min||null,preco_max:form.preco_max||null,sinais_de_encaixe:form.sinais_de_encaixe})})
+        .then(function(d){setSaving(false);setForm(null);setServicos(function(p){return p.map(function(s){return s.id===form.id?Object.assign({},s,d[0]):s;});});});
+    } else {
+      supaFetch('/rest/v1/crm_servicos', {method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify({agencia_id:agUuid,nome:form.nome,descricao:form.descricao,preco_min:form.preco_min||null,preco_max:form.preco_max||null,sinais_de_encaixe:form.sinais_de_encaixe,ativo:true})})
+        .then(function(d){setSaving(false);setForm(null);if(Array.isArray(d))setServicos(function(p){return[...p,...d];});});
+    }
+  }
+
+  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:'IBM Plex Mono,monospace'};
+  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11,padding:20}},'…');
+  return React.createElement("div",{style:{flex:1,overflowY:'auto',padding:'12px 20px'}},
+    !form && React.createElement("button",{onClick:function(){setForm({nome:'',descricao:'',preco_min:'',preco_max:'',sinais_de_encaixe:'',ticket:'',ativo:true});},style:{marginBottom:12,padding:'6px 14px',border:'.5px solid #FF6B2B44',borderRadius:6,background:'transparent',color:'#FF6B2B',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'+ Novo serviço'),
+    form && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:8,padding:'12px',marginBottom:12}},
+      React.createElement("div",{style:{fontSize:11,fontWeight:700,color:'#FF6B2B',fontFamily:'IBM Plex Mono,monospace',marginBottom:10}}, form.id?'Editar serviço':'Novo serviço'),
+      ['nome','descricao','preco_min','preco_max','sinais_de_encaixe'].map(function(f) {
+        return React.createElement("div",{key:f,style:{marginBottom:8}},
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}}, ({nome:'Nome',descricao:'Descrição',preco_min:'Preço mín (R$)',preco_max:'Preço máx (R$)',sinais_de_encaixe:'Ticket de entrada / sinais de encaixe'})[f]),
+          f==='descricao' || f==='sinais_de_encaixe'
+            ? React.createElement("textarea",{style:Object.assign({},inp,{height:60,resize:'vertical'}),value:form[f]||'',onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,Object.fromEntries([[f,v]]));});}})
+            : React.createElement("input",{style:inp,value:form[f]||'',type:f.includes('preco')?'number':'text',onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,Object.fromEntries([[f,v]]));});}})
+        );
+      }),
+      React.createElement("div",{style:{display:'flex',gap:8,marginTop:6}},
+        React.createElement("button",{onClick:save,disabled:saving,style:{padding:'5px 12px',borderRadius:5,border:'none',background:'#FF6B2B',color:'#fff',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}}, saving?'…':'Salvar'),
+        React.createElement("button",{onClick:function(){setForm(null);},style:{padding:'5px 12px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}}, 'Cancelar')
+      )
     ),
-    tab === 'pipeline' ? React.createElement("div", { style:{ flex:1, overflow:'hidden', padding:'8px 20px 20px' } }, React.createElement(PipelineView, { tipo: agencia && agencia.id === 'galeria' ? 'gaia' : 'holding' })) :
-    tab === 'enviar' ? React.createElement("div", { className:'panel' }, React.createElement(AprovacaoHoje, null)) :
-    placeholder
+    !agUuid && React.createElement("div",{style:{color:'#E24B4A',fontFamily:'IBM Plex Mono,monospace',fontSize:11}},'Agência sem UUID cadastrado.'),
+    servicos.map(function(s) {
+      return React.createElement("div",{key:s.id,style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,padding:'10px 14px',marginBottom:8}},
+        React.createElement("div",{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+          React.createElement("div",{style:{flex:1}},
+            React.createElement("div",{style:{fontSize:13,fontWeight:600,color:'#F5F5F5',marginBottom:3}}, s.nome),
+            s.descricao && React.createElement("div",{style:{fontSize:11,color:'#9B9BB4',lineHeight:1.5,marginBottom:6}}, s.descricao),
+            React.createElement("div",{style:{display:'flex',gap:10,flexWrap:'wrap'}},
+              s.preco_min && React.createElement("span",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#34D399'}}, 'R$ '+Number(s.preco_min).toLocaleString('pt-BR')+' – '+Number(s.preco_max||s.preco_min).toLocaleString('pt-BR')),
+              s.sinais_de_encaixe && React.createElement("span",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#A78BFA'}}, s.sinais_de_encaixe)
+            )
+          ),
+          React.createElement("button",{onClick:function(){setForm(Object.assign({},s));},style:{padding:'3px 8px',border:'.5px solid #2D2D44',borderRadius:4,background:'transparent',color:'#555',fontSize:9,cursor:'pointer'}},'Editar')
+        )
+      );
+    })
+  );
+}
+
+function AgCasesTab({ agencia, agenciaUuids }) {
+  var [cases, setCases] = React.useState([]);
+  var [loading, setLoading] = React.useState(true);
+  var [form, setForm] = React.useState(null);
+  var [saving, setSaving] = React.useState(false);
+  var agUuid = agenciaUuids && agencia ? (agenciaUuids[agencia.id] || null) : null;
+
+  React.useEffect(function() {
+    if (!agUuid) { setLoading(false); return; }
+    supaFetch('/rest/v1/crm_cases?agencia_id=eq.'+agUuid+'&order=titulo.asc').then(function(d) {
+      setCases(Array.isArray(d)?d:[]); setLoading(false);
+    }).catch(function(){setLoading(false);});
+  }, [agUuid]);
+
+  function thumbUrl(url) {
+    if (!url) return null;
+    var yt = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    if (yt) return 'https://img.youtube.com/vi/'+yt[1]+'/mqdefault.jpg';
+    return null;
+  }
+
+  function save() {
+    if (!form || !form.titulo) return;
+    setSaving(true);
+    var payload = {titulo:form.titulo,marca:form.marca,categoria_da_marca:form.categoria_da_marca,tipo:form.tipo,url_video:form.url_video,url_pagina:form.url_pagina,idioma:form.idioma||'pt',resumo:form.resumo,ativo:true};
+    if (form.id) {
+      supaFetch('/rest/v1/crm_cases?id=eq.'+form.id, {method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify(payload)})
+        .then(function(d){setSaving(false);setForm(null);setCases(function(p){return p.map(function(s){return s.id===form.id?Object.assign({},s,Array.isArray(d)?d[0]:{}):s;});});});
+    } else {
+      supaFetch('/rest/v1/crm_cases', {method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(Object.assign({agencia_id:agUuid},payload))})
+        .then(function(d){setSaving(false);setForm(null);if(Array.isArray(d))setCases(function(p){return[...p,...d];});});
+    }
+  }
+
+  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:'IBM Plex Mono,monospace'};
+  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11,padding:20}},'…');
+  return React.createElement("div",{style:{flex:1,overflowY:'auto',padding:'12px 20px'}},
+    !form && React.createElement("button",{onClick:function(){setForm({titulo:'',marca:'',categoria_da_marca:'',tipo:'',url_video:'',url_pagina:'',idioma:'pt',resumo:''});},style:{marginBottom:12,padding:'6px 14px',border:'.5px solid #FF6B2B44',borderRadius:6,background:'transparent',color:'#FF6B2B',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'+ Novo case'),
+    form && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:8,padding:'12px',marginBottom:12}},
+      React.createElement("div",{style:{fontSize:11,fontWeight:700,color:'#FF6B2B',fontFamily:'IBM Plex Mono,monospace',marginBottom:10}},form.id?'Editar case':'Novo case'),
+      [['titulo','Título'],['marca','Marca'],['categoria_da_marca','Categoria'],['tipo','Tipo (video/projeto)'],['url_video','URL do vídeo (YouTube/Vimeo)'],['url_pagina','URL da página'],['resumo','Resumo']].map(function(pair) {
+        var f=pair[0],l=pair[1];
+        return React.createElement("div",{key:f,style:{marginBottom:8}},
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}}, l),
+          f==='resumo'
+            ? React.createElement("textarea",{style:Object.assign({},inp,{height:60,resize:'vertical'}),value:form[f]||'',onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,Object.fromEntries([[f,v]]));});}})
+            : React.createElement("input",{style:inp,value:form[f]||'',onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,Object.fromEntries([[f,v]]));});}})
+        );
+      }),
+      form.url_video && thumbUrl(form.url_video) && React.createElement("img",{src:thumbUrl(form.url_video),alt:'thumb',style:{width:'100%',borderRadius:6,marginBottom:8,objectFit:'cover',maxHeight:120}}),
+      React.createElement("div",{style:{display:'flex',gap:8,marginTop:6}},
+        React.createElement("button",{onClick:save,disabled:saving,style:{padding:'5px 12px',borderRadius:5,border:'none',background:'#FF6B2B',color:'#fff',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}}, saving?'…':'Salvar'),
+        React.createElement("button",{onClick:function(){setForm(null);},style:{padding:'5px 12px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}}, 'Cancelar')
+      )
+    ),
+    React.createElement("div",{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:12}},
+      cases.map(function(c) {
+        var thumb = thumbUrl(c.url_video);
+        return React.createElement("div",{key:c.id,style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,overflow:'hidden'}},
+          thumb && React.createElement("img",{src:thumb,alt:'thumb',style:{width:'100%',height:120,objectFit:'cover',display:'block'}}),
+          React.createElement("div",{style:{padding:'10px 12px'}},
+            React.createElement("div",{style:{fontSize:12,fontWeight:600,color:'#F5F5F5',marginBottom:3}}, c.titulo),
+            c.marca && React.createElement("div",{style:{fontSize:10,color:'#A78BFA',marginBottom:4}}, c.marca+(c.categoria_da_marca?' · '+c.categoria_da_marca:'')),
+            c.resumo && React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',lineHeight:1.5,marginBottom:6}}, c.resumo),
+            React.createElement("div",{style:{display:'flex',gap:6}},
+              c.url_video && React.createElement("a",{href:c.url_video,target:'_blank',rel:'noopener',style:{fontSize:9,color:'#60A5FA',fontFamily:'IBM Plex Mono,monospace'}},'▶ Vídeo'),
+              c.url_pagina && React.createElement("a",{href:c.url_pagina,target:'_blank',rel:'noopener',style:{fontSize:9,color:'#60A5FA',fontFamily:'IBM Plex Mono,monospace'}},'↗ Página'),
+              React.createElement("button",{onClick:function(){setForm(Object.assign({},c));},style:{fontSize:9,color:'#555',background:'none',border:'none',cursor:'pointer',fontFamily:'IBM Plex Mono,monospace'}},'Editar')
+            )
+          )
+        );
+      })
+    )
+  );
+}
+
+function AgCredenciaisTab({ agencia }) {
+  var [blocos, setBlocos] = React.useState([]);
+  var [loading, setLoading] = React.useState(true);
+  var [form, setForm] = React.useState(null);
+  var [saving, setSaving] = React.useState(false);
+  var agId = agencia ? agencia.id : '';
+
+  React.useEffect(function() {
+    if (!agId) return;
+    supaFetch('/rest/v1/crm_credenciais_blocos?agencia_id=eq.'+agId+'&ativo=eq.true&order=titulo.asc').then(function(d) {
+      setBlocos(Array.isArray(d)?d:[]); setLoading(false);
+    }).catch(function(){setLoading(false);});
+  }, [agId]);
+
+  function save() {
+    if (!form || !form.titulo) return;
+    setSaving(true);
+    var payload = {agencia_id:agId,titulo:form.titulo,tipo:form.tipo||'geral',bloco:form.bloco||{},ativo:true};
+    if (form.id) {
+      supaFetch('/rest/v1/crm_credenciais_blocos?id=eq.'+form.id, {method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify({titulo:form.titulo,tipo:form.tipo,bloco:form.bloco,atualizado_em:new Date().toISOString()})})
+        .then(function(){setSaving(false);setForm(null);supaFetch('/rest/v1/crm_credenciais_blocos?agencia_id=eq.'+agId+'&ativo=eq.true&order=titulo.asc').then(function(d){setBlocos(Array.isArray(d)?d:[]);});});
+    } else {
+      supaFetch('/rest/v1/crm_credenciais_blocos', {method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(payload)})
+        .then(function(d){setSaving(false);setForm(null);if(Array.isArray(d))setBlocos(function(p){return[...p,...d];});});
+    }
+  }
+
+  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:'IBM Plex Mono,monospace'};
+  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11,padding:20}},'…');
+  return React.createElement("div",{style:{flex:1,overflowY:'auto',padding:'12px 20px'}},
+    !form && React.createElement("button",{onClick:function(){setForm({titulo:'',tipo:'geral',blocoRaw:'{}'});},style:{marginBottom:12,padding:'6px 14px',border:'.5px solid #FF6B2B44',borderRadius:6,background:'transparent',color:'#FF6B2B',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'+ Nova credencial'),
+    form && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:8,padding:'12px',marginBottom:12}},
+      React.createElement("div",{style:{fontSize:11,fontWeight:700,color:'#FF6B2B',fontFamily:'IBM Plex Mono,monospace',marginBottom:10}}, form.id?'Editar credencial':'Nova credencial'),
+      [['titulo','Título'],['tipo','Tipo']].map(function(pair) {
+        var f=pair[0],l=pair[1];
+        return React.createElement("div",{key:f,style:{marginBottom:8}},
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}}, l),
+          React.createElement("input",{style:inp,value:form[f]||'',onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,Object.fromEntries([[f,v]]));});}})
+        );
+      }),
+      React.createElement("div",{style:{marginBottom:8}},
+        React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}},'Dados (JSON)'),
+        React.createElement("textarea",{style:Object.assign({},inp,{height:100,resize:'vertical',fontFamily:'monospace'}),value:form.blocoRaw||JSON.stringify(form.bloco||{}),onChange:function(e){var v=e.target.value;setForm(function(p){var b=p.bloco;try{b=JSON.parse(v);}catch(ex){}return Object.assign({},p,{blocoRaw:v,bloco:b});});}})
+      ),
+      React.createElement("div",{style:{display:'flex',gap:8}},
+        React.createElement("button",{onClick:save,disabled:saving,style:{padding:'5px 12px',borderRadius:5,border:'none',background:'#FF6B2B',color:'#fff',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},saving?'…':'Salvar'),
+        React.createElement("button",{onClick:function(){setForm(null);},style:{padding:'5px 12px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'Cancelar')
+      )
+    ),
+    blocos.length===0 && !form && React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11}},'Nenhuma credencial cadastrada.'),
+    blocos.map(function(b) {
+      return React.createElement("div",{key:b.id,style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,padding:'10px 14px',marginBottom:8}},
+        React.createElement("div",{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}},
+          React.createElement("span",{style:{fontSize:12,fontWeight:600,color:'#F5F5F5'}}, b.titulo),
+          React.createElement("div",{style:{display:'flex',gap:6}},
+            React.createElement("span",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#A78BFA',background:'#A78BFA22',padding:'1px 6px',borderRadius:100}}, b.tipo),
+            React.createElement("button",{onClick:function(){setForm(Object.assign({},b,{blocoRaw:JSON.stringify(b.bloco||{},null,2)}));},style:{fontSize:9,color:'#555',background:'none',border:'none',cursor:'pointer'}},'Editar')
+          )
+        ),
+        b.bloco && Object.keys(b.bloco).length>0 && React.createElement("pre",{style:{fontSize:10,color:'#9B9BB4',background:'#08080F',borderRadius:4,padding:'6px 8px',margin:0,overflowX:'auto',fontFamily:'monospace',whiteSpace:'pre-wrap'}},JSON.stringify(b.bloco,null,2))
+      );
+    })
+  );
+}
+
+function AgTextosTab({ agencia }) {
+  var [templates, setTemplates] = React.useState([]);
+  var [loading, setLoading] = React.useState(true);
+  var [form, setForm] = React.useState(null);
+  var [saving, setSaving] = React.useState(false);
+  var agId = agencia ? agencia.id : '';
+  var ETAPAS = ['contato','reuniao','proposta','negociacao','fechamento'];
+
+  React.useEffect(function() {
+    if (!agId) return;
+    supaFetch('/rest/v1/crm_templates?agencia_id=eq.'+agId+'&order=etapa.asc,titulo.asc').then(function(d) {
+      setTemplates(Array.isArray(d)?d:[]); setLoading(false);
+    }).catch(function(){setLoading(false);});
+  }, [agId]);
+
+  function save() {
+    if (!form || !form.titulo || !form.corpo) return;
+    setSaving(true);
+    var payload = {agencia_id:agId,etapa:form.etapa||'contato',titulo:form.titulo,corpo:form.corpo,tipo:form.tipo||'email'};
+    if (form.id) {
+      supaFetch('/rest/v1/crm_templates?id=eq.'+form.id, {method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify(Object.assign(payload,{atualizado_em:new Date().toISOString()}))})
+        .then(function(){setSaving(false);setForm(null);setTemplates(function(p){return p.map(function(t){return t.id===form.id?Object.assign({},t,payload):t;});});});
+    } else {
+      supaFetch('/rest/v1/crm_templates', {method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(payload)})
+        .then(function(d){setSaving(false);setForm(null);if(Array.isArray(d))setTemplates(function(p){return[...p,...d];});});
+    }
+  }
+
+  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:'IBM Plex Mono,monospace'};
+  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11,padding:20}},'…');
+  return React.createElement("div",{style:{flex:1,overflowY:'auto',padding:'12px 20px'}},
+    !form && React.createElement("button",{onClick:function(){setForm({etapa:'contato',titulo:'',corpo:'',tipo:'email'});},style:{marginBottom:12,padding:'6px 14px',border:'.5px solid #FF6B2B44',borderRadius:6,background:'transparent',color:'#FF6B2B',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'+ Novo template'),
+    form && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:8,padding:'12px',marginBottom:12}},
+      React.createElement("div",{style:{fontSize:11,fontWeight:700,color:'#FF6B2B',fontFamily:'IBM Plex Mono,monospace',marginBottom:10}},form.id?'Editar template':'Novo template'),
+      React.createElement("div",{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:8}},
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}},'Etapa'),
+          React.createElement("select",{style:Object.assign({},inp),value:form.etapa,onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,{etapa:v});});}},
+            ETAPAS.map(function(e){return React.createElement("option",{key:e,value:e},e);})
+          )
+        ),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}},'Tipo'),
+          React.createElement("select",{style:Object.assign({},inp),value:form.tipo,onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,{tipo:v});});}},
+            ['email','whatsapp','linkedin','apresentacao'].map(function(t){return React.createElement("option",{key:t,value:t},t);})
+          )
+        )
+      ),
+      React.createElement("div",{style:{marginBottom:8}},
+        React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}},'Título'),
+        React.createElement("input",{style:inp,value:form.titulo,onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,{titulo:v});})}})
+      ),
+      React.createElement("div",{style:{marginBottom:8}},
+        React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}},'Corpo do texto'),
+        React.createElement("textarea",{style:Object.assign({},inp,{height:150,resize:'vertical',lineHeight:1.5}),value:form.corpo,onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,{corpo:v});})}})
+      ),
+      React.createElement("div",{style:{display:'flex',gap:8}},
+        React.createElement("button",{onClick:save,disabled:saving,style:{padding:'5px 12px',borderRadius:5,border:'none',background:'#FF6B2B',color:'#fff',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},saving?'…':'Salvar'),
+        React.createElement("button",{onClick:function(){setForm(null);},style:{padding:'5px 12px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'Cancelar')
+      )
+    ),
+    ETAPAS.map(function(etapa) {
+      var etapaTs = templates.filter(function(t){return t.etapa===etapa;});
+      if (etapaTs.length===0) return null;
+      return React.createElement("div",{key:etapa,style:{marginBottom:16}},
+        React.createElement("div",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:9,color:'#555',fontWeight:700,textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}, etapa),
+        etapaTs.map(function(t) {
+          return React.createElement("div",{key:t.id,style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,padding:'10px 14px',marginBottom:6}},
+            React.createElement("div",{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}},
+              React.createElement("span",{style:{fontSize:12,fontWeight:600,color:'#F5F5F5'}}, t.titulo),
+              React.createElement("div",{style:{display:'flex',gap:6}},
+                React.createElement("span",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#A78BFA',background:'#A78BFA22',padding:'1px 6px',borderRadius:100}}, t.tipo),
+                React.createElement("button",{onClick:function(){setForm(Object.assign({},t));},style:{fontSize:9,color:'#555',background:'none',border:'none',cursor:'pointer'}},'Editar')
+              )
+            ),
+            React.createElement("pre",{style:{fontSize:10,color:'#9B9BB4',margin:0,whiteSpace:'pre-wrap',fontFamily:'IBM Plex Mono,monospace',lineHeight:1.5}}, t.corpo)
+          );
+        })
+      );
+    })
+  );
+}
+
+function AgEnviarTab({ agencia }) {
+  var [cards, setCards] = React.useState([]);
+  var [loading, setLoading] = React.useState(true);
+  var [generating, setGenerating] = React.useState(false);
+  var [html, setHtml] = React.useState(null);
+  var agId = agencia ? agencia.id : '';
+
+  React.useEffect(function() {
+    if (!agId) return;
+    supaFetch('/rest/v1/crm_kanban?responsavel=ilike.*'+encodeURIComponent(agId)+'*&select=*&order=col.asc,nome.asc').then(function(d) {
+      setCards(Array.isArray(d)?d:[]); setLoading(false);
+    }).catch(function(){setLoading(false);});
+  }, [agId]);
+
+  function generate() {
+    setGenerating(true);
+    var colLabels = {contato:'1º Contato',reuniao:'Reunião',proposta:'Proposta',negociacao:'Negociação',fechamento:'Fechamento'};
+    var byCol = {};
+    cards.forEach(function(c){if(!byCol[c.col])byCol[c.col]=[];byCol[c.col].push(c);});
+    var colOrder = ['contato','reuniao','proposta','negociacao','fechamento'];
+    var rows = colOrder.filter(function(c){return byCol[c]&&byCol[c].length>0;}).map(function(col) {
+      var cs = byCol[col];
+      var items = cs.map(function(c){return '<li style="margin-bottom:6px"><strong>'+c.nome+'</strong>'+(c.produto?' — '+c.produto:'')+(c.valor?' <span style="color:#34D399">R$ '+Number(c.valor).toLocaleString('pt-BR')+'</span>':'')+'</li>';}).join('');
+      return '<div style="margin-bottom:24px"><h3 style="font-family:monospace;font-size:11px;color:#FF6B2B;letter-spacing:1px;text-transform:uppercase;margin:0 0 10px">'+(colLabels[col]||col)+'</h3><ul style="padding-left:18px;margin:0">'+items+'</ul></div>';
+    }).join('');
+    var htmlStr = '<!DOCTYPE html><html><head><meta charset=UTF-8><title>Pipeline '+agencia.name+'</title></head><body style="background:#060610;color:#F5F5F5;font-family:sans-serif;padding:32px;max-width:600px;margin:0 auto"><div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;border-bottom:1px solid #1A1A2E;padding-bottom:16px"><div style="width:32px;height:32px;background:#FF6B2B;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:monospace;font-weight:bold;color:#fff">G</div><div><div style="font-family:monospace;font-size:14px;font-weight:700">GALERIA HOLDING</div><div style="font-family:monospace;font-size:10px;color:#9B9BB4">Pipeline — '+(agencia.name||'')+'</div></div></div>'+rows+'<div style="margin-top:32px;padding-top:16px;border-top:1px solid #1A1A2E;font-family:monospace;font-size:9px;color:#555">Gerado em '+new Date().toLocaleDateString('pt-BR')+' · Galeria Holding · Confidencial</div></body></html>';
+    setHtml(htmlStr);
+    setGenerating(false);
+  }
+
+  function copyHtml() { try { navigator.clipboard.writeText(html||''); } catch(e){} }
+
+  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11,padding:20}},'…');
+  return React.createElement("div",{style:{flex:1,overflowY:'auto',padding:'12px 20px'}},
+    React.createElement("div",{style:{marginBottom:16}},
+      React.createElement("div",{style:{fontSize:11,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:8}}, cards.length+' cards no pipeline desta agência'),
+      React.createElement("div",{style:{display:'flex',gap:8}},
+        React.createElement("button",{onClick:generate,disabled:generating,style:{padding:'6px 16px',border:'none',borderRadius:6,background:'#FF6B2B',color:'#fff',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}}, generating?'Gerando…':'Gerar HTML do pipeline'),
+        html && React.createElement("button",{onClick:copyHtml,style:{padding:'6px 16px',border:'.5px solid #2D2D44',borderRadius:6,background:'transparent',color:'#9B9BB4',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'Copiar HTML')
+      )
+    ),
+    html && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,overflow:'hidden'}},
+      React.createElement("div",{style:{padding:'8px 14px',borderBottom:'.5px solid #1A1A2E',fontFamily:'IBM Plex Mono,monospace',fontSize:9,color:'#555'}},'Preview (iframe)'),
+      React.createElement("iframe",{srcDoc:html,style:{width:'100%',height:400,border:'none'},title:'Pipeline preview'})
+    )
+  );
+}
+
+function AgenciaHome({ agencia, tab, navTo, agenciaUuids }) {
+  return React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden'}},
+    tab === 'pipeline' ? React.createElement("div",{style:{flex:1,overflow:'hidden'}},
+      React.createElement(PipelineView, { tipo: agencia && agencia.id === 'gaia' ? 'gaia' : 'holding', agenciaFiltro: agencia && agencia.id !== 'gaia' ? agencia.id : null })
+    ) :
+    tab === 'noticias'    ? React.createElement(AgNoticiasTab,   {agencia:agencia, agenciaUuids:agenciaUuids}) :
+    tab === 'servicos'    ? React.createElement(AgServicosTab,   {agencia:agencia, agenciaUuids:agenciaUuids}) :
+    tab === 'cases'       ? React.createElement(AgCasesTab,      {agencia:agencia, agenciaUuids:agenciaUuids}) :
+    tab === 'credenciais' ? React.createElement(AgCredenciaisTab,{agencia:agencia}) :
+    tab === 'textos'      ? React.createElement(AgTextosTab,     {agencia:agencia}) :
+    tab === 'enviar'      ? React.createElement(AgEnviarTab,     {agencia:agencia}) :
+    React.createElement("div",{style:{padding:20,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11}}, tab)
   );
 }
 
