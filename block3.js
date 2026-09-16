@@ -2244,6 +2244,58 @@ function nowStr() {
   return new Date().toLocaleString("pt-BR");
 }
 // sharedGet/Set e personalGet/Set agora vêm de gh-store.js (carregado antes)
+
+function AprovacaoHoje() {
+  const [itens, setItens] = useState(null);
+  const [busy, setBusy] = useState({});
+  useEffect(() => {
+    (async () => {
+      const fn = window.__filaHoje;
+      if (fn) { const data = await fn(); setItens(data); }
+      else setItens([]);
+    })();
+  }, []);
+  const aprovar = async (id) => {
+    setBusy(p => ({ ...p, [id]: 'ok' }));
+    await (window.__filaAprovar || (async () => {}))(id);
+    setItens(p => p.filter(x => x.id !== id));
+  };
+  const descartar = async (id) => {
+    setBusy(p => ({ ...p, [id]: 'skip' }));
+    await (window.__filaDescartar || (async () => {}))(id);
+    setItens(p => p.filter(x => x.id !== id));
+  };
+  const s = { fontFamily: "'IBM Plex Mono',monospace" };
+  if (itens === null) return /*#__PURE__*/React.createElement("div", { style: { flex:1,display:"flex",alignItems:"center",justifyContent:"center",color:"#2D2D44",...s,fontSize:10 } }, "Carregando fila...");
+  if (itens.length === 0) return /*#__PURE__*/React.createElement("div", { style: { flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,opacity:.3 } },
+    /*#__PURE__*/React.createElement("div", { style: { fontSize:36 } }, "✅"),
+    /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:11,color:"#F5F5F5" } }, "Nada para aprovar hoje")
+  );
+  return /*#__PURE__*/React.createElement("div", { style: { flex:1,overflow:"hidden",display:"flex",flexDirection:"column" } },
+    /*#__PURE__*/React.createElement("div", { style: { padding:"14px 20px 10px",borderBottom:".5px solid #2D2D44",display:"flex",alignItems:"center",gap:10,flexShrink:0 } },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize:15,fontWeight:500,color:"#F5F5F5",letterSpacing:"-.3px" } }, "Aprovar hoje"),
+      /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:10,padding:"2px 9px",borderRadius:100,background:"rgba(255,107,43,.1)",color:"#FF6B2B",border:".5px solid rgba(255,107,43,.3)" } }, itens.length)
+    ),
+    /*#__PURE__*/React.createElement("div", { style: { flex:1,overflowY:"auto",padding:"14px 20px" } },
+      itens.map(item => /*#__PURE__*/React.createElement("div", { key:item.id, style: { background:"#1A1A2E",border:".5px solid #2D2D44",borderRadius:10,padding:14,marginBottom:10,display:"flex",alignItems:"flex-start",gap:12 } },
+        /*#__PURE__*/React.createElement("div", { style: { flex:1 } },
+          /*#__PURE__*/React.createElement("div", { style: { fontSize:12,fontWeight:600,color:"#F5F5F5",marginBottom:3 } }, item.empresa_nome),
+          item.decisor_nome && /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:10,color:"#FF6B2B",marginBottom:3 } }, item.decisor_nome, item.decisor_email ? " · " + item.decisor_email : ""),
+          /*#__PURE__*/React.createElement("div", { style: { display:"flex",gap:6,flexWrap:"wrap",marginTop:4 } },
+            item.canal && /*#__PURE__*/React.createElement("span", { style: { ...s,fontSize:8,padding:"2px 7px",borderRadius:100,background:"rgba(96,165,250,.1)",color:"#60A5FA",border:".5px solid rgba(96,165,250,.2)" } }, item.canal),
+            item.data_sugerida && /*#__PURE__*/React.createElement("span", { style: { ...s,fontSize:8,color:"#9B9BB4" } }, item.data_sugerida),
+            item.fonte && /*#__PURE__*/React.createElement("span", { style: { ...s,fontSize:8,color:"#2D2D44" } }, item.fonte)
+          ),
+          item.nota && /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:10,color:"#9B9BB4",marginTop:6,borderLeft:"2px solid #2D2D44",paddingLeft:7,lineHeight:1.6 } }, item.nota)
+        ),
+        /*#__PURE__*/React.createElement("div", { style: { display:"flex",flexDirection:"column",gap:5,flexShrink:0 } },
+          /*#__PURE__*/React.createElement("button", { className:"gh-btn-primary", style:{ padding:"5px 14px",fontSize:11 }, onClick:()=>aprovar(item.id), disabled:!!busy[item.id] }, "✓ Aprovar"),
+          /*#__PURE__*/React.createElement("button", { className:"gh-btn-ghost", style:{ padding:"5px 14px",fontSize:11 }, onClick:()=>descartar(item.id), disabled:!!busy[item.id] }, "✗ Pular")
+        )
+      ))
+    )
+  );
+}
 async function logActivity(curUser, empresa, grupoName, tipo, tipoLabel, decisor, nota) {
   const entry = {
     id: uid(),
@@ -3608,7 +3660,7 @@ function App() {
     style: {
       gap: 4
     }
-  }, [["bomdias", "☀️ Bom Dia"], ["diario", "📓 Diário"], ["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["blocklist", "🚫 Blocklist"], ["agente", "🚀 Agente"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["aprovarhoje", "✅ Aprovar hoje"], ["bomdias", "☀️ Bom Dia"], ["diario", "📓 Diário"], ["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["blocklist", "🚫 Blocklist"], ["agente", "🚀 Agente"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
     key: v,
     onClick: () => switchView(v),
     style: {
@@ -3947,7 +3999,10 @@ function App() {
     accs: accs,
     curGrupo: curGrupo,
     setView: switchView
-  })) : viewMode === "bomdias" ? /*#__PURE__*/React.createElement("div", {
+  })) : viewMode === "aprovarhoje" ? /*#__PURE__*/React.createElement("div", {
+    className: "ws",
+    style: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }
+  }, /*#__PURE__*/React.createElement(AprovacaoHoje, null)) : viewMode === "bomdias" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
