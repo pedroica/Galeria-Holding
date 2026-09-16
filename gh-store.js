@@ -157,6 +157,55 @@
     } catch (e) {}
   }
 
+  /* ── crm_estrelas helpers ────────────────────────────────────── */
+  // company_key = "grupo_id_rank", ex: "galeria_1042"
+  async function getEstrelas(companyKey) {
+    var cached = {};
+    try {
+      var raw = localStorage.getItem('gh_estrelas_v1');
+      var all = raw ? JSON.parse(raw) : {};
+      cached = all[companyKey] || {};
+    } catch (e) {}
+
+    if (!supa) return cached;
+    try {
+      var sess = await getSession();
+      if (!sess) return cached;
+      var res = await supa.from('crm_estrelas')
+        .select('grupo_id, estrelas')
+        .eq('company_key', companyKey);
+      if (res && res.data && res.data.length) {
+        var out = {};
+        res.data.forEach(function(r) { out[r.grupo_id] = r.estrelas; });
+        return out;
+      }
+    } catch (e) {}
+    return cached;
+  }
+
+  async function setEstrela(companyKey, grupoId, estrelas, empresaUuid) {
+    // localStorage bridge
+    try {
+      var raw = localStorage.getItem('gh_estrelas_v1');
+      var all = raw ? JSON.parse(raw) : {};
+      if (!all[companyKey]) all[companyKey] = {};
+      all[companyKey][grupoId] = estrelas;
+      localStorage.setItem('gh_estrelas_v1', JSON.stringify(all));
+    } catch (e) {}
+    if (!supa) return;
+    try {
+      var sess = await getSession();
+      if (!sess) return;
+      await supa.from('crm_estrelas').upsert({
+        company_key: companyKey,
+        empresa_uuid: empresaUuid || null,
+        grupo_id: grupoId,
+        estrelas: estrelas,
+        updated_at: new Date().toISOString()
+      }, { onConflict: 'company_key,grupo_id' });
+    } catch (e) {}
+  }
+
   window.sharedGet    = sharedGet;
   window.sharedSet    = sharedSet;
   window.personalGet  = personalGet;
@@ -164,6 +213,8 @@
   window.__filaHoje   = filaHoje;
   window.__filaAprovar  = filaAprovar;
   window.__filaDescartar = filaDescartar;
+  window.__getEstrelas = getEstrelas;
+  window.__setEstrela  = setEstrela;
 
   console.log('[gh-store] ok — supa:', supa ? 'conectado' : 'offline (localStorage only)');
 })();

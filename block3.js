@@ -3660,7 +3660,7 @@ function App() {
     style: {
       gap: 4
     }
-  }, [["aprovarhoje", "✅ Aprovar hoje"], ["bomdias", "☀️ Bom Dia"], ["diario", "📓 Diário"], ["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["blocklist", "🚫 Blocklist"], ["agente", "🚀 Agente"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
+  }, [["aprovarhoje", "✅ Aprovar hoje"], ["estrelas", "⭐ Estrelas"], ["bomdias", "☀️ Bom Dia"], ["diario", "📓 Diário"], ["hotpipeline", "📊 Kanban Diário"], ["empresas", "🎴 Empresas"], ["blocklist", "🚫 Blocklist"], ["agente", "🚀 Agente"], ["pipeline_gaia", "⚡ GAIA Pipeline"], ["pipeline_holding", "🏢 Holding Pipeline"], ["ka2", "📋 Acionamentos"], ["top10", "🎯 Top 10"], ["llm2", "🤖 Perguntar"], ["alertas2", "🔔 Alertas"], ["batch", "✉ Lote"], ["calls", "📞 Calls"], ["temperatura", "🌡 Temperatura"], ["outbound", "🚀 Outbound"], ["cobertura", "🗺 Cobertura"], ["ranking", "📈 Ranking"], ["regua", "🗓 Régua"]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
     key: v,
     onClick: () => switchView(v),
     style: {
@@ -4002,7 +4002,10 @@ function App() {
   })) : viewMode === "aprovarhoje" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }
-  }, /*#__PURE__*/React.createElement(AprovacaoHoje, null)) : viewMode === "bomdias" ? /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(AprovacaoHoje, null)) : viewMode === "estrelas" ? /*#__PURE__*/React.createElement("div", {
+    className: "ws",
+    style: { flex: 1, overflow: "hidden", display: "flex", flexDirection: "column" }
+  }, /*#__PURE__*/React.createElement(EstrelasPorAgenciaView, { accs: accs, curGrupo: curGrupo })) : viewMode === "bomdias" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -4182,6 +4185,90 @@ function App() {
       textAlign: "center"
     }
   }, curGrupo.desc, /*#__PURE__*/React.createElement("br", null), /*#__PURE__*/React.createElement("br", null), "Selecione um anunciante para começar a prospecção.")))))));
+}
+
+/* ═══════════════════════════════════════════════════════════════
+   ESTRELAS POR AGÊNCIA — rating de empresas por grupo/uuid
+   ═══════════════════════════════════════════════════════════════ */
+function StarWidget({ value, onChange, size }) {
+  const sz = size || 16;
+  return /*#__PURE__*/React.createElement("span", { style: { cursor: onChange ? "pointer" : "default", fontSize: sz, lineHeight: 1, whiteSpace: "nowrap" } },
+    [1,2,3,4,5].map(n => /*#__PURE__*/React.createElement("span", {
+      key: n,
+      title: n + " estrela" + (n > 1 ? "s" : ""),
+      onClick: onChange ? () => onChange(n === value ? 0 : n) : undefined,
+      style: { color: n <= (value || 0) ? "#FF6B2B" : "#2D2D44", transition: "color .12s" }
+    }, "★"))
+  );
+}
+
+function EstrelasPorAgenciaView({ accs, curGrupo }) {
+  const GRUPOS = typeof GRUPO !== "undefined" ? GRUPO : [];
+  const [estrelas, setEstrelas] = React.useState({});
+  const [search, setSearch] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+  const empresas = React.useMemo(() => {
+    return (typeof PROSP !== "undefined" ? PROSP : [])
+      .filter(e => e && e.nome && e.setor)
+      .filter(e => !search || e.nome.toLowerCase().includes(search.toLowerCase()))
+      .slice(0, 100);
+  }, [search]);
+
+  // Carrega estrelas do localStorage (Supabase é assíncrono; faz merge quando retorna)
+  React.useEffect(() => {
+    try {
+      const raw = localStorage.getItem("gh_estrelas_v1");
+      if (raw) setEstrelas(JSON.parse(raw));
+    } catch (e) {}
+    setLoading(false);
+  }, []);
+
+  const handleStar = async (companyKey, grupoId, val) => {
+    // Atualiza local imediatamente
+    setEstrelas(prev => {
+      const next = { ...prev, [companyKey]: { ...(prev[companyKey] || {}), [grupoId]: val } };
+      try { localStorage.setItem("gh_estrelas_v1", JSON.stringify(next)); } catch (e) {}
+      return next;
+    });
+    // Persiste em Supabase (com uuid=null por ora; uuid virá do companies)
+    if (window.__setEstrela) await window.__setEstrela(companyKey, grupoId, val, null);
+  };
+
+  const s = { fontFamily: "'IBM Plex Mono',monospace" };
+  return /*#__PURE__*/React.createElement("div", { style: { flex:1,overflow:"hidden",display:"flex",flexDirection:"column" } },
+    /*#__PURE__*/React.createElement("div", { style: { padding:"12px 20px 10px",borderBottom:".5px solid #2D2D44",display:"flex",alignItems:"center",gap:12,flexShrink:0,flexWrap:"wrap" } },
+      /*#__PURE__*/React.createElement("div", { style: { fontSize:14,fontWeight:500,color:"#F5F5F5" } }, "Estrelas por Agência"),
+      /*#__PURE__*/React.createElement("input", { style: { ...s,background:"#1A1A2E",border:".5px solid #2D2D44",borderRadius:6,padding:"5px 11px",color:"#F5F5F5",fontSize:11,outline:"none",width:200 }, placeholder:"Buscar empresa...", value:search, onChange:e=>setSearch(e.target.value) })
+    ),
+    /*#__PURE__*/React.createElement("div", { style: { flex:1,overflowX:"auto",overflowY:"auto" } },
+      /*#__PURE__*/React.createElement("table", { style: { borderCollapse:"collapse",width:"100%",minWidth:600 } },
+        /*#__PURE__*/React.createElement("thead", null,
+          /*#__PURE__*/React.createElement("tr", { style: { position:"sticky",top:0,background:"#111827",zIndex:1 } },
+            /*#__PURE__*/React.createElement("th", { style: { ...s,fontSize:8,color:"#9B9BB4",textTransform:"uppercase",letterSpacing:1,padding:"10px 16px",textAlign:"left",borderBottom:".5px solid #2D2D44",minWidth:200,position:"sticky",left:0,background:"#111827" } }, "Empresa"),
+            GRUPOS.map(g => /*#__PURE__*/React.createElement("th", { key:g.id, style: { ...s,fontSize:8,color:g.id===curGrupo.id?"#FF6B2B":"#9B9BB4",textTransform:"uppercase",letterSpacing:1,padding:"10px 12px",textAlign:"center",borderBottom:".5px solid #2D2D44",whiteSpace:"nowrap" } }, g.name))
+          )
+        ),
+        /*#__PURE__*/React.createElement("tbody", null,
+          loading ? /*#__PURE__*/React.createElement("tr", null, /*#__PURE__*/React.createElement("td", { colSpan:GRUPOS.length+1, style:{textAlign:"center",padding:32,...s,fontSize:10,color:"#2D2D44"} }, "carregando..."))
+          : empresas.map(emp => {
+            const baseKey = curGrupo.id + "_" + emp.rank;
+            const compEstrelas = estrelas[baseKey] || {};
+            return /*#__PURE__*/React.createElement("tr", { key:emp.rank, style:{borderBottom:".5px solid #111827"} },
+              /*#__PURE__*/React.createElement("td", { style:{padding:"8px 16px",fontSize:11,color:"#F5F5F5",fontWeight:500,position:"sticky",left:0,background:"#0D0D0D",maxWidth:220,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"} }, emp.nome),
+              GRUPOS.map(g => {
+                const key = g.id + "_" + emp.rank;
+                const val = (estrelas[key] || {})[g.id] || 0;
+                const isMe = g.id === curGrupo.id;
+                return /*#__PURE__*/React.createElement("td", { key:g.id, style:{padding:"6px 12px",textAlign:"center"} },
+                  /*#__PURE__*/React.createElement(StarWidget, { value:val, size:13, onChange:isMe ? (v => handleStar(key, g.id, v)) : null })
+                );
+              })
+            );
+          })
+        )
+      )
+    )
+  );
 }
 
 /* ═══════════════════════════════════════════════════════════════
