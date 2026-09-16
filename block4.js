@@ -1401,7 +1401,7 @@ function KanbanDiario() {
   const isGaia = aba === 'gaia';
   const rows = data[aba] || [];
 
-  // Carrega do Supabase na montagem (anon read, sem sessão)
+  // Carrega do Supabase na montagem (requer sessão após auth gate restaurado)
   React.useEffect(() => {
     if (typeof window.__kanbanLoadAll !== 'function') return;
     window.__kanbanLoadAll().then(function(supData) {
@@ -1409,7 +1409,15 @@ function KanbanDiario() {
       var total = (supData.gaia || []).length + (supData.holding || []).length;
       if (total === 0) return;
       setData(supData);
+      // Cache local para acesso offline
       try { localStorage.setItem(HP_STORAGE, JSON.stringify(supData)); } catch(e) {}
+      // Também popula gh_kanban_v3 no formato legado (usado por block_diario.js)
+      if (typeof window.__kanbanToLegacyFormat === 'function') {
+        try {
+          var legacy = window.__kanbanToLegacyFormat(supData);
+          localStorage.setItem('gh_kanban_v3', JSON.stringify(legacy));
+        } catch(e) {}
+      }
     });
   }, []);
 

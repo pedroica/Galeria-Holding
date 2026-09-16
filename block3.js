@@ -3318,8 +3318,8 @@ function App() {
     return !t || !t.concluido;
   });
   const [abordagemGlobal, setAbordagemGlobal] = useState(null); // {decisor, empresa, setor}
-  const [curUser, setCurUser] = useState({ id: 'pedro', name: 'Pedro Ica', role: 'admin' });
-  const [sessLoading, setSessLoading] = useState(false);
+  const [curUser, setCurUser] = useState(null);
+  const [sessLoading, setSessLoading] = useState(true);
   const lastReview = loadSt("ghub_res_review", null);
   const showReminder = !lastReview || new Date() - new Date(lastReview) > 90 * 24 * 60 * 60 * 1000;
   useEffect(() => {
@@ -3334,6 +3334,7 @@ function App() {
           role: (supaSess.user.user_metadata && supaSess.user.user_metadata.role) || "admin"
         });
         setSessLoading(false);
+        if (typeof window.__hydrateFromSupabase === 'function') window.__hydrateFromSupabase();
       } else {
         // Fallback: sessão cacheada no localStorage
         const localSess = await personalGet("session");
@@ -3352,6 +3353,10 @@ function App() {
             name: (session.user.user_metadata && session.user.user_metadata.name) || session.user.email || "Pedro Ica",
             role: (session.user.user_metadata && session.user.user_metadata.role) || "admin"
           });
+          // Hidrata localStorage com dados do Supabase logo após o login
+          if (typeof window.__hydrateFromSupabase === 'function') {
+            window.__hydrateFromSupabase();
+          }
         } else if (event === "SIGNED_OUT") {
           setCurUser(null);
         }
@@ -3513,7 +3518,7 @@ function App() {
       fontSize: 12
     }
   }, "Carregando...");
-  // auth gate removido — acesso direto
+  if (!curUser) return /*#__PURE__*/React.createElement(MagicLinkScreen, null);
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",

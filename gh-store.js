@@ -400,6 +400,107 @@
     } catch(e) { return null; }
   }
 
+  /* ── Bridge global: localStorage ↔ crm_shared / crm_personal ────────────
+     Intercepta localStorage.setItem para chaves conhecidas e sincroniza
+     para Supabase em background. Nenhum block file precisa ser alterado.
+  ── */
+  var LS_SHARED_KEYS = [
+    'gh_alertas_v2', 'gh_regua_v1', 'gh_blocklist_v1',
+    'gh_diario_v1', 'gh_bomdias_v1', 'gh_llmbox_v2',
+    'gh_config_v1', 'gh_tutorial_v1', 'gh_decisores_v3',
+    'ghub_accs', 'gh_funil_v1', 'gh_radar_v1', 'gh_templates_v1',
+    'gh_portfolio_v1', 'gh_abordagens_v1', 'gh_estrelas_v1',
+    'gh_kanban_v3', 'gh_llmbox_v1', 'gh_kestra_v1', 'gh_bomdias_nav',
+    'ghub_custom_leads'
+  ];
+  var LS_PERSONAL_KEYS = ['ghub_claude_key'];
+
+  // Hydrate: carrega crm_shared/crm_personal → localStorage (requer sessão)
+  async function hydrateFromSupabase() {
+    if (!supa) return;
+    try {
+      var sess = await getSession();
+      if (!sess) return;
+      var res = await supa.from('crm_shared').select('key, value').in('key', LS_SHARED_KEYS);
+      if (res && res.data) {
+        res.data.forEach(function(row) {
+          try {
+            var v = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
+            localStorage.setItem(row.key, v);
+          } catch(e) {}
+        });
+      }
+      var uid = sess.user.id;
+      var pRes = await supa.from('crm_personal').select('key, value')
+        .eq('user_id', uid).in('key', LS_PERSONAL_KEYS);
+      if (pRes && pRes.data) {
+        pRes.data.forEach(function(row) {
+          try {
+            var v = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
+            localStorage.setItem(row.key, v);
+          } catch(e) {}
+        });
+      }
+      console.log('[gh-store] hydrate OK — shared:', (res && res.data && res.data.length) || 0, 'keys');
+    } catch(e) { console.warn('[gh-store] hydrate error', e); }
+  }
+
+  // Push de uma chave específica do localStorage para Supabase (background)
+  async function pushKeyToSupabase(key, rawValue) {
+    if (!supa) return;
+    try {
+      var sess = await getSession();
+      if (!sess) return;
+      var parsed;
+      try { parsed = JSON.parse(rawValue); } catch(e) { parsed = rawValue; }
+      if (LS_SHARED_KEYS.indexOf(key) !== -1) {
+        await supa.from('crm_shared').upsert(
+          { key: key, value: parsed, updated_at: new Date().toISOString() },
+          { onConflict: 'key' }
+        );
+      } else if (LS_PERSONAL_KEYS.indexOf(key) !== -1) {
+        await supa.from('crm_personal').upsert(
+          { user_id: sess.user.id, key: key, value: parsed, updated_at: new Date().toISOString() },
+          { onConflict: 'user_id,key' }
+        );
+      }
+    } catch(e) {}
+  }
+
+  // Monkey-patch localStorage.setItem
+  (function() {
+    var ALL_BRIDGE = LS_SHARED_KEYS.concat(LS_PERSONAL_KEYS);
+    var _origSet = localStorage.setItem.bind(localStorage);
+    localStorage.setItem = function(key, value) {
+      _origSet(key, value);
+      if (ALL_BRIDGE.indexOf(key) !== -1) {
+        pushKeyToSupabase(key, value); // fire-and-forget
+      }
+    };
+  })();
+
+  // Converte crm_kanban (formato hotpipeline) para gh_kanban_v3 (formato legado)
+  // Usado pelo block_diario.js para FUP cards
+  function kanbanToLegacyFormat(hpData) {
+    var tabs = [];
+    ['gaia', 'holding'].forEach(function(tabId) {
+      var cards = (hpData[tabId] || []).map(function(c) {
+        return {
+          id:      c.id,
+          col:     c.etapa,    // já usa os novos nomes: contato/reuniao/proposta/negociacao/fechamento
+          name:    c.nome,
+          product: c.produto,
+          note:    c.nota,
+          value:   c.valor,
+          galeria: c.empresa_galeria,
+          updatedAt: c.updatedAt
+        };
+      });
+      tabs.push({ id: tabId, name: tabId === 'gaia' ? 'GAIA' : 'Holding', cards: cards });
+    });
+    return { tabs: tabs };
+  }
+
   window.sharedGet             = sharedGet;
   window.sharedSet             = sharedSet;
   window.personalGet           = personalGet;
@@ -419,6 +520,8 @@
   window.__saveDecisor         = saveDecisor;
   window.__getToques           = getToques;
   window.__saveToque           = saveToque;
+  window.__hydrateFromSupabase = hydrateFromSupabase;
+  window.__kanbanToLegacyFormat = kanbanToLegacyFormat;
 
   console.log('[gh-store v3] ok — supa:', supa ? 'conectado' : 'offline (localStorage only)');
 })();

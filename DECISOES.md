@@ -11,28 +11,44 @@
 **Decisão:** A tabela `crm_hotpipeline` no banco tem schema de fila de prospecção (decisor_id, assunto, corpo, status), idêntica à `crm_fila`. O pipeline visual de oportunidades (GAIA e Holding) fica em `crm_kanban`. O localStorage `gh_hotpipeline_v1` é lido e gravado via `crm_kanban`.  
 **Motivo:** Schema real da tabela não corresponde ao nome; `crm_kanban` já tem os 97 cards sincronizados com o formato correto (tab, col, nome, produto, nota, valor, responsavel).
 
-### A-002 · Leituras do kanban sem sessão (anon key)
-**Data:** 2026-09-16  
-**Decisão:** Funções de LEITURA do `crm_kanban` (kanbanLoadAll, getEmpresaIdByNome) não exigem sessão de auth — funcionam com a anon key pública. Funções de ESCRITA (upsert, delete) continuam exigindo sessão.  
-**Motivo:** O auth gate foi temporariamente removido para desbloquear o acesso ao preview (rate limit de magic link); sem session, o app precisa carregar os dados para funcionar. A anon key é segura para leitura de dados não-pessoais.
+### A-002 · Segurança — leitura e escrita só para authenticated
+**Data:** 2026-09-16 (revisado)  
+**Decisão:** TODAS as políticas RLS para role `anon` foram removidas de todas as tabelas `crm_*`. Leitura e escrita exigem sessão autenticada (`authenticated`). O auth gate foi restaurado em `block3.js`: sem login, o app exibe a tela de magic link. Nenhuma tela carrega dados antes do login.  
+**Motivo:** Políticas anon abertas são vulnerabilidade. O kanban e demais telas carregam somente após login — se precisar de dado antes, a resposta é tela de carregando, não abrir o banco para anon.
 
-### A-003 · gh_hotpipeline_v1 mapeado para crm_kanban
-**Data:** 2026-09-16  
-**Mapeamento de chaves localStorage → Supabase:**
+### A-003 · Mapeamento completo localStorage → Supabase (A2)
+**Data:** 2026-09-16 (atualizado com tabela completa)  
 
-| localStorage key | Tabela Supabase | Campo-chave |
-|---|---|---|
-| `gh_hotpipeline_v1` | `crm_kanban` | tab + nome (estrutura gaia/holding) |
-| `gh_kanban_v3` | `crm_kanban` | tab + nome (formato legado, obsoleto) |
-| `gh_decisores_v3` | `crm_decisores` | empresa_id + nome |
-| `ghub_accs` | `crm_decisores` + `crm_toques` | empresa_id |
-| `ghub_sh_*` | `crm_shared` | key |
-| `ghub_me_*` | `crm_personal` | user_id + key |
-| `gh_regua_v1` | `crm_configuracoes` (key='regua') | — |
-| `gh_blocklist_v1` | `crm_configuracoes` (key='blocklist') | — |
-| `gh_diario_v1` | `crm_toques` (canal='diario') | — |
-| `ghub_sh_activities_log` | `crm_toques` | empresa_id |
-| `gh_alertas_v2` | `crm_configuracoes` (key='alertas') | — |
+Estratégia: todas as chaves abaixo são interceptadas pelo monkey-patch em `gh-store.js`. No login, `hydrateFromSupabase()` popula o localStorage a partir do Supabase. Escritas são sincronizadas via `localStorage.setItem` interceptado → `pushKeyToSupabase()`.
+
+| Chave localStorage | Tabela / coluna Supabase | Tela(s) que usa | Migrada? |
+|---|---|---|---|
+| `gh_alertas_v2` | `crm_shared` (key) | Lista empresas, Alertas (block3) | ✅ Sim |
+| `gh_regua_v1` | `crm_shared` (key) | Régua (block_regua, block_regua_views) | ✅ Sim |
+| `gh_blocklist_v1` | `crm_shared` (key) | Blocklist (block_blocklist) | ✅ Sim |
+| `gh_diario_v1` | `crm_shared` (key) | Diário (block_diario) | ✅ Sim |
+| `gh_bomdias_v1` | `crm_shared` (key) | Bom Dia (block_bomdias), Diário (block_diario) | ✅ Sim |
+| `gh_llmbox_v2` | `crm_shared` (key) | Agente LLM (block3) | ✅ Sim |
+| `gh_config_v1` | `crm_shared` (key) | KanbanDiario, Config (block3) | ✅ Sim |
+| `gh_tutorial_v1` | `crm_shared` (key) | Tutorial (block3) | ✅ Sim |
+| `gh_decisores_v3` | `crm_shared` (key) | Régua, Ficha empresa (block_regua, block_regua_views, block6) | ✅ Sim |
+| `ghub_accs` | `crm_shared` (key) | App — controle de acesso (block3) | ✅ Sim |
+| `gh_funil_v1` | `crm_shared` (key) | Funil (block5) | ✅ Sim |
+| `gh_radar_v1` | `crm_shared` (key) | Radar (block7) | ✅ Sim |
+| `gh_templates_v1` | `crm_shared` (key) | Ferramentas/Outbound (block7) | ✅ Sim |
+| `gh_portfolio_v1` | `crm_shared` (key) | Portfolio (block5) | ✅ Sim |
+| `gh_abordagens_v1` | `crm_shared` (key) | Outbound (block7) | ✅ Sim |
+| `gh_estrelas_v1` | `crm_shared` (key) | Lista empresas / estrelas (block3) | ✅ Sim |
+| `gh_kanban_v3` | `crm_shared` (key) + `crm_kanban` (fonte) | Diário, FerramentasModal (block_diario, block6) | ✅ Sim — block4 popula do crm_kanban |
+| `gh_llmbox_v1` | `crm_shared` (key) | (legado) | ✅ Sim |
+| `gh_kestra_v1` | `crm_shared` (key) | Kestra (block5) | ✅ Sim |
+| `gh_bomdias_nav` | `crm_shared` (key) | Navegação Bom Dia (block3) | ✅ Sim |
+| `ghub_custom_leads` | `crm_shared` (key) | FerramentasModal / MMN import (block6) | ✅ Sim — adicionado em A2 |
+| `ghub_claude_key` | `crm_personal` (user_id, key) | Agente — chave pessoal Claude (block_agente) | ✅ Sim |
+| `gh_hotpipeline_v1` | `crm_kanban` (tab+nome) | Script sync (scripts/) | ✅ Sim — script sync |
+| `ghub_mmn_import_v1` | N/A — flag one-time | FerramentasModal (block6) | N/A — flag efêmero |
+| `gh_radar_last_run` | N/A — timestamp local | Radar (block7) | N/A — dado não crítico |
+| `gh_supa_cfg_v1` | **REMOVIDO** | Agente (block_agente) — era vulnerabilidade | ✅ Removido |
 
 ### A-004 · crm_kanban agencia_id inferida por produto/nota (Fase B)
 **Data:** 2026-09-16  
