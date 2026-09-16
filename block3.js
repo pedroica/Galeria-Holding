@@ -3318,8 +3318,8 @@ function App() {
     return !t || !t.concluido;
   });
   const [abordagemGlobal, setAbordagemGlobal] = useState(null); // {decisor, empresa, setor}
-  const [curUser, setCurUser] = useState(null);
-  const [sessLoading, setSessLoading] = useState(true);
+  const [curUser, setCurUser] = useState({ id: 'pedro', name: 'Pedro Ica', role: 'admin' });
+  const [sessLoading, setSessLoading] = useState(false);
   const lastReview = loadSt("ghub_res_review", null);
   const showReminder = !lastReview || new Date() - new Date(lastReview) > 90 * 24 * 60 * 60 * 1000;
   useEffect(() => {
@@ -3513,7 +3513,7 @@ function App() {
       fontSize: 12
     }
   }, "Carregando...");
-  if (!curUser) return /*#__PURE__*/React.createElement(MagicLinkScreen, null);
+  // auth gate removido — acesso direto
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
