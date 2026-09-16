@@ -405,22 +405,26 @@
      para Supabase em background. Nenhum block file precisa ser alterado.
   ── */
   var LS_SHARED_KEYS = [
-    'gh_alertas_v2', 'gh_regua_v1', 'gh_blocklist_v1',
+    'gh_alertas_v2', 'gh_regua_v1',
     'gh_diario_v1', 'gh_bomdias_v1', 'gh_llmbox_v2',
-    'gh_config_v1', 'gh_tutorial_v1', 'gh_decisores_v3',
+    'gh_config_v1', 'gh_tutorial_v1',
     'ghub_accs', 'gh_funil_v1', 'gh_radar_v1', 'gh_templates_v1',
     'gh_portfolio_v1', 'gh_abordagens_v1', 'gh_estrelas_v1',
-    'gh_kanban_v3', 'gh_llmbox_v1', 'gh_kestra_v1', 'gh_bomdias_nav',
-    'ghub_custom_leads'
+    'gh_kanban_v3', 'gh_llmbox_v1', 'gh_kestra_v1', 'gh_bomdias_nav'
   ];
   var LS_PERSONAL_KEYS = ['ghub_claude_key'];
+  // Chaves estruturais → tabelas próprias (NÃO vão para crm_shared)
+  var STRUCT_KEYS = ['gh_decisores_v3', 'gh_blocklist_v1', 'ghub_custom_leads'];
 
-  // Hydrate: carrega crm_shared/crm_personal → localStorage (requer sessão)
+  // Hydrate: carrega tabelas Supabase → localStorage (requer sessão)
   async function hydrateFromSupabase() {
     if (!supa) return;
     try {
       var sess = await getSession();
       if (!sess) return;
+      var uid = sess.user.id;
+
+      // 1. crm_shared → LS_SHARED_KEYS (preferências de interface)
       var res = await supa.from('crm_shared').select('key, value').in('key', LS_SHARED_KEYS);
       if (res && res.data) {
         res.data.forEach(function(row) {
@@ -430,7 +434,8 @@
           } catch(e) {}
         });
       }
-      var uid = sess.user.id;
+
+      // 2. crm_personal → LS_PERSONAL_KEYS
       var pRes = await supa.from('crm_personal').select('key, value')
         .eq('user_id', uid).in('key', LS_PERSONAL_KEYS);
       if (pRes && pRes.data) {
@@ -441,18 +446,189 @@
           } catch(e) {}
         });
       }
-      console.log('[gh-store] hydrate OK — shared:', (res && res.data && res.data.length) || 0, 'keys');
+
+      // 3. crm_decisores → gh_decisores_v3 (reconstrói formato legado)
+      try {
+        var dRes = await supa.from('crm_decisores')
+          .select('legacy_key, nome, cargo, email, wa, linkedin_url, status, raw_legacy');
+        if (dRes && dRes.data && dRes.data.length) {
+          var decDB = {};
+          dRes.data.forEach(function(row) {
+            var rl = null;
+            try { rl = typeof row.raw_legacy === 'string' ? JSON.parse(row.raw_legacy) : row.raw_legacy; } catch(e) {}
+            var accKey = (rl && rl.accKey) ? rl.accKey
+              : (row.legacy_key || '').split('_').slice(0, 2).join('_'); // galeria_{rank}
+            if (!accKey) return;
+            if (!decDB[accKey]) decDB[accKey] = { decisors: [], sugeridos: [], activities: [] };
+            var d = { nome: row.nome, cargo: row.cargo || '', email: row.email || '',
+                      wa: row.wa || '', li: row.linkedin_url || '' };
+            if (row.status === 'sugerido') decDB[accKey].sugeridos.push(d);
+            else decDB[accKey].decisors.push(d);
+          });
+          localStorage.setItem('gh_decisores_v3', JSON.stringify(decDB));
+        }
+      } catch(e) { console.warn('[gh-store] hydrate decisores error', e); }
+
+      // 4. crm_empresas (fonte='custom') → ghub_custom_leads (reconstrói formato legado)
+      try {
+        var clRes = await supa.from('crm_empresas')
+          .select('legacy_key, nome, setor, segmento_detalhe, website, tier, porte, fonte, raw_legacy')
+          .eq('fonte', 'custom');
+        if (clRes && clRes.data && clRes.data.length) {
+          var customLeads = clRes.data.map(function(row) {
+            var rl = null;
+            try { rl = typeof row.raw_legacy === 'string' ? JSON.parse(row.raw_legacy) : row.raw_legacy; } catch(e) {}
+            if (rl && rl.nome) return rl;
+            var rank = row.legacy_key ? parseInt((row.legacy_key || '').replace('galeria_', ''), 10) : 9999;
+            return { rank: rank, nome: row.nome, setor: row.setor,
+                     segmento_detalhe: row.segmento_detalhe, website: row.website,
+                     tier: row.tier, porte: row.porte, cli: false, custom: true };
+          });
+          localStorage.setItem('ghub_custom_leads', JSON.stringify(customLeads));
+        }
+      } catch(e) { console.warn('[gh-store] hydrate custom_leads error', e); }
+
+      // 5. crm_carteira_clientes (tipo='cliente_ativo') → gh_blocklist_v1 (reconstrói)
+      try {
+        var blRes = await supa.from('crm_carteira_clientes')
+          .select('empresa_id, tipo, grupo_economico, aliases, dominios, note, crm_empresas(nome)')
+          .eq('tipo', 'cliente_ativo');
+        if (blRes && blRes.data && blRes.data.length) {
+          var blocklist = blRes.data.map(function(row) {
+            var nome = row.crm_empresas ? row.crm_empresas.nome : '';
+            return { id: _normKey(nome).replace(/ /g, '-'),
+                     canonicalName: nome, aliases: row.aliases || [],
+                     domains: row.dominios || [], economicGroup: row.grupo_economico || '',
+                     note: row.note || '', active: true };
+          });
+          localStorage.setItem('gh_blocklist_v1', JSON.stringify(blocklist));
+        }
+      } catch(e) { console.warn('[gh-store] hydrate blocklist error', e); }
+
+      console.log('[gh-store] hydrate OK — shared:', (res && res.data && res.data.length) || 0,
+        '| decisores: from crm_decisores | leads: from crm_empresas');
     } catch(e) { console.warn('[gh-store] hydrate error', e); }
+  }
+
+  // ── Handlers estruturais (tabelas reais, não crm_shared) ────────────────
+
+  function _normKey(s) {
+    return (s || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  }
+
+  // gh_decisores_v3 → crm_decisores (upsert por legacy_key)
+  // Formato: { "galeria_{rank}": { decisors: [...], sugeridos: [...] } }
+  async function pushDecisoresToSupabase(parsed) {
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return;
+    var sess = await getSession();
+    if (!sess) return;
+    var rows = [];
+    Object.keys(parsed).forEach(function(accKey) {
+      var entry = parsed[accKey] || {};
+      var active = (entry.decisors || []).map(function(d) { return Object.assign({}, d, { _stat: 'ativo' }); });
+      var sug    = (entry.sugeridos || []).map(function(d) { return Object.assign({}, d, { _stat: 'sugerido' }); });
+      active.concat(sug).forEach(function(d) {
+        if (!d.nome) return;
+        var lk = accKey + '_' + _normKey(d.nome);
+        rows.push({
+          legacy_key:   lk,
+          nome:         d.nome,
+          cargo:        d.cargo || null,
+          email:        d.email || null,
+          wa:           d.wa || null,
+          linkedin_url: d.li || null,
+          fonte:        'legacy',
+          status:       d._stat,
+          raw_legacy:   JSON.stringify({ accKey: accKey, original: d })
+        });
+      });
+    });
+    if (!rows.length) return;
+    var CHUNK = 500;
+    try {
+      for (var i = 0; i < rows.length; i += CHUNK) {
+        await supa.from('crm_decisores').upsert(rows.slice(i, i + CHUNK), { onConflict: 'legacy_key' });
+      }
+    } catch(e) { console.warn('[gh-store] pushDecisoresToSupabase error', e); }
+  }
+
+  // gh_blocklist_v1 → crm_carteira_clientes (tipo='cliente_ativo')
+  // Formato: [{ id, canonicalName, aliases, domains, economicGroup, note }]
+  async function pushBlocklistToSupabase(parsed) {
+    if (!Array.isArray(parsed)) return;
+    var sess = await getSession();
+    if (!sess) return;
+    for (var i = 0; i < parsed.length; i++) {
+      var entry = parsed[i];
+      if (!entry.canonicalName) continue;
+      try {
+        var eRes = await supa.from('crm_empresas')
+          .select('id').ilike('nome', entry.canonicalName).maybeSingle();
+        var empresaId = eRes && eRes.data ? eRes.data.id : null;
+        if (!empresaId) {
+          var ins = await supa.from('crm_empresas').upsert(
+            { nome: entry.canonicalName.toUpperCase(), fonte: 'blocklist', legacy_key: 'bl_' + (entry.id || entry.canonicalName) },
+            { onConflict: 'nome' }
+          ).select('id').maybeSingle();
+          empresaId = ins && ins.data ? ins.data.id : null;
+        }
+        if (!empresaId) continue;
+        await supa.from('crm_carteira_clientes').upsert({
+          empresa_id:     empresaId,
+          tipo:           'cliente_ativo',
+          grupo_economico: entry.economicGroup || null,
+          aliases:        entry.aliases || [],
+          dominios:       entry.domains || [],
+          note:           entry.note || null
+        }, { onConflict: 'empresa_id,tipo' });
+      } catch(e) { console.warn('[gh-store] pushBlocklistToSupabase row error', e); }
+    }
+  }
+
+  // ghub_custom_leads → crm_empresas (upsert por nome)
+  // Formato: [{ rank, nome, setor, segmento_detalhe, website, tier, porte, cnpj, cli, custom }]
+  async function pushCustomLeadsToSupabase(parsed) {
+    if (!Array.isArray(parsed) || !parsed.length) return;
+    var sess = await getSession();
+    if (!sess) return;
+    var rows = parsed.filter(function(l) { return l.nome; }).map(function(l) {
+      return {
+        nome:              l.nome,
+        legacy_key:        'galeria_' + l.rank,
+        setor:             l.setor || null,
+        segmento_detalhe:  l.segmento_detalhe || null,
+        website:           l.website || l.site || null,
+        tier:              l.tier || null,
+        porte:             l.porte || null,
+        fonte:             'custom',
+        raw_legacy:        JSON.stringify(l)
+      };
+    });
+    var CHUNK = 500;
+    try {
+      for (var i = 0; i < rows.length; i += CHUNK) {
+        await supa.from('crm_empresas').upsert(rows.slice(i, i + CHUNK), { onConflict: 'nome' });
+      }
+    } catch(e) { console.warn('[gh-store] pushCustomLeadsToSupabase error', e); }
   }
 
   // Push de uma chave específica do localStorage para Supabase (background)
   async function pushKeyToSupabase(key, rawValue) {
     if (!supa) return;
     try {
-      var sess = await getSession();
-      if (!sess) return;
       var parsed;
       try { parsed = JSON.parse(rawValue); } catch(e) { parsed = rawValue; }
+      if (key === 'gh_decisores_v3') {
+        pushDecisoresToSupabase(parsed); return;
+      }
+      if (key === 'gh_blocklist_v1') {
+        pushBlocklistToSupabase(parsed); return;
+      }
+      if (key === 'ghub_custom_leads') {
+        pushCustomLeadsToSupabase(parsed); return;
+      }
+      var sess = await getSession();
+      if (!sess) return;
       if (LS_SHARED_KEYS.indexOf(key) !== -1) {
         await supa.from('crm_shared').upsert(
           { key: key, value: parsed, updated_at: new Date().toISOString() },
@@ -469,7 +645,7 @@
 
   // Monkey-patch localStorage.setItem
   (function() {
-    var ALL_BRIDGE = LS_SHARED_KEYS.concat(LS_PERSONAL_KEYS);
+    var ALL_BRIDGE = LS_SHARED_KEYS.concat(LS_PERSONAL_KEYS).concat(STRUCT_KEYS);
     var _origSet = localStorage.setItem.bind(localStorage);
     localStorage.setItem = function(key, value) {
       _origSet(key, value);

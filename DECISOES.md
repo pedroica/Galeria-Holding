@@ -25,13 +25,13 @@ Estratégia: todas as chaves abaixo são interceptadas pelo monkey-patch em `gh-
 |---|---|---|---|
 | `gh_alertas_v2` | `crm_shared` (key) | Lista empresas, Alertas (block3) | ✅ Sim |
 | `gh_regua_v1` | `crm_shared` (key) | Régua (block_regua, block_regua_views) | ✅ Sim |
-| `gh_blocklist_v1` | `crm_shared` (key) | Blocklist (block_blocklist) | ✅ Sim |
+| `gh_blocklist_v1` | `crm_carteira_clientes` (tipo='cliente_ativo') | Blocklist (block_blocklist) | ✅ Sim — tabela real |
 | `gh_diario_v1` | `crm_shared` (key) | Diário (block_diario) | ✅ Sim |
 | `gh_bomdias_v1` | `crm_shared` (key) | Bom Dia (block_bomdias), Diário (block_diario) | ✅ Sim |
 | `gh_llmbox_v2` | `crm_shared` (key) | Agente LLM (block3) | ✅ Sim |
 | `gh_config_v1` | `crm_shared` (key) | KanbanDiario, Config (block3) | ✅ Sim |
 | `gh_tutorial_v1` | `crm_shared` (key) | Tutorial (block3) | ✅ Sim |
-| `gh_decisores_v3` | `crm_shared` (key) | Régua, Ficha empresa (block_regua, block_regua_views, block6) | ✅ Sim |
+| `gh_decisores_v3` | `crm_decisores` (legacy_key = accKey_normNome) | Régua, Ficha empresa (block_regua, block_regua_views, block6) | ✅ Sim — tabela real |
 | `ghub_accs` | `crm_shared` (key) | App — controle de acesso (block3) | ✅ Sim |
 | `gh_funil_v1` | `crm_shared` (key) | Funil (block5) | ✅ Sim |
 | `gh_radar_v1` | `crm_shared` (key) | Radar (block7) | ✅ Sim |
@@ -43,7 +43,7 @@ Estratégia: todas as chaves abaixo são interceptadas pelo monkey-patch em `gh-
 | `gh_llmbox_v1` | `crm_shared` (key) | (legado) | ✅ Sim |
 | `gh_kestra_v1` | `crm_shared` (key) | Kestra (block5) | ✅ Sim |
 | `gh_bomdias_nav` | `crm_shared` (key) | Navegação Bom Dia (block3) | ✅ Sim |
-| `ghub_custom_leads` | `crm_shared` (key) | FerramentasModal / MMN import (block6) | ✅ Sim — adicionado em A2 |
+| `ghub_custom_leads` | `crm_empresas` (onConflict='nome', fonte='custom') | FerramentasModal / MMN import (block6) | ✅ Sim — tabela real |
 | `ghub_claude_key` | `crm_personal` (user_id, key) | Agente — chave pessoal Claude (block_agente) | ✅ Sim |
 | `gh_hotpipeline_v1` | `crm_kanban` (tab+nome) | Script sync (scripts/) | ✅ Sim — script sync |
 | `ghub_mmn_import_v1` | N/A — flag one-time | FerramentasModal (block6) | N/A — flag efêmero |

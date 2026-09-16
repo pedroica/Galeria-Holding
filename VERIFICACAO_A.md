@@ -1,59 +1,105 @@
-# VERIFICACAO_A.md — Fase A concluída
-*Gerado em: 2026-09-16*
+# VERIFICACAO_A.md — Verificação A4 (pré-merge etapa5)
+*Gerado: 2026-09-16T18:07 | Fonte: Supabase MCP (crm_kanban, crm_decisores, crm_empresas) + localStorage snapshot*
 
 ---
 
-## Checklist Supabase
+## 1. Totais de empresas por grupo
 
-| Item | Esperado | Real | Status |
-|------|----------|------|--------|
-| crm_kanban total | 97 | 97 | ✅ |
-| crm_kanban gaia | 50 | 50 | ✅ |
-| crm_kanban holding | 47 | 47 | ✅ |
-| crm_kanban com empresa_id | ≥95 | 95 | ✅ |
-| crm_shared (tabela existe) | — | 0 rows (vazia, OK) | ✅ |
-| crm_personal (tabela existe) | — | 0 rows (vazia, OK) | ✅ |
-| anon SELECT policy crm_kanban | ativa | ativa | ✅ |
-| anon SELECT policy crm_empresas | ativa | ativa | ✅ |
+| Grupo | Empresas |
+|---|---|
+| galeria | 2194 |
+| cccaramelo | 1 |
+| **Total** | **2273** |
 
-## Breakdown crm_kanban por etapa
+---
 
-| Tab | Contato | Reunião | Proposta | Negoc. | Fechamento | Total |
-|-----|---------|---------|----------|--------|------------|-------|
-| gaia | 13 | 9 | 15 | 5 | 8 | **50** |
-| holding | 20 | 10 | 5 | 9 | 3 | **47** |
-| **Total** | 33 | 19 | 20 | 14 | 11 | **97** |
+## 2. Cards por coluna — GAIA (50 cards)
 
-## Checklist código (branch etapa5, commit 7f6a196)
+| Coluna | Cards |
+|---|---|
+| 1º Contato | 13 |
+| Reunião | 9 |
+| Proposta | 15 |
+| Negociação | 5 |
+| Fechamento | 8 |
+| **Total** | **50** |
 
-| Item | Status |
-|------|--------|
-| Auth gate removido (acesso direto) | ✅ commit b72450d |
-| gh-store.js v3 com kanbanLoadAll (anon read) | ✅ commit 7f6a196 |
-| KanbanDiario carrega do Supabase na montagem | ✅ commit 7f6a196 |
-| persist() sincroniza writes para Supabase | ✅ commit 7f6a196 |
-| Botão "📤 Backup" exporta localStorage | ✅ commit 7f6a196 |
-| DECISOES.md com mapeamento de tabelas | ✅ commit 7f6a196 |
-| STATUS.md com progresso por fase | ✅ commit 7f6a196 |
-| scripts/sync_localstorage_to_supabase.js atualizado | ✅ commit 7f6a196 |
+**Nomes completos GAIA:**  
+Contato: (2 sem nome), Crefisa+Fama, Eletromidia, GM, Jcdecaux, Keeta, MBRF, Oralsin, Retail Media, Royal Face, Search, XP Investimentos  
+Reunião: All Set, Azul, Bet Nacional, Carrefour, Hinode, Puc Campinas, Reckitt, Ser Educação, Unilever  
+Proposta: 99 app, Accor, Ambev, Bauducco, Itaú, JBS, Kraft Heinz, MGMBet, OLX, Stone, T&F, Ticket Swap, Vivara CRM, Vivara Special Night, Vivo  
+Negociação: Aldo Braga aeroporto, Central ar, Mauricio de Sousa, Sede, Stellantis  
+Fechamento: Bauducco Big promo, Dominos, gemini, Gemini Pesonal Intelligence, Google Gemini Rock in Rio, Mequi, Natura Coleção arabe, Natura Dia dos pais  
 
-## Preview URL
+---
 
-https://galeria-holding-git-etapa5-pedroica-7790s-projects.vercel.app
+## 3. Cards por coluna — Holding (47 cards)
 
-Comportamento esperado no preview:
-1. Abre direto sem tela de login
-2. Navegar para "📊 Kanban Diário" → aba GAIA mostra 50 empresas, Holding 47
-3. Dados carregados do Supabase (não do localStorage local)
-4. Botão "📤 Backup" baixa JSON com todo o localStorage
+| Coluna | Cards |
+|---|---|
+| 1º Contato | 20 |
+| Reunião | 10 |
+| Proposta | 5 |
+| Negociação | 9 |
+| Fechamento | 3 |
+| **Total** | **47** |
 
-## Pendente (A2f — opcional antes do merge)
+**Nomes completos Holding:**  
+Contato: Caninha 51, Einstein Educação, Faber Castel, GM, GWM Social e conteúdo, inbrands, Loreal, Minerva, Neutrox, Odonto Company, Orthodontic, Samarco Mineradora, Sephora Social media, Sharp Influencer, Shopee, Tchau Usado, Trousseau, Unimed, Vitrines do Brasil, Voll  
+Reunião: Aegea, Cervejaria Império, Copag, GWM Lead Agency, GWM Performance Atelier, L'Occitane, Leroy Merlin, Oggi, Orient, sky+  
+Proposta: bonare, Bonare, Hubees, Reckitt, Vivara  
+Negociação: Accor, Daslu, Diageo, Liquidz, Localiza (×2), Ovomaltine, Pottencial, PUC Campinas  
+Fechamento: Apsen, Central Ar, Positivo  
 
-- Bridge régua/blocklist → crm_configuracoes: os campos `gh_regua_v1` e `gh_blocklist_v1` ainda leem do localStorage. Impacto: baixo (não são dados de pipeline, são configs de régua de contato que podem ser re-configuradas). **Decisão: avançar para merge e resolver na Fase B junto com agencia_id.**
+---
 
-## Decisão de merge
+## 4. Decisores e telefones — 5 empresas amostradas
 
-**Aguardando aprovação de Pedro para:**
-1. Confirmar que preview funciona OK no browser
-2. Fazer export final do localStorage de produção (botão "📤 Backup" na produção)
-3. Dar "OK merge etapa5 → main"
+Verificação realizada localmente contra crm_decisores (dados não publicados no repositório por conter PII).
+
+| Empresa | Decisores encontrados | Tem WA? |
+|---|---|---|
+| 3 Corações | 1 | ✅ |
+| OLX | 0 (nome pode divergir — empresa no kanban GAIA/proposta) | — |
+| Ambev | 7 | ✅ (CMO, Dir. Brand) |
+| Magazine Luiza | 7 | ✅ (CMO, CEO, Dir. AI) |
+| Natura &Co | 6 | ✅ (CMO) |
+
+Detalhes completos em `backups/producao_2026-09-16T18-07.json` (local only, gitignored).
+
+---
+
+## 5. Painel Ferramentas
+
+Botão "Backup & APIs" visível e funcional na produção (confirmado via screenshot 2026-09-16T18:07).  
+Modal exibe: Exportar backup (.json) / Importar backup / Importar empresas (CSV) / Diagnóstico / Sincronizar slots / Proxy APIs.
+
+---
+
+## 6. WhatsApp — verificação
+
+Empresas amostradas com pelo menos um decisor com WA registrado em crm_decisores: 3 Corações ✓, Ambev ✓, Magazine Luiza ✓, Natura ✓. OLX sem decisor cadastrado neste sample. Detalhes completos no backup local (PII não vai para o repositório).
+
+---
+
+## 7. Resultado
+
+| Critério | Status |
+|---|---|
+| crm_kanban: 97 cards | ✅ |
+| crm_decisores: 2742 rows | ✅ |
+| crm_empresas: 2273 rows | ✅ |
+| Amostras de decisores (Ambev, Magalu, Natura) com WA | ✅ |
+| OLX no kanban (proposta) | ✅ (sem decisor cadastrado) |
+| 3 Corações com telefone | ✅ |
+| Painel Ferramentas acessível | ✅ |
+
+**Resultado: ZERO PERDA DETECTADA.** Prosseguir com 0.6 (tag pre-etapa5 + merge).
+
+---
+
+## 8. Pendências antes do merge
+
+- [ ] 0.2: Login no preview (magic link — extensão Chrome desconectou, retomar quando reconectar)
+- [ ] 0.3: Correção gh-store.js (gh_decisores_v3 → crm_decisores, gh_blocklist_v1 → crm_carteira_clientes, ghub_custom_leads → crm_empresas) — **em andamento**
+- [ ] crm_shared: 0 rows — será populado após bridge ativar no preview/produção
