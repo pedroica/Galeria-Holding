@@ -16,7 +16,7 @@
    ═══════════════════════════════════════════════════════════════ */
 (function () {
   var SUPA_URL  = "https://uetltlnjmobeiunxfsqi.supabase.co";
-  var SUPA_ANON = "sb_publishable_R661k93drRa7vf5y-EhUPw_zbneT-zO";
+  var SUPA_ANON = "sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r";
 
   // UUIDs reais de crm_agencias
   var AGENCIAS = {
