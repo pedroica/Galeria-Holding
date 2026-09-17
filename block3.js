@@ -2259,6 +2259,10 @@ function AprovacaoHoje() {
   var _edit = useState({}); var editando = _edit[0]; var setEditando = _edit[1];
   var _busy = useState({}); var busy = _busy[0]; var setBusy = _busy[1];
   var _undo = useState(null); var undoItem = _undo[0]; var setUndoItem = _undo[1];
+  // E4-M3: auto-refresh a cada 60s
+  var _tick = useState(0); var tick = _tick[0]; var setTick = _tick[1];
+  // E4-M5: índice focado para keyboard nav
+  var _focused = useState(0); var focused = _focused[0]; var setFocused = _focused[1];
 
   function supaJwt(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
@@ -2271,7 +2275,12 @@ function AprovacaoHoje() {
       '&select=*,crm_empresas!empresa_id(id,nome,setor),crm_decisores!decisor_id(id,nome,cargo,email,wa,linkedin_url,temperatura,respondeu),crm_agencias!agencia_id(id,nome)'
     ).then(function(d){ setFila(Array.isArray(d)?d:[]); });
   }
-  useEffect(function(){ load(); }, []);
+  useEffect(function(){ load(); }, [tick]);
+  // E4-M3: auto-refresh
+  useEffect(function() {
+    var t = setInterval(function(){ setTick(function(n){return n+1;}); }, 60000);
+    return function(){ clearInterval(t); };
+  }, []);
 
   var abaItems = {
     email:    (fila||[]).filter(function(x){return x.canal==='email';}),
@@ -2306,6 +2315,28 @@ function AprovacaoHoje() {
     var ids = Array.from(sel);
     ids.forEach(function(id){aprovar(id);});
   }
+
+  // E4-M2: pausar decisor por 7 dias
+  function pausar7(item) {
+    var pausaAte = new Date(); pausaAte.setDate(pausaAte.getDate() + 7);
+    var decisorId = item.decisor_id;
+    supaJwt('/rest/v1/crm_decisores?id=eq.'+decisorId, {method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({pausa_ate_em:pausaAte.toISOString()})});
+    supaJwt('/rest/v1/crm_fila?id=eq.'+item.id, {method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({status:'pulado'})});
+    setFila(function(p){return p.filter(function(x){return x.id!==item.id;});});
+  }
+
+  // E4-M5: keyboard nav
+  useEffect(function() {
+    function onKey(e) {
+      if (!fila || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
+      var items = (fila||[]).filter(function(x){return x.canal===(aba==='linkedin'?x.canal:aba);});
+      if (e.key === 'j') setFocused(function(f){return Math.min(f+1,items.length-1);});
+      if (e.key === 'k') setFocused(function(f){return Math.max(f-1,0);});
+      if (e.key === 'Enter' && items[focused]) aprovar(items[focused].id);
+    }
+    window.addEventListener('keydown',onKey);
+    return function(){window.removeEventListener('keydown',onKey);};
+  }, [fila, aba, focused]);
 
   function abrirEmail(item) {
     var ed = editando[item.id];
@@ -2408,8 +2439,14 @@ function AprovacaoHoje() {
       React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
         React.createElement("span",{style:{fontSize:13,fontWeight:500,color:"#F5F5F5",letterSpacing:"-.3px"}},"Aprovar hoje"),
         React.createElement("span",{style:{...s,fontSize:9,padding:"1px 7px",borderRadius:100,background:"rgba(255,107,43,.1)",color:"#FF6B2B",border:".5px solid rgba(255,107,43,.25)"}},totalFila),
+        // E4-M4: custo total acumulado (rascunhos pendentes)
+        fila && fila.length > 0 && React.createElement("span",{style:{...s,fontSize:8,color:"#555",marginLeft:4}},
+          "USD " + fila.reduce(function(a,x){return a+(Number(x.custo_usd)||0);},0).toFixed(4)
+        ),
         sel.size>0 && React.createElement("button",{onClick:aprovarLote,style:{marginLeft:"auto",...s,fontSize:9,padding:"3px 12px",borderRadius:4,border:"none",background:"#22543D",color:"#68D391",cursor:"pointer"}},"✓ Aprovar "+sel.size+" selecionados"),
-        React.createElement("button",{onClick:load,style:{marginLeft:sel.size>0?0:"auto",...s,fontSize:8,padding:"2px 8px",borderRadius:4,border:".5px solid #2D2D44",background:"transparent",color:"#555",cursor:"pointer"}},"↺ Recarregar")
+        React.createElement("button",{onClick:load,style:{marginLeft:sel.size>0?0:"auto",...s,fontSize:8,padding:"2px 8px",borderRadius:4,border:".5px solid #2D2D44",background:"transparent",color:"#555",cursor:"pointer"}},"↺ Recarregar"),
+        // E4-M5: hint keyboard shortcuts
+        React.createElement("span",{style:{...s,fontSize:7,color:"#2D2D44",marginLeft:4}},"J/K nav · Enter aprovar")
       ),
       React.createElement("div",{style:{display:"flex",gap:0}},
         canalAbas.map(function(ab){
@@ -2438,11 +2475,13 @@ function AprovacaoHoje() {
               border:".5px solid "+(isSel?"rgba(96,165,250,.25)":"#2D2D44"),
               borderRadius:8,padding:"10px 12px",marginBottom:7
             }},
-              // Linha 1: checkbox + agência + empresa + canal + temperatura
+              // Linha 1: checkbox + agência + empresa + canal + temperatura + estrelas (E4-M1)
               React.createElement("div",{style:{display:"flex",alignItems:"center",gap:7,marginBottom:5}},
                 React.createElement("input",{type:"checkbox",checked:isSel,onChange:function(e){setSel(function(p){var s2=new Set(p);e.target.checked?s2.add(item.id):s2.delete(item.id);return s2;});},style:{accentColor:"#60A5FA",cursor:"pointer",flexShrink:0}}),
                 ag.nome && React.createElement("span",{style:{...s,fontSize:8,padding:"1px 6px",borderRadius:100,background:"rgba(167,139,250,.1)",color:"#A78BFA",border:".5px solid rgba(167,139,250,.2)"}},ag.nome),
                 React.createElement("span",{style:{...s,fontSize:11,fontWeight:600,color:"#F5F5F5",flex:1}},(emp.nome||'')),
+                // E4-M1: estrelas extraídas de contexto_para_aprovacao (formato "Empresa · Decisor · Cargo · 4★")
+                (function() { var m = (item.contexto_para_aprovacao||'').match(/(\d)★/); return m ? React.createElement("span",{style:{...s,fontSize:9,color:'#FBBF24',letterSpacing:1}},Array(parseInt(m[1])+1).join('★')) : null; })(),
                 item._reuniao && React.createElement("span",{style:{...s,fontSize:8,color:"#34D399"}},"📅 reunião registrada"),
                 d.temperatura!=null && React.createElement("span",{style:{...s,fontSize:8,color:"#FF6B2B"}},"🔥"+String(d.temperatura)),
                 React.createElement("span",{style:{...s,fontSize:8,padding:"1px 7px",borderRadius:100,background:"rgba(96,165,250,.08)",color:CANAL_CLR[aba]||"#9B9BB4",border:".5px solid rgba(96,165,250,.12)"}},(item.canal||'').replace(/_/g,' '))
@@ -2479,6 +2518,8 @@ function AprovacaoHoje() {
                 React.createElement("button",{onClick:function(){aprovar(item.id);},disabled:isBusy,style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:"none",background:"#22543D",color:"#68D391",cursor:"pointer"}},"✓ Aprovar"),
                 // Pular
                 React.createElement("button",{onClick:function(){pular(item.id);},disabled:isBusy,style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:".5px solid #2D2D44",background:"transparent",color:"#555",cursor:"pointer"}},"↷ Pular"),
+                // E4-M2: pausar 7 dias
+                React.createElement("button",{onClick:function(){pausar7(item);},disabled:isBusy,style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:".5px solid rgba(251,191,36,.2)",background:"transparent",color:"#78716C",cursor:"pointer"}},"⏸ 7d"),
                 // D6 — Respondeu
                 React.createElement("button",{onClick:function(){registrarResposta(item);},style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:".5px solid rgba(251,191,36,.25)",background:"rgba(251,191,36,.05)",color:"#FBBF24",cursor:"pointer"}},"↩ Respondeu"),
                 // D6 — Reunião
@@ -3853,7 +3894,7 @@ function App() {
     }
   }, "GALERIA HOLDING")),
   React.createElement("div", { style:{ display:'flex', alignItems:'stretch', flex:1 } },
-    [['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar hoje'],['base','Base'],['ferramentas','Ferramentas']].map(([s, l]) =>
+    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['base','Base'],['ferramentas','Ferramentas']].map(([s, l]) =>
       React.createElement("div", {
         key: s,
         onClick: () => { if (s === 'ferramentas') { setToolsOpen(true); } else { navTo(s, null, null); } },
@@ -3888,7 +3929,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -4901,6 +4942,195 @@ function supaFetch(path, opts) {
   return fetch(SUPA_URL + path, Object.assign({}, opts, {headers: hdrs})).then(function(r){ return r.json(); });
 }
 
+// E1 — Tela Hoje: progresso diário, aprovações pendentes, reuniões do dia
+function TelaHoje() {
+  var mono = "'IBM Plex Mono',monospace";
+  var jwt = function() { return (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON; };
+  function sj(path) {
+    return fetch(SUPA_URL + path, { headers: { apikey: SUPA_ANON, Authorization: 'Bearer ' + jwt(), 'Content-Type': 'application/json' } }).then(function(r){ return r.ok ? r.json() : []; });
+  }
+
+  var hoje = new Date(); hoje.setHours(0,0,0,0);
+  var hojeIso = hoje.toISOString();
+
+  var _stats = React.useState(null); var stats = _stats[0]; var setStats = _stats[1];
+  var _loading = React.useState(true); var loading = _loading[0]; var setLoading = _loading[1];
+  var _kanban = React.useState([]); var kanban = _kanban[0]; var setKanban = _kanban[1];
+
+  React.useEffect(function() {
+    var pending = sj('/rest/v1/crm_fila?status=eq.rascunho&select=id,canal,custo_usd');
+    var enviados = sj('/rest/v1/crm_fila?status=in.(aprovado,enviado)&enviado_em=gte.' + hojeIso + '&select=id,canal');
+    var respondeu = sj('/rest/v1/crm_fila?status=eq.respondido&respondido_em=gte.' + hojeIso + '&select=id,canal');
+    var reunioes = sj('/rest/v1/crm_kanban?col=eq.reuniao&atualizado_em=gte.' + hojeIso + '&select=id,nome,produto');
+    var kanbanAll = sj('/rest/v1/crm_kanban?select=id,col,atualizado_em,agencia_id');
+    Promise.all([pending, enviados, respondeu, reunioes, kanbanAll]).then(function(rs) {
+      var p = Array.isArray(rs[0]) ? rs[0] : [];
+      var e = Array.isArray(rs[1]) ? rs[1] : [];
+      var r = Array.isArray(rs[2]) ? rs[2] : [];
+      var re = Array.isArray(rs[3]) ? rs[3] : [];
+      var ka = Array.isArray(rs[4]) ? rs[4] : [];
+      var custo = p.reduce(function(acc, x) { return acc + (Number(x.custo_usd) || 0); }, 0);
+      setStats({ pending: p.length, enviados: e.length, respondeu: r.length, custoUsd: custo,
+        emailPend: p.filter(function(x){return x.canal==='email';}).length,
+        waPend: p.filter(function(x){return x.canal==='whatsapp';}).length,
+        liPend: p.filter(function(x){return x.canal==='linkedin_convite'||x.canal==='linkedin_mensagem';}).length,
+      });
+      setKanban(re);
+      // also store all kanban for week progress
+      var semSeg = new Date(); semSeg.setDate(semSeg.getDate() - (semSeg.getDay() === 0 ? 6 : semSeg.getDay() - 1)); semSeg.setHours(0,0,0,0);
+      var reunSem = ka.filter(function(c){ return c.col === 'reuniao' && new Date(c.atualizado_em) >= semSeg; });
+      setStats(function(prev) { return Object.assign({}, prev, { reunioesSemana: reunSem.length }); });
+      setLoading(false);
+    }).catch(function() { setLoading(false); });
+  }, []);
+
+  if (loading) return React.createElement("div", { style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', fontFamily: mono, fontSize: 11 } }, 'Carregando…');
+
+  var now = new Date();
+  var hBRT = (now.getUTCHours() - 3 + 24) % 24;
+  var minBRT = now.getUTCMinutes();
+  var progressDia = Math.min(100, Math.max(0, ((hBRT - 8) * 60 + minBRT) / ((17 - 8) * 60) * 100));
+  var sexta = now.getDay() === 5;
+
+  function StatCard(label, value, sub, color) {
+    return React.createElement("div", { style: { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px', minWidth: 130, flex: 1 } },
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555', letterSpacing: '.5px', marginBottom: 4 } }, label.toUpperCase()),
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 28, fontWeight: 700, color: color || '#F5F5F5', lineHeight: 1 } }, value),
+      sub && React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555', marginTop: 4 } }, sub)
+    );
+  }
+
+  return React.createElement("div", { style: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto', background: '#060610', padding: '20px 24px', gap: 20 } },
+    // Header
+    React.createElement("div", { style: { display: 'flex', alignItems: 'center', justifyContent: 'space-between' } },
+      React.createElement("div", null,
+        React.createElement("div", { style: { fontFamily: mono, fontSize: 11, color: '#FF6B2B', letterSpacing: '.5px' } }, 'HOJE · ' + now.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' }).toUpperCase()),
+        React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555', marginTop: 2 } }, sexta ? '⚑ Sexta — encerramento às 17h BRT' : 'Dia de trabalho')
+      ),
+      React.createElement("div", { style: { display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 } },
+        React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555' } }, 'Progresso do dia'),
+        React.createElement("div", { style: { width: 160, height: 4, background: '#1A1A2E', borderRadius: 2, overflow: 'hidden' } },
+          React.createElement("div", { style: { width: progressDia + '%', height: '100%', background: '#FF6B2B', transition: 'width .3s' } })
+        ),
+        React.createElement("div", { style: { fontFamily: mono, fontSize: 8, color: '#555' } }, hBRT + 'h' + String(minBRT).padStart(2,'0') + ' BRT')
+      )
+    ),
+    // Stats
+    React.createElement("div", { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
+      StatCard('Aprovações pendentes', stats ? stats.pending : '—', stats ? stats.emailPend + ' email · ' + stats.waPend + ' WA · ' + stats.liPend + ' LI' : null, stats && stats.pending > 0 ? '#FF6B2B' : '#34D399'),
+      StatCard('Enviados hoje', stats ? stats.enviados : '—', 'emails + WA + LI', '#60A5FA'),
+      StatCard('Responderam', stats ? stats.respondeu : '—', 'hoje', '#34D399'),
+      StatCard('Reuniões nesta semana', stats ? (stats.reunioesSemana || 0) : '—', 'meta: 40', (stats && stats.reunioesSemana >= 40) ? '#34D399' : '#E24B4A')
+    ),
+    // Semana progress
+    stats && React.createElement("div", { style: { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px' } },
+      React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } },
+        React.createElement("span", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4', letterSpacing: '.5px' } }, 'META SEMANAL DE REUNIÕES'),
+        React.createElement("span", { style: { fontFamily: mono, fontSize: 13, fontWeight: 700, color: (stats.reunioesSemana || 0) >= 40 ? '#34D399' : '#E24B4A' } }, (stats.reunioesSemana || 0) + '/40')
+      ),
+      React.createElement("div", { style: { width: '100%', height: 6, background: '#1A1A2E', borderRadius: 3, overflow: 'hidden' } },
+        React.createElement("div", { style: { width: Math.min(100, ((stats.reunioesSemana || 0) / 40) * 100) + '%', height: '100%', background: (stats.reunioesSemana || 0) >= 40 ? '#34D399' : '#FF6B2B', transition: 'width .3s' } })
+      )
+    ),
+    // Reuniões de hoje
+    kanban.length > 0 && React.createElement("div", { style: { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px' } },
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4', letterSpacing: '.5px', marginBottom: 10 } }, 'REUNIÕES HOJE (' + kanban.length + ')'),
+      kanban.map(function(c) {
+        return React.createElement("div", { key: c.id, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '.5px solid #1A1A2E' } },
+          React.createElement("span", { style: { width: 6, height: 6, borderRadius: '50%', background: '#60A5FA', flexShrink: 0, display: 'block' } }),
+          React.createElement("span", { style: { fontSize: 12, color: '#F5F5F5', flex: 1 } }, c.nome || '—'),
+          c.produto && React.createElement("span", { style: { fontSize: 10, color: '#9B9BB4', fontFamily: mono } }, c.produto)
+        );
+      })
+    ),
+    // Custo AI do dia
+    stats && stats.custoUsd > 0 && React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555', textAlign: 'right' } },
+      'Custo IA acumulado (rascunhos pendentes): USD ' + stats.custoUsd.toFixed(4)
+    )
+  );
+}
+
+// E2 — PainelMetas: métricas semanais por agência (usada como aba em HoldingHome)
+function PainelMetas({ agencias }) {
+  var mono = "'IBM Plex Mono',monospace";
+  var AG = Array.isArray(agencias) ? agencias : [];
+  var jwt = function() { return (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON; };
+  function sj(path) {
+    return fetch(SUPA_URL + path, { headers: { apikey: SUPA_ANON, Authorization: 'Bearer ' + jwt() } }).then(function(r){ return r.ok ? r.json() : []; });
+  }
+
+  var _data = React.useState(null); var data = _data[0]; var setData = _data[1];
+  var _loading = React.useState(true); var loading = _loading[0]; var setLoading = _loading[1];
+
+  React.useEffect(function() {
+    // Últimas 4 semanas de kanban (reunioes)
+    var since = new Date(); since.setDate(since.getDate() - 28); since.setHours(0,0,0,0);
+    Promise.all([
+      sj('/rest/v1/crm_kanban?col=eq.reuniao&atualizado_em=gte.' + since.toISOString() + '&select=id,agencia_id,responsavel,atualizado_em&limit=500'),
+      sj('/rest/v1/crm_fila?enviado_em=gte.' + since.toISOString() + '&select=id,agencia_id,canal,status,respondido_em&limit=2000'),
+    ]).then(function(rs) {
+      var kRows = Array.isArray(rs[0]) ? rs[0] : [];
+      var fRows = Array.isArray(rs[1]) ? rs[1] : [];
+      // Build weeks
+      var weeks = [];
+      var now = new Date();
+      for (var w = 0; w < 4; w++) {
+        var wS = new Date(now); wS.setDate(wS.getDate() - (wS.getDay() === 0 ? 6 : wS.getDay() - 1) - w * 7); wS.setHours(0,0,0,0);
+        var wE = new Date(wS); wE.setDate(wE.getDate() + 7);
+        var wK = kRows.filter(function(c){ var d = new Date(c.atualizado_em); return d >= wS && d < wE; });
+        var wF = fRows.filter(function(f){ var d = new Date(f.enviado_em); return d >= wS && d < wE; });
+        var byAg = {};
+        AG.forEach(function(a) {
+          var agK = wK.filter(function(c){ return (c.agencia_id||c.responsavel||'').toLowerCase().includes(a.id.toLowerCase()); });
+          var agF = wF.filter(function(f){ return f.agencia_id === a.id; });
+          byAg[a.id] = {
+            reunioes: agK.length,
+            enviados: agF.length,
+            respondeu: agF.filter(function(f){ return f.status === 'respondido'; }).length,
+          };
+        });
+        var total = wK.length;
+        weeks.push({ label: w === 0 ? 'Esta semana' : 'Sem -' + w, wS: wS, total: total, byAg: byAg,
+          enviados: wF.length, respondeu: wF.filter(function(f){ return f.status === 'respondido'; }).length });
+      }
+      setData(weeks);
+      setLoading(false);
+    }).catch(function(){ setLoading(false); });
+  }, []);
+
+  if (loading) return React.createElement("div", { style: { color: '#555', fontFamily: mono, fontSize: 11, padding: 24 } }, 'Carregando metas…');
+  if (!data) return null;
+
+  return React.createElement("div", { style: { flex: 1, overflow: 'auto', padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 16 } },
+    data.map(function(week, wi) {
+      return React.createElement("div", { key: wi, style: { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px' } },
+        React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 } },
+          React.createElement("span", { style: { fontFamily: mono, fontSize: 10, color: '#9B9BB4', fontWeight: 700, letterSpacing: '.5px' } }, week.label.toUpperCase()),
+          React.createElement("div", { style: { display: 'flex', gap: 16 } },
+            React.createElement("span", { style: { fontFamily: mono, fontSize: 9, color: '#60A5FA' } }, week.enviados + ' enviados'),
+            React.createElement("span", { style: { fontFamily: mono, fontSize: 9, color: '#34D399' } }, week.respondeu + ' respostas'),
+            React.createElement("span", { style: { fontFamily: mono, fontSize: 11, fontWeight: 700, color: week.total >= 40 ? '#34D399' : '#E24B4A' } }, week.total + '/40 reuniões')
+          )
+        ),
+        React.createElement("div", { style: { width: '100%', height: 4, background: '#1A1A2E', borderRadius: 2, overflow: 'hidden', marginBottom: 12 } },
+          React.createElement("div", { style: { width: Math.min(100, (week.total / 40) * 100) + '%', height: '100%', background: week.total >= 40 ? '#34D399' : '#FF6B2B' } })
+        ),
+        React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } },
+          AG.map(function(a) {
+            var ag = week.byAg[a.id] || { reunioes: 0, enviados: 0, respondeu: 0 };
+            return React.createElement("div", { key: a.id,
+              style: { display: 'flex', alignItems: 'center', gap: 6, background: '#060610', border: '.5px solid #1A1A2E', borderLeft: '2px solid ' + a.color, borderRadius: 4, padding: '4px 8px', minWidth: 130 } },
+              React.createElement("span", { style: { fontFamily: mono, fontSize: 8, color: '#666', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, a.id),
+              React.createElement("span", { style: { fontFamily: mono, fontSize: 10, fontWeight: 700, color: ag.reunioes >= 3 ? '#34D399' : '#E24B4A' } }, ag.reunioes + '/3'),
+              ag.enviados > 0 && React.createElement("span", { style: { fontFamily: mono, fontSize: 8, color: '#555' } }, ag.enviados + '→' + ag.respondeu)
+            );
+          })
+        )
+      );
+    })
+  );
+}
+
 function HoldingHome({ agencias }) {
   var COLS = [
     {id:'contato', label:'1º Contato'},
@@ -4916,6 +5146,7 @@ function HoldingHome({ agencias }) {
   var [filterCol, setFilterCol] = React.useState('all');
   var [search, setSearch] = React.useState('');
   var [dragging, setDragging] = React.useState(null);
+  var [tab, setTab] = React.useState('pipeline'); // E2: pipeline | metas
 
   React.useEffect(function() {
     supaFetch('/rest/v1/crm_kanban?select=*&order=ordem.asc').then(function(d) {
@@ -4971,6 +5202,18 @@ function HoldingHome({ agencias }) {
   }
 
   return React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden',background:'#060610'}},
+    // E2: Tab bar Pipeline | Metas
+    React.createElement("div",{style:{display:'flex',alignItems:'stretch',background:'#08080F',borderBottom:'.5px solid #1A1A2E',flexShrink:0}},
+      [['pipeline','Pipeline'],['metas','Metas semanais']].map(function(t) {
+        return React.createElement("div",{key:t[0],onClick:function(){setTab(t[0]);},
+          style:{padding:'0 18px',display:'flex',alignItems:'center',height:30,fontFamily:'IBM Plex Mono,monospace',fontSize:9,cursor:'pointer',
+            borderBottom:tab===t[0]?'2px solid #FF6B2B':'2px solid transparent',
+            color:tab===t[0]?'#FF6B2B':'#555',transition:'all .15s',letterSpacing:'.5px'}
+        }, t[1].toUpperCase());
+      })
+    ),
+    tab === 'metas' ? React.createElement(PainelMetas, { agencias: agencias }) :
+    React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden'}},
     React.createElement("div",{style:{display:'flex',alignItems:'center',gap:8,padding:'8px 16px',borderBottom:'.5px solid #1A1A2E',flexWrap:'wrap',flexShrink:0}},
       COLS.map(function(c) {
         var cnt = cards.filter(function(k){return k.col===c.id;}).length;
@@ -5030,6 +5273,7 @@ function HoldingHome({ agencias }) {
         })
       )
     )
+    )  // close pipeline wrapper (tab === 'pipeline')
   );
 }
 
