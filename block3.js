@@ -4938,7 +4938,8 @@ function PipelineView({
 var SUPA_URL = 'https://uetltlnjmobeiunxfsqi.supabase.co';
 var SUPA_ANON = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
 function supaFetch(path, opts) {
-  var hdrs = Object.assign({'apikey': SUPA_ANON, 'Authorization': 'Bearer ' + SUPA_ANON, 'Content-Type': 'application/json'}, opts && opts.headers);
+  var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
+  var hdrs = Object.assign({'apikey': SUPA_ANON, 'Authorization': 'Bearer ' + jwt, 'Content-Type': 'application/json'}, opts && opts.headers);
   return fetch(SUPA_URL + path, Object.assign({}, opts, {headers: hdrs})).then(function(r){ return r.json(); });
 }
 
