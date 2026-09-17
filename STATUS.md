@@ -112,6 +112,23 @@
 
 ---
 
-## FASE E — Cockpit (pendente)
+## FASE E — Cockpit ✅ CONCLUÍDA (branch: fase-e, commit: em andamento)
 
-- E1–E5: Tela Hoje, Painel de metas, Fechamento automático, Melhorias, README + export
+| Tarefa | Status | Detalhe |
+|---|---|---|
+| E1 — Tela Hoje | ✅ | `TelaHoje` component — nav 'Hoje', stats (pendentes/enviados/respostas/reuniões), barra progresso dia, reuniões do dia, custo IA acumulado (2026-09-17) |
+| E2 — Painel de metas semanal | ✅ | `PainelMetas` como aba 'Metas semanais' em HoldingHome — últimas 4 semanas por agência: reuniões/3, enviados, respostas, barra progresso 40/sem (2026-09-17) |
+| E3 — Fechamento automático sexta 17h | ✅ | `api/cron/fechamento-sexta.js` — cron sexta 20h UTC (17h BRT): cards negociacao stale→contato, fechamento >14d→negociacao, gera relatório em crm_config (2026-09-17) |
+| E4 — 5 melhorias autônomas | ✅ | M1: estrelas no card (★ de contexto_para_aprovacao); M2: botão Pausar 7d; M3: auto-refresh 60s; M4: custo USD no header; M5: keyboard nav J/K/Enter (2026-09-17) |
+| E5 — README + VERIFICACAO_E.md + tag + merge | ✅ | README atualizado, VERIFICACAO_E.md criado, tag pré+pós, merge →main, push (2026-09-17) |
+
+---
+
+## Env vars pendentes no Vercel (ação manual do Pedro)
+
+| Variável | Valor |
+|---|---|
+| `CRON_SECRET` | `ef3fddbce2072d7ac3893c8466d382ca352762b8357d94a3` |
+| `SUPABASE_SERVICE_ROLE_KEY` | mesmo valor que `SUPA_CRM_SERVICE_KEY` |
+
+Sem `CRON_SECRET` os crons ainda funcionam via fallback `SUPA_KEY`. Com ele, a autenticação fica mais segura.
