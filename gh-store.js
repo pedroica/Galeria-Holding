@@ -43,6 +43,7 @@
     : null;
 
   window.__supaClient = supa;
+  window.__supaSession = null;
 
   /* ── Auth helpers ──────────────────────────────────────────── */
   async function getSession() {
@@ -61,13 +62,22 @@
   }
 
   async function signOut() {
+    window.__supaSession = null;
     if (supa) { try { await supa.auth.signOut(); } catch (e) {} }
     try { localStorage.removeItem('ghub_me_session'); } catch (e) {}
   }
 
   function onAuthChange(cb) {
     if (!supa) return { data: { subscription: { unsubscribe: function(){} } } };
-    return supa.auth.onAuthStateChange(cb);
+    return supa.auth.onAuthStateChange(function(event, session) {
+      window.__supaSession = session || null;
+      cb(event, session);
+    });
+  }
+
+  // Populate __supaSession on page load if a session already exists
+  if (supa) {
+    getSession().then(function(s) { window.__supaSession = s || null; });
   }
 
   window.__supaGetSession    = getSession;
