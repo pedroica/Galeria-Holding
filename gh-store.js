@@ -7,7 +7,7 @@
      crm_fila                — id, decisor_id, empresa_id, canal,
                                etapa_cadencia, produto, tema, assunto,
                                corpo, contexto_para_aprovacao, thread_ref,
-                               status ('rascunho'|'pendente'|'aprovado'|'enviado'),
+                               status ('rascunho'|'aprovado'|'enviado'|'pulado'|'erro'),
                                gerado_em, aprovado_em, enviado_em
      crm_kanban              — id INT, tab, col, nome, produto, tag,
                                nota, valor, responsavel, ordem,
@@ -149,7 +149,7 @@
   }
 
   /* ── crm_fila helpers ───────────────────────────────────────── */
-  // Retorna itens com status='pendente' ordenados por gerado_em
+  // Retorna itens com status='rascunho' (aguardando aprovação) ordenados por gerado_em
   async function filaHoje() {
     if (!supa) return [];
     try {
@@ -157,7 +157,7 @@
       if (!sess) return [];
       var res = await supa.from('crm_fila')
         .select('id, empresa_id, decisor_id, canal, produto, assunto, contexto_para_aprovacao, gerado_em')
-        .eq('status', 'pendente')
+        .eq('status', 'rascunho')
         .order('gerado_em', { ascending: true });
       return (res && res.data) ? res.data : [];
     } catch (e) { return []; }
@@ -175,7 +175,7 @@
   async function filaDescartar(id) {
     if (!supa) return;
     try {
-      // 'rascunho' sinaliza descarte — sem coluna dedicada no schema atual
+      // devolve ao estado inicial (rascunho) para nova revisão
       await supa.from('crm_fila')
         .update({ status: 'rascunho' })
         .eq('id', id);
