@@ -9,6 +9,8 @@ import Anthropic from '@anthropic-ai/sdk';
 
 const SUPA_URL = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPA_CRM_SERVICE_KEY;
+// Anon key é pública (já está no código frontend) — aceita chamadas do app web
+const SUPA_ANON = process.env.SUPA_CRM_ANON_KEY || 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const CRON_SECRET = process.env.CRON_SECRET;
 
@@ -115,7 +117,8 @@ export default async function handler(req, res) {
   // Aceita: CRON_SECRET, service role key (fallback quando CRON_SECRET não configurado), ou JWT válido
   const isCron = authHeader && (
     (CRON_SECRET && authHeader === CRON_SECRET) ||
-    (SUPA_KEY && authHeader === SUPA_KEY)
+    (SUPA_KEY && authHeader === SUPA_KEY) ||
+    (SUPA_ANON && authHeader === SUPA_ANON) // app web usa anon key (pública)
   );
   const isJWT = !isCron && authHeader && await verifyJWT(authHeader);
   if (!isCron && !isJWT) return res.status(401).json({ error: 'Não autenticado' });
