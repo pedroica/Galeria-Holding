@@ -13,5 +13,5 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["node"]
   },
-  "include": ["api/**/*.ts", "agent/src/**/*.ts"]
+  "include": ["api/**/*.ts"]
 }

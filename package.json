@@ -5,16 +5,15 @@
   "type": "module",
   "description": "CRM de prospecção B2B da Galeria Holding + agentes de WhatsApp.",
   "engines": {
-    "node": ">=22.6.0"
+    "node": ">=18.0.0"
   },
   "scripts": {
+    "build": "echo 'Build OK'",
     "test": "cd agent && npm test",
     "typecheck": "cd agent && npm run typecheck"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.120.0"
-  },
-  "devDependencies": {
+    "@anthropic-ai/sdk": "^0.120.0",
     "@types/node": "^26.3.0",
     "typescript": "^7.0.2"
   }
