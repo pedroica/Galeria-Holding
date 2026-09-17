@@ -4732,9 +4732,9 @@ function HoldingHome({ agencias }) {
   }, []);
 
   function agenciaFromCard(card) {
-    var resp = (card.responsavel || '').toLowerCase().trim();
-    return AG.find(function(a) { return a.id.toLowerCase() === resp || (a.name || '').toLowerCase() === resp; })
-      || {id: resp, name: card.responsavel || '—', color: '#555'};
+    var agId = (card.agencia_id || card.responsavel || '').toLowerCase().trim();
+    return AG.find(function(a) { return a.id.toLowerCase() === agId; })
+      || {id: agId, name: card.agencia_id || card.responsavel || '—', color: '#555'};
   }
 
   var visible = cards.filter(function(c) {

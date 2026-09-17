@@ -1,5 +1,5 @@
 # STATUS.md — Galeria Holding CRM
-*Atualizado: 2026-09-16 | Branch: etapa5 → aguardando merge main*
+*Atualizado: 2026-09-17 | Branch: parte0 (em andamento)*
 
 ---
 
@@ -70,8 +70,35 @@
 
 ---
 
+## PARTE 0 — Dados fundacionais (branch: parte0) ✅ CONCLUÍDA
+
+| Tarefa | Status | Detalhe |
+|---|---|---|
+| 0.1 — Push/merge fase1 | ✅ | tag pre-fase1, merge --no-ff, push main. Produção: https://galeria-holding.vercel.app — auth gate + nav 13 agências + AgenciaHome 7 abas + HoldingHome kanban |
+| 0.2 — ghub_accs investigação | ✅ | 20.536 entradas = par empresa×agência do seed (formato flat {galeria_XXXX}), idêntico a gh_decisores_v3. Já em Supabase. Zero delta. Ver VERIFICACAO_A.md |
+| 0.3 — crm_agencias | ✅ | 13 agências + holding inseridas |
+| 0.4 — crm_servicos | ✅ | Catálogo de serviços criado |
+| 0.5 — crm_cases (C2) | ✅ | 47 cases importados de cases.js em 4 batches (2026-09-17) |
+| 0.6 — crm_templates | ✅ | 224 templates (14 agências × 4 etapas × 4 canais) inseridos (2026-09-17) |
+
+---
+
+## FASE C — Cases, credenciais, pipeline (branch: parte0)
+
+| Tarefa | Status | Detalhe |
+|---|---|---|
+| C1 — Storage buckets | ⏳ | cases, credenciais, assets (public), backups (auth) |
+| C2 — Import cases | ✅ | 47 casos em crm_cases |
+| C3 — Tela Cases (block3.js) | ⏳ | Grade, filtros, player, STAR, cadastro rápido |
+| C4 — Serviços screen | ⏳ | — |
+| C5 — Credenciais screen | ⏳ | — |
+| C6 — HTML renderer | ⏳ | — |
+| C7 — Credential builder | ⏳ | — |
+| C8 — Pipeline sender | ⏳ | — |
+
+---
+
 ## Fases futuras
 
-- **FASE C** — A definir (hints: AI em AgTextosTab; Blocklist em FerramentasModal como "Carteira")
-- **FASE D** — A definir
-- **FASE E** — A definir
+- **FASE D** — Motor de prospecção (40 reuniões/semana)
+- **FASE E** — Cockpit e automações
