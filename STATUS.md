@@ -128,7 +128,7 @@
 
 | Variável | Valor |
 |---|---|
-| `CRON_SECRET` | `ef3fddbce2072d7ac3893c8466d382ca352762b8357d94a3` |
+| `CRON_SECRET` | *(valor gerado — Pedro tem o valor; não commitar aqui)* |
 | `SUPABASE_SERVICE_ROLE_KEY` | mesmo valor que `SUPA_CRM_SERVICE_KEY` |
 
 Sem `CRON_SECRET` os crons ainda funcionam via fallback `SUPA_KEY`. Com ele, a autenticação fica mais segura.

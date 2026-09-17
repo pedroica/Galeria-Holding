@@ -131,7 +131,7 @@ Para que o sistema funcione em plena capacidade:
 | `ANTHROPIC_API_KEY` | Deve existir | Necessário para gerar textos em `/api/gerar-fila` |
 | `SUPA_CRM_SERVICE_KEY` | ✅ Já existe | Usado como fallback para `SUPABASE_SERVICE_ROLE_KEY` |
 | `SUPABASE_SERVICE_ROLE_KEY` | Pendente Pedro | Adicionar manualmente; value = mesmo que `SUPA_CRM_SERVICE_KEY` |
-| `CRON_SECRET` | Pendente Pedro | `ef3fddbce2072d7ac3893c8466d382ca352762b8357d94a3` |
+| `CRON_SECRET` | Pendente Pedro | *(valor gerado na sessão — não commitar; Pedro tem o valor)* |
 | `LUSHA_API_KEY` | ✅ Já existe | Enriquecimento Lusha |
 
 ---
