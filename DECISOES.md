@@ -114,18 +114,13 @@ Carrega todos os rows de `crm_kanban` (gaia + holding). Colunas: contato / reuni
 
 ---
 
-## FASE C — A implementar
+## FASE E — Build Vercel
 
-*(será preenchido ao iniciar a Fase C)*
+**E-BUILD-001 · Causa raiz dos erros desde Fase D: exceeded_serverless_functions_per_deployment**  
+O plano Hobby da Vercel permite no máximo 12 Serverless Functions por deploy. As Fases D e E adicionaram funções que ultrapassaram esse limite (chegamos a 15). O build passava (`echo 'Build OK'`), mas a etapa `patchBuild` falhava ao registrar as funções. Solução: consolidar `api/hunter.js` + `api/lusha.js` + `api/health.js` em `api/enrich.js` e remover `api/cron/agent-daily.js` (stub sem função real; agente roda no Mac local). Commit `616dcf3`.
 
----
+**E-BUILD-002 · agent-daily.ts removido definitivamente**  
+`api/cron/agent-daily.ts` chamava `runDailyRoutine()` do pacote `agent/`, que roda somente no Mac local (não tem node_modules no Vercel). O stub .js também foi removido (slot desperdiçado). O cron foi tirado de `vercel.json`. A rotina diária continua rodando localmente via `agent/worker.ts`.
 
-## FASE D — A implementar
-
-*(será preenchido ao iniciar a Fase D)*
-
----
-
-## FASE E — A implementar
-
-*(será preenchido ao iniciar a Fase E)*
+**E-BUILD-003 · whatsapp.ts substituído por stub .js**  
+`api/whatsapp.ts` era o webhook real da Meta (verifica assinatura HMAC, processa mensagens via orquestrador). Importava de `agent/src/` — incompatível com o build Vercel por cross-package imports. Substituído por `api/whatsapp.js` que faz handshake GET e responde 200 em POST. O processamento real de mensagens foi desativado no Vercel — para reativar, a lógica precisaria ser portada para um único .js sem dependências externas do monorepo.
