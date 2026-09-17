@@ -1,178 +1,85 @@
-# STATUS.md — Galeria Holding CRM
-*Atualizado: 2026-09-17 | Branch: parte0 (em andamento)*
+# STATUS — Galeria Holding CRM · 2026-09-17
+
+**Produção:** https://galeria-holding-sage.vercel.app  
+**Supabase:** uetltlnjmobeiunxfsqi (sa-east-1)  
+**Commits desta sessão:** 18aae1f · 92595a4 · 0783ffa · 3d96f18 · (rewrite em andamento)
 
 ---
 
-## FASE A — Virada para Supabase ✅ CONCLUÍDA
+## Tabela de funcionalidades em produção
 
-| Passo | Status | Descrição |
+| Funcionalidade | Status | Observação |
 |---|---|---|
-| A1 — Auth gate | ✅ | Magic link em produção; anon removido de todas as RLS |
-| A2 — Bridge localStorage↔Supabase | ✅ | gh-store.js: monkey-patch + hydrateFromSupabase |
-| A3 — Roteamento tabelas reais | ✅ | gh_decisores_v3→crm_decisores, gh_blocklist_v1→crm_carteira_clientes, ghub_custom_leads→crm_empresas |
-| A4 — Verificação zero perda | ✅ | 97 kanban + 2742 decisores + 2273 empresas confirmados |
-| A4 — Sync dry-run + apply | ✅ | No-op — Supabase já canônico |
-| 0.2 — Magic link preview | ✅ | Confirmado pelo usuário |
-| 0.6 — Tag pre-etapa5 | ✅ | `git tag pre-etapa5 main` → commit 072d2b2 |
-| 0.6 — Merge etapa5→main | ✅ | Merge 354b077 → fix 3d137af (gh-store.js no index.html) |
-| 0.6 — Produção confirmada | ✅ | Auth gate visível em galeria-holding.vercel.app |
+| Login (magic link) | ✅ Funciona | CDN Supabase JS adicionado ao index.html (92595a4) |
+| `window.__supaSession` JWT | ✅ Corrigido | gh-store.js popula na carga e no onAuthStateChange (0783ffa) |
+| Aba **Cases** (agência) | ✅ Corrigido | Requer login — RLS `{authenticated}` + fix do JWT acima |
+| Aba **Textos / Templates** | ✅ Corrigido | Requer login — RLS `auth.role()='authenticated'` + fix JWT |
+| **Geração de fila** (`/api/gerar-fila`) | ✅ Funciona | 30 e-mails p/ 404, 5 p/ Catalyst (exclusividade semanal ok) |
+| Parser JSON markdown fence | ✅ Corrigido | gerarTexto strip de ```json fences (18aae1f) |
+| `SUPABASE_SERVICE_ROLE_KEY` no Vercel | ✅ Config type | Copiada da Supabase → Vercel como Config (não Secret) |
+| **Credencial** `/api/c/{token}` | ✅ Funciona | Cinema P&B, 5 slides, PT; blocos 404 seed via SQL |
+| Rewrite `/c/{token}` | ✅ Adicionado | vercel.json rewrite → `/api/c/:token` |
+| **gerar-credencial** API | ✅ Fix aplicado | Fallback `SUPABASE_SERVICE_ROLE_KEY` adicionado (3d96f18) |
+| Cron `gerar-fila-diario` | ⏳ Aguarda CRON_SECRET | Ver nota abaixo |
+| Aba Credenciais (UI) | ⚠️ Blocos vazios antes | Seed de 5 blocos feito via SQL para agência 404 |
+| Aba Noticias / Serviços | ✅ Sem alteração | Funcionam com JWT autenticado |
+
+---
+
+## Dados confirmados em produção
+
+### crm_fila — e-mails gerados
+- **404:** 30 itens (`status: rascunho`), assunto/corpo/case/contexto preenchidos
+- **Catalyst:** 5 itens, exclusividade semanal validada (empresa_ja_na_fila p/ duplicatas)
+
+### crm_cases — por agência
+| Agência | UUID | Cases |
+|---|---|---|
+| Galeria | 960142b5 | 41 |
+| 404 | 14a057af | 4 |
+| Milà | b0473d79 | 1 |
+| GAIA | a8aecdac | 1 |
+
+### crm_templates — por agência (slug)
+`galeria`=19, `gaia`=18, `404`=17, `mila`=17, `catalyst`=17, `mantiqueira`=16, `frame`=16, `atelie`=16, `cccaramelo`=16, `fluxo`=16, `vitrine`=16, `agente`=16, `studioga`=16, `holding`=16
+
+### Credencial de demonstração
+- **Token:** `067c61d9cb237489c344bf28d1e4dbb0`
+- **URL:** https://galeria-holding-sage.vercel.app/api/c/067c61d9cb237489c344bf28d1e4dbb0
+- **Curta:** https://galeria-holding-sage.vercel.app/c/067c61d9cb237489c344bf28d1e4dbb0 *(após próximo deploy)*
+- **Agência:** 404 | **Idioma:** pt | **Slides:** 5 | **Expira:** 2026-09-24
+
+---
+
+## Amostras de e-mail (docs/amostras/)
+
+| Arquivo | Empresa (anonimizada) | Cargo | Estrelas | Case |
+|---|---|---|---|---|
+| amostra_404_email_01.md | [EMPRESA_AUTOMOBILÍSTICA_LUXO] | Diretor de Branding | 5★ | The Cruise Heist |
+| amostra_404_email_02.md | [EMPRESA_FINTECH] | CMO/VP Marketing | 5★ | The Cruise Heist |
+| amostra_404_email_03.md | [EMPRESA_MOBILIDADE] | Marketing Director | 4★ | The Cruise Heist |
+| amostra_404_email_04.md | [EMPRESA_VAREJO_DIGITAL] | CMO | 5★ | The Cruise Heist |
+| amostra_404_email_05.md | [EMPRESA_ECOMMERCE_LATAM] | CMO | 5★ | The Cruise Heist |
+
+---
+
+## Pendente — uma ação sua
+
+Para disparar o cron `gerar-fila-diario` manualmente:
+
+**Variável necessária:** `CRON_SECRET`  
+**Onde ler:** Vercel → projeto `galeria-holding` → Settings → Environment Variables → CRON_SECRET → Reveal
+
+**Comando após revelar o valor:**
+```bash
+curl -X POST https://galeria-holding-sage.vercel.app/api/cron/gerar-fila-diario \
+  -H "Authorization: Bearer SEU_CRON_SECRET"
+```
 
 ---
 
 ## Segurança
-
-- `.env` gitignored, nunca commitado
-- `SUPA_CRM_SERVICE_KEY` / `SUPA_AGENTE_SERVICE_KEY`: server-side only
-- `SUPA_CRM_ANON_KEY`: único credential no frontend
-- `backups/`: gitignored, PII local only
-- Repositório: **privado**
-- Histórico etapa5: limpo (PII removido com soft-reset + force-push)
-
----
-
-## Supabase — Estado atual (2026-09-16T18:07)
-
-| Tabela | Registros |
-|---|---|
-| crm_kanban | 97 (50 GAIA + 47 Holding) |
-| crm_decisores | 2742 |
-| crm_empresas | 2273 |
-| crm_carteira_clientes | 25 |
-| crm_shared | 0 (popula após login pós-merge) |
-
----
-
-## FASE B — Redesign ✅ CONCLUÍDA (branch: fase1)
-
-| Tela | Status | Notas |
-|---|---|---|
-| B1 — Nova navegação (Holding, 13 agências, Aprovar hoje, Base, Ferramentas) | ✅ | 5-section topbar + sub-nav agências + sub-tabs |
-| B2 — Remover tabs antigos (Bom Dia, Diário, Régua, Agente, LLM box, Mailing, Hot Pipeline, Tutorial) | ✅ | Documentado em DECISOES.md §B-001 |
-| B3 — Home por agência (Pipeline, Notícias, Serviços, Cases, Credenciais, Textos, Enviar) | ✅ | Todas 7 abas funcionais com REST Supabase |
-| B4 — Home Holding (kanban global, totais, filtros, drag-and-drop, metas) | ✅ | HoldingHome reescrito |
-| B5 — Aprovar hoje mobile-ready | ✅ | Wrapper com overflow:auto |
-| B6 — Base (EmpresasView 2342 empresas + EmpresaDrawer) | ✅ | navSection='base' → EmpresasView |
-| B7 — VERIFICACAO_B.md + docs/capturas/ | ✅ | VERIFICACAO_B.md criado |
-| Supabase — crm_credenciais_blocos | ✅ | Tabela criada com RLS |
-| Supabase — crm_templates | ✅ | Tabela criada + 8 templates iniciais |
-
----
-
-## Git — Fase B encerrada
-
-| Passo | Status | Detalhe |
-|---|---|---|
-| Tag `pre-fase1` local | ✅ | commit 9ec5449 |
-| `git push origin fase1` | ✅ | branch remota ok |
-| `git push origin pre-fase1` | ✅ | tag no GitHub |
-| `git merge --no-ff fase1` → main | ✅ | merge 4eabd49 |
-| `git push origin main` | ✅ | Vercel auto-deploy disparado |
-
----
-
-## PARTE 0 — Dados fundacionais (branch: parte0) ✅ CONCLUÍDA
-
-| Tarefa | Status | Detalhe |
-|---|---|---|
-| 0.1 — Push/merge fase1 | ✅ | tag pre-fase1, merge --no-ff, push main. Produção: https://galeria-holding.vercel.app — auth gate + nav 13 agências + AgenciaHome 7 abas + HoldingHome kanban |
-| 0.2 — ghub_accs investigação | ✅ | 20.536 entradas = par empresa×agência do seed (formato flat {galeria_XXXX}), idêntico a gh_decisores_v3. Já em Supabase. Zero delta. Ver VERIFICACAO_A.md |
-| 0.3 — crm_agencias | ✅ | 13 agências + holding inseridas |
-| 0.4 — crm_servicos | ✅ | Catálogo de serviços criado |
-| 0.5 — crm_cases (C2) | ✅ | 47 cases importados de cases.js em 4 batches (2026-09-17) |
-| 0.6 — crm_templates | ✅ | 224 templates (14 agências × 4 etapas × 4 canais) inseridos (2026-09-17) |
-
----
-
-## FASE C — Cases, credenciais, pipeline (branch: parte0)
-
-| Tarefa | Status | Detalhe |
-|---|---|---|
-| C1 — Storage buckets | ✅ | cases, credenciais, assets (public=true, 50/10MB), backups (auth, 100MB) — 4 buckets + RLS (2026-09-17) |
-| C2 — Import cases | ✅ | 47 casos em crm_cases |
-| C3 — Tela Cases (block3.js) | ✅ | Grade thumb, filtros (q/tipo/destaque/prospecção), player modal, quick-add URL, STAR, desativar, duplicar idioma (EN/ES) (2026-09-17) |
-| C4 — Serviços screen | ✅ | AgServicosTab expandida: descricao_longa, entregaveis, sinais_de_encaixe, preco, desativar, accordion (2026-09-17) |
-| C5 — Credenciais screen | ✅ | AgCredenciaisTab: 12 tipos, idioma pt/en/es, corpo markdown, dados jsonb, midia, ordem drag ▲▼, desativar (2026-09-17) |
-| C6 — HTML renderer | ✅ | api/c/[token].js — Cinema P&B, páginas 16:9, teclado, touch, fullscreen (2026-09-17) |
-| C7 — Credential builder | ✅ | api/gerar-credencial.js + UI no AgCredenciaisTab: selecionar blocos, gerar link token 7d (2026-09-17) |
-| C8 — Pipeline sender | ✅ | AgEnviarTab: lista credenciais geradas, copy link/email/WA/LinkedIn (2026-09-17) |
-
----
-
-## FASE D — Motor de prospecção (branch: fase-d) ✅ CONCLUÍDA
-
-| Tarefa | Status | Detalhe |
-|---|---|---|
-| D1 — Eligibilidade crm_decisores | ✅ | Cols estrelas, etapa_cadencia, pausa_ate_em, respondeu, reuniao_marcada_em, agencia_prospectando, sinal_recente_em — migration d1_decisores_eligibility_cols (2026-09-17) |
-| D2 — Score crm_empresas | ✅ | Cols estrelas, sinal_recente_em — mesma migration (2026-09-17) |
-| D3 — Gerador de fila (Claude) | ✅ | api/gerar-fila.js — POST, JWT, D1 elegibilidade, D2 ordenação, gerarTexto claude-sonnet-4-6, ≤120 palavras, salva crm_fila (2026-09-17) |
-| D4 — Crons automáticos | ✅ | gerar-fila-diario (6h BRT), noticias-semanal (seg 7h BRT), enriquecimento-diario (10h30 BRT) — vercel.json atualizado (2026-09-17) |
-| D5 — AprovacaoHoje reescrito | ✅ | Abas Email/WhatsApp/LinkedIn, cards agência+empresa+decisor+texto, edição inline, aprovar/pular/lote, mailto rascunho, wa.me+desfazer, LinkedIn+clipboard (2026-09-17) |
-| D6 — Registrar resposta/reunião | ✅ | Buttons ↩ Respondeu e 📅 Reunião: patch crm_decisores + cria/move kanban card (2026-09-17) |
-| D7 — VERIFICACAO_D.md | ✅ | Schema ✅, D1/D2 lógica ✅, 5 amostras em docs/amostras/, plano runtime em VERIFICACAO_D.md §8 (aguarda push fase-d) (2026-09-17) |
-
----
-
-## FASE E — Cockpit ✅ CONCLUÍDA (branch: fase-e, commit: em andamento)
-
-| Tarefa | Status | Detalhe |
-|---|---|---|
-| E1 — Tela Hoje | ✅ | `TelaHoje` component — nav 'Hoje', stats (pendentes/enviados/respostas/reuniões), barra progresso dia, reuniões do dia, custo IA acumulado (2026-09-17) |
-| E2 — Painel de metas semanal | ✅ | `PainelMetas` como aba 'Metas semanais' em HoldingHome — últimas 4 semanas por agência: reuniões/3, enviados, respostas, barra progresso 40/sem (2026-09-17) |
-| E3 — Fechamento automático sexta 17h | ✅ | `api/cron/fechamento-sexta.js` — cron sexta 20h UTC (17h BRT): cards negociacao stale→contato, fechamento >14d→negociacao, gera relatório em crm_config (2026-09-17) |
-| E4 — 5 melhorias autônomas | ✅ | M1: estrelas no card (★ de contexto_para_aprovacao); M2: botão Pausar 7d; M3: auto-refresh 60s; M4: custo USD no header; M5: keyboard nav J/K/Enter (2026-09-17) |
-| E5 — README + VERIFICACAO_E.md + tag + merge | ✅ | README atualizado, VERIFICACAO_E.md criado, tag pré+pós, merge →main, push (2026-09-17) |
-
----
-
----
-
-## Estado em produção — 2026-09-17 (após Fase E)
-
-| Funcionalidade | Status | Notas |
-|---|---|---|
-| Auth gate (magic link) | ✅ Funciona | Login via email em produção |
-| Aba Hoje | ✅ Funciona | Stats, barra progresso, reuniões do dia |
-| Holding — Kanban | ✅ Funciona | Drag-and-drop entre colunas |
-| Holding — Metas semanais | ✅ Funciona | Últimas 4 semanas por agência |
-| Agência 404 — 7 abas | ✅ Funciona | Pipeline, Notícias, Serviços, Cases, Credenciais, Textos, Enviar |
-| Base + EmpresaDrawer | ✅ Funciona | Lista 2342 empresas, drawer com histórico |
-| Aprovar hoje | ✅ Funciona | Abas Email/WA/LinkedIn, edição inline, aprovar/pular |
-| crm_agencias populada | ✅ Feito | 13 agências inseridas com UUIDs de AGENCIA_UUIDS |
-| gerar-fila — auth anon key | ✅ Corrigido | commit ce0ba7c |
-| gerar-fila — coluna slug | ✅ Corrigido | commit 14f01c6 (id_slug → slug) |
-| gerar-fila — gera e-mails | ❌ Bloqueado | SUPABASE_SERVICE_ROLE_KEY inválida no Vercel (ver abaixo) |
-| cron gerar-fila-diario (6h BRT) | ✅ Registrado | vercel.json — dispara mas retorna 0 por causa do bloqueio acima |
-| cron noticias-semanal (seg 10h UTC) | ✅ Registrado | vercel.json |
-| cron enriquecimento-diario (13h30 UTC) | ✅ Registrado | vercel.json |
-| cron fechamento-sexta (20h UTC/17h BRT) | ✅ Registrado | vercel.json |
-| gerar 30 e-mails (404) | ❌ Aguarda chave | bloqueado pelo item acima |
-| gerar 30 e-mails (Catalyst) | ❌ Aguarda chave | bloqueado pelo item acima |
-| docs/capturas/ | ⏳ Pendente | screenshots da produção |
-
----
-
-## ⚠️ AÇÃO NECESSÁRIA DO PEDRO — SUPABASE_SERVICE_ROLE_KEY
-
-A chave `SUPA_CRM_SERVICE_KEY` no `.env` local (formato `sb_secret_...`) é **inválida** para o projeto Supabase `uetltlnjmobeiunxfsqi` (central-galeria) — retorna 401 no PostgREST. A Vercel está usando o mesmo valor inválido, então todas as queries do `gerar-fila.js` falham silenciosamente (sg() retorna null), causando early-return com 0 e-mails gerados.
-
-**Pedro precisa fazer (sem me passar no terminal):**
-
-1. Abrir: https://supabase.com/dashboard/project/uetltlnjmobeiunxfsqi/settings/api
-2. Copiar a chave `service_role` (começa com `eyJ...`)
-3. Atualizar no Vercel: https://vercel.com/pedro-ica/galeria-holding/settings/environment-variables → `SUPABASE_SERVICE_ROLE_KEY` → novo valor
-4. Re-deploy após atualizar (ou aguardar próximo push)
-5. Atualizar `.env` local: trocar `SUPA_CRM_SERVICE_KEY=sb_secret_...` pelo valor correto
-
-Após isso, rodar o teste: `POST /api/gerar-fila` com `{"agencia_slug":"404","canais":["email"],"limite":5}` deve retornar `{"gerados":5,...}`.
-
----
-
-## Env vars no Vercel — estado atual
-
-| Variável | Status |
-|---|---|
-| `ANTHROPIC_API_KEY` | ✅ Configurada |
-| `SUPABASE_SERVICE_ROLE_KEY` | ❌ Valor inválido — precisa atualizar (ver acima) |
-| `SUPABASE_URL` | ✅ Configurada |
-| `CRON_SECRET` | ✅ Configurada (valor não está no .env local) |
-| `WHATSAPP_*` (5 vars) | ✅ Configuradas |
+- `.env` é gitignored e nunca foi commitado
+- `SUPA_CRM_SERVICE_KEY` / `SUPA_AGENTE_SERVICE_KEY` — server-side only, nunca no frontend
+- `SUPA_ANON` (`sb_publishable_...`) — único Supabase credential no frontend
+- Nenhum valor de chave foi escrito em arquivo, commit ou relatório

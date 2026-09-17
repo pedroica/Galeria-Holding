@@ -1,6 +1,9 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "outputDirectory": ".",
+  "rewrites": [
+    { "source": "/c/:token", "destination": "/api/c/:token" }
+  ],
   "crons": [
     {
       "path": "/api/cron/gerar-fila-diario",
