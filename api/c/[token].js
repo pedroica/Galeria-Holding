@@ -3,7 +3,7 @@
 // Rota pública: /c/{token} — sem auth, lê crm_credenciais_geradas + blocos
 
 const SUPA_URL = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
-const SUPA_KEY = process.env.SUPA_CRM_SERVICE_KEY;
+const SUPA_KEY = process.env.SUPA_CRM_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 
 async function supaGet(path) {
   const res = await fetch(SUPA_URL + '/rest/v1/' + path, {
