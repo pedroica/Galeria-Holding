@@ -4956,6 +4956,7 @@ function TelaHoje() {
   var _stats = React.useState(null); var stats = _stats[0]; var setStats = _stats[1];
   var _loading = React.useState(true); var loading = _loading[0]; var setLoading = _loading[1];
   var _kanban = React.useState([]); var kanban = _kanban[0]; var setKanban = _kanban[1];
+  var _relatorio = React.useState(null); var relatorio = _relatorio[0]; var setRelatorio = _relatorio[1];
 
   React.useEffect(function() {
     var pending = sj('/rest/v1/crm_fila?status=eq.rascunho&select=id,canal,custo_usd');
@@ -4963,6 +4964,11 @@ function TelaHoje() {
     var respondeu = sj('/rest/v1/crm_fila?status=eq.respondido&respondido_em=gte.' + hojeIso + '&select=id,canal');
     var reunioes = sj('/rest/v1/crm_kanban?col=eq.reuniao&atualizado_em=gte.' + hojeIso + '&select=id,nome,produto');
     var kanbanAll = sj('/rest/v1/crm_kanban?select=id,col,atualizado_em,agencia_id');
+    // Card "Semana fechada": busca relatório da semana corrente
+    sj('/rest/v1/crm_relatorios?tipo=eq.semanal&order=gerado_em.desc&limit=1&select=token,dados,semana_inicio,gerado_em').then(function(rows) {
+      var r = Array.isArray(rows) && rows[0] ? rows[0] : null;
+      if (r) setRelatorio(r);
+    }).catch(function(){});
     Promise.all([pending, enviados, respondeu, reunioes, kanbanAll]).then(function(rs) {
       var p = Array.isArray(rs[0]) ? rs[0] : [];
       var e = Array.isArray(rs[1]) ? rs[1] : [];
@@ -5042,6 +5048,14 @@ function TelaHoje() {
           c.produto && React.createElement("span", { style: { fontSize: 10, color: '#9B9BB4', fontFamily: mono } }, c.produto)
         );
       })
+    ),
+    // Card "Semana fechada"
+    relatorio && React.createElement("div", { style: { background: '#0D1A0D', border: '1px solid #34D399', borderRadius: 8, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
+      React.createElement("div", null,
+        React.createElement("div", { style: { fontFamily: mono, fontSize: 10, color: '#34D399', letterSpacing: '.5px', fontWeight: 700 } }, '✓ SEMANA FECHADA'),
+        React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4', marginTop: 4 } }, 'Relatório gerado — pronto para enviar aos sócios')
+      ),
+      React.createElement("a", { href: '/api/relatorio/' + relatorio.token, target: '_blank', rel: 'noopener noreferrer', style: { fontFamily: mono, fontSize: 9, color: '#34D399', textDecoration: 'none', border: '1px solid #34D399', borderRadius: 4, padding: '4px 10px', whiteSpace: 'nowrap' } }, 'VER RELATÓRIO →')
     ),
     // Custo AI do dia
     stats && stats.custoUsd > 0 && React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555', textAlign: 'right' } },
@@ -5910,12 +5924,34 @@ function AgTextosTab({ agencia }) {
   );
 }
 
-function AgEnviarTab({ agencia }) {
+function AgEnviarTab({ agencia, agenciaUuids }) {
   var [geradas, setGeradas] = React.useState([]);
   var [loading, setLoading] = React.useState(true);
   var [copiado, setCopiado] = React.useState(null);
   var mono = 'IBM Plex Mono,monospace';
   var agNome = agencia ? (agencia.name||agencia.id) : '';
+  // Gerar fila
+  var [gerando, setGerando] = React.useState(false);
+  var [geracaoResult, setGeracaoResult] = React.useState(null);
+  var [geracaoErr, setGeracaoErr] = React.useState(null);
+
+  function gerarFila(limite) {
+    var agId = agenciaUuids && agencia ? (agenciaUuids[agencia.id] || agencia.id) : (agencia ? agencia.id : null);
+    if (!agId) { setGeracaoErr('Agência sem UUID mapeado'); return; }
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
+    setGerando(true); setGeracaoResult(null); setGeracaoErr(null);
+    fetch('/api/gerar-fila', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwt },
+      body: JSON.stringify({ agencia_slug: agId, canais: ['email', 'whatsapp', 'linkedin_convite'], limite: limite || 30 })
+    })
+    .then(function(r){ return r.json(); })
+    .then(function(d){
+      setGeracaoResult(d);
+      setGerando(false);
+    })
+    .catch(function(e){ setGeracaoErr(e.message); setGerando(false); });
+  }
 
   React.useEffect(function() {
     supaFetch('/rest/v1/crm_credenciais_geradas?order=criado_em.desc&limit=20&select=id,token,titulo,html_url,idioma,expira_em,criado_em').then(function(d) {
@@ -5938,6 +5974,31 @@ function AgEnviarTab({ agencia }) {
   if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:mono,fontSize:11,padding:20}},'…');
 
   return React.createElement("div",{style:{flex:1,overflowY:'auto',padding:'12px 20px'}},
+    // Bloco: Gerar e-mails de hoje
+    React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,padding:'14px 18px',marginBottom:16}},
+      React.createElement("div",{style:{fontFamily:mono,fontSize:9,color:'#9B9BB4',letterSpacing:'.5px',marginBottom:8}}, 'GERAR FILA DE HOJE'),
+      React.createElement("div",{style:{display:'flex',gap:8,flexWrap:'wrap',marginBottom:8}},
+        [10,20,30].map(function(n){
+          return React.createElement("button",{key:n,onClick:function(){gerarFila(n);},disabled:gerando,
+            style:{padding:'5px 14px',border:'none',borderRadius:4,background:gerando?'#1A1A2E':'#FF6B2B22',color:gerando?'#555':'#FF6B2B',border:'.5px solid rgba(255,107,43,.3)',fontSize:9,fontFamily:mono,cursor:gerando?'not-allowed':'pointer',fontWeight:600}},
+            gerando ? '…gerando' : 'Gerar '+n+' e-mails'
+          );
+        })
+      ),
+      geracaoErr && React.createElement("div",{style:{fontFamily:mono,fontSize:9,color:'#E24B4A',marginTop:4}}, '✗ '+geracaoErr),
+      geracaoResult && React.createElement("div",null,
+        React.createElement("div",{style:{fontFamily:mono,fontSize:9,color:'#34D399',marginBottom:4}}, '✓ '+geracaoResult.gerados+' itens gerados na fila'),
+        geracaoResult.erros && geracaoResult.erros.length > 0 && React.createElement("div",{style:{fontFamily:mono,fontSize:8,color:'#E24B4A'}}, geracaoResult.erros.length+' erros'),
+        geracaoResult.bloqueados && geracaoResult.bloqueados.length > 0 && React.createElement("div",{style:{fontFamily:mono,fontSize:8,color:'#555'}}, geracaoResult.bloqueados.length+' bloqueados (exclusividade/inelegíveis)'),
+        geracaoResult.itens && React.createElement("div",{style:{marginTop:8,maxHeight:120,overflowY:'auto'}},
+          geracaoResult.itens.map(function(it,i){
+            return React.createElement("div",{key:i,style:{fontFamily:mono,fontSize:8,color:'#666',borderBottom:'.5px solid #1A1A2E',paddingBottom:2,marginBottom:2}},
+              it.empresa + ' · ' + it.decisor + ' · ' + it.canal + (it.estrelas?' · '+it.estrelas+'★':'')
+            );
+          })
+        )
+      )
+    ),
     React.createElement("div",{style:{marginBottom:14}},
       React.createElement("div",{style:{fontSize:11,fontWeight:600,color:'#F5F5F5',marginBottom:4}},'Credenciais geradas'),
       React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:8}},'Gere credenciais na aba Credenciais → botão "Gerar credencial". Links válidos 7 dias.')
@@ -5977,7 +6038,7 @@ function AgenciaHome({ agencia, tab, navTo, agenciaUuids }) {
     tab === 'cases'       ? React.createElement(AgCasesTab,      {agencia:agencia, agenciaUuids:agenciaUuids}) :
     tab === 'credenciais' ? React.createElement(AgCredenciaisTab,{agencia:agencia}) :
     tab === 'textos'      ? React.createElement(AgTextosTab,     {agencia:agencia}) :
-    tab === 'enviar'      ? React.createElement(AgEnviarTab,     {agencia:agencia}) :
+    tab === 'enviar'      ? React.createElement(AgEnviarTab,     {agencia:agencia, agenciaUuids:agenciaUuids}) :
     React.createElement("div",{style:{padding:20,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11}}, tab)
   );
 }

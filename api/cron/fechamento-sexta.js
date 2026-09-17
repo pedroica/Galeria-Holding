@@ -1,7 +1,6 @@
-// E3 — Cron sexta 17h BRT: fechamento semanal automático
-// - Move cards 'negociacao' sem atualização na semana de volta para 'contato' (stale)
-// - Move cards 'fechamento' com > 14 dias sem atualização → 'negociacao' (não fecharam)
-// - Gera sumário de métricas e salva em crm_config (chave: relatorio_semanal_ultimo)
+// E3 — Cron sexta 17h BRT: relatório semanal (sem movimentação de cards)
+// Grava métricas em crm_relatorios com token único.
+// Nenhum card muda de coluna — isso é decisão do Pedro.
 // Schedule: "0 20 * * 5" (sexta 20h UTC = 17h BRT)
 
 const SUPA_URL = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
@@ -13,12 +12,12 @@ async function sg(path) {
   });
   return r.ok ? r.json() : [];
 }
-async function sp(path, body, method = 'PATCH') {
-  await fetch(SUPA_URL + '/rest/v1/' + path, {
-    method,
-    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-    body: JSON.stringify(body)
-  });
+
+function semanaInicio(ref) {
+  const d = new Date(ref || Date.now());
+  d.setDate(d.getDate() - (d.getDay() === 0 ? 6 : d.getDay() - 1));
+  d.setHours(0, 0, 0, 0);
+  return d;
 }
 
 export default async function handler(req, res) {
@@ -28,60 +27,77 @@ export default async function handler(req, res) {
   }
 
   const now = new Date();
-  // Verificar se é sexta (0=dom...5=sex) — Vercel agenda garante isso, mas checamos por segurança
   const diaBRT = new Date(now.toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
-  if (diaBRT.getDay() !== 5) {
-    return res.status(200).json({ ok: true, msg: 'Não é sexta, pulando.' });
+  // Permite rodar qualquer dia para teste manual; só loga aviso se não for sexta
+  const isSexta = diaBRT.getDay() === 5;
+
+  const semSeg = semanaInicio(now);
+
+  // Métricas da semana — kanban
+  const kanbanRows = await sg(
+    `crm_kanban?select=id,col,agencia_id,responsavel,atualizado_em&atualizado_em=gte.${semSeg.toISOString()}&limit=500`
+  );
+  const reunioesSem = (Array.isArray(kanbanRows) ? kanbanRows : []).filter(c => c.col === 'reuniao');
+
+  // Métricas da semana — fila
+  const filaRows = await sg(
+    `crm_fila?select=id,canal,status,agencia_id&enviado_em=gte.${semSeg.toISOString()}&limit=2000`
+  );
+  const fila = Array.isArray(filaRows) ? filaRows : [];
+  const respostas = fila.filter(x => x.status === 'respondido').length;
+
+  // Agências
+  const agencias = await sg('crm_agencias?select=id,nome&limit=20');
+  const byAg = {};
+  for (const ag of (Array.isArray(agencias) ? agencias : [])) {
+    const agReunioes = reunioesSem.filter(c =>
+      (c.agencia_id || c.responsavel || '').toLowerCase().includes(ag.id.toLowerCase())
+    ).length;
+    const agFila = fila.filter(f => f.agencia_id === ag.id);
+    byAg[ag.nome || ag.id] = {
+      reunioes: agReunioes,
+      enviados: agFila.length,
+      respostas: agFila.filter(f => f.status === 'respondido').length,
+    };
   }
 
-  const semSeg = new Date(now);
-  semSeg.setDate(semSeg.getDate() - (semSeg.getDay() === 0 ? 6 : semSeg.getDay() - 1));
-  semSeg.setHours(0, 0, 0, 0);
-  const limite14d = new Date(now);
-  limite14d.setDate(limite14d.getDate() - 14);
-
-  // 1. Cards em 'negociacao' sem atualização desde segunda → stale_negociacao
-  const negStale = await sg(
-    `crm_kanban?col=eq.negociacao&atualizado_em=lt.${semSeg.toISOString()}&select=id,nome,agencia_id`
-  );
-  for (const c of (Array.isArray(negStale) ? negStale : [])) {
-    await sp(`crm_kanban?id=eq.${c.id}`, { col: 'contato', atualizado_em: now.toISOString(), notas: '[Auto] Voltou para Contato — sem movimento na semana' });
-  }
-
-  // 2. Cards em 'fechamento' há mais de 14 dias → negociacao (não fecharam)
-  const fechStale = await sg(
-    `crm_kanban?col=eq.fechamento&atualizado_em=lt.${limite14d.toISOString()}&select=id,nome,agencia_id`
-  );
-  for (const c of (Array.isArray(fechStale) ? fechStale : [])) {
-    await sp(`crm_kanban?id=eq.${c.id}`, { col: 'negociacao', atualizado_em: now.toISOString(), notas: '[Auto] Voltou para Negociação — mais de 14 dias sem fechamento' });
-  }
-
-  // 3. Métricas da semana
-  const reunioesSem = await sg(
-    `crm_kanban?col=eq.reuniao&atualizado_em=gte.${semSeg.toISOString()}&select=id,agencia_id`
-  );
-  const enviados = await sg(
-    `crm_fila?status=in.(aprovado,enviado,respondido)&enviado_em=gte.${semSeg.toISOString()}&select=id,canal,status`
-  );
-  const respostas = (Array.isArray(enviados) ? enviados : []).filter(x => x.status === 'respondido').length;
-
-  const relatorio = {
+  const dados = {
     semana_inicio: semSeg.toISOString().slice(0, 10),
     gerado_em: now.toISOString(),
-    reunioes: Array.isArray(reunioesSem) ? reunioesSem.length : 0,
-    enviados: Array.isArray(enviados) ? enviados.length : 0,
-    respostas,
-    negociacao_stale_movidos: Array.isArray(negStale) ? negStale.length : 0,
-    fechamento_stale_movidos: Array.isArray(fechStale) ? fechStale.length : 0,
+    reunioes_total: reunioesSem.length,
+    enviados_total: fila.length,
+    respostas_total: respostas,
+    taxa_resposta_pct: fila.length > 0 ? Math.round((respostas / fila.length) * 100) : 0,
+    por_agencia: byAg,
+    aviso: isSexta ? null : 'Gerado fora de sexta (manual)',
   };
 
-  // Salvar relatorio em crm_config (upsert)
-  await fetch(SUPA_URL + '/rest/v1/crm_config', {
+  // Upsert em crm_relatorios (merge por semana_inicio + tipo)
+  const upsertRes = await fetch(SUPA_URL + '/rest/v1/crm_relatorios', {
     method: 'POST',
-    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates' },
-    body: JSON.stringify({ chave: 'relatorio_semanal_ultimo', valor: JSON.stringify(relatorio) })
+    headers: {
+      apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY,
+      'Content-Type': 'application/json',
+      Prefer: 'resolution=merge-duplicates,return=representation',
+    },
+    body: JSON.stringify({
+      tipo: 'semanal',
+      semana_inicio: semSeg.toISOString().slice(0, 10),
+      gerado_em: now.toISOString(),
+      dados,
+    }),
   });
 
-  console.log('[cron:fechamento-sexta]', relatorio);
-  return res.status(200).json({ ok: true, ...relatorio });
+  let token = null;
+  if (upsertRes.ok) {
+    const rows = await upsertRes.json();
+    token = Array.isArray(rows) && rows[0] ? rows[0].token : null;
+  }
+
+  const linkRelatorio = token
+    ? `https://galeria-holding.vercel.app/api/relatorio/${token}`
+    : null;
+
+  console.log('[cron:fechamento-sexta]', { reunioes: dados.reunioes_total, enviados: dados.enviados_total, respostas, token });
+  return res.status(200).json({ ok: true, token, link: linkRelatorio, ...dados });
 }
