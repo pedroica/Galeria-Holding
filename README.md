@@ -1,14 +1,58 @@
 # Galeria Holding CRM
 
-Sistema de prospecção B2B — Pedro Ica, Head of Growth.
+Sistema de prospecção B2B para 13 agências — Pedro Ica, Head of Growth, Galeria Holding.
 
 Acesse: [galeria-holding.vercel.app](https://galeria-holding.vercel.app)
 
 ## Stack
-- React 18.2 + Babel Standalone (single-file, sem bundler)
-- Persistência via localStorage
+- React 18.2 + Babel Standalone (single-file block3.js, sem bundler)
+- Supabase — auth (magic link), Postgres (RLS por row), Storage (4 buckets)
+- IA: Claude claude-sonnet-4-6 (geração de textos de prospecção)
+- Vercel — serverless API + 5 crons agendados
 - 2.300+ empresas brasileiras na base
-- 2.400+ contatos do mailing importados como decisores
+- 28.500+ linhas em crm_empresa_agencia_estrelas (score por agência)
+
+## Fases entregues
+
+| Fase | Descrição |
+|------|-----------|
+| A | Virada para Supabase — auth gate, RLS, bridge localStorage |
+| B | Redesign — nav 13 agências, HoldingHome kanban, Base |
+| Parte 0 | Dados fundacionais — 47 cases, 224 templates, 13 agências |
+| C | Cases/credenciais/pipeline — renderer HTML, builder, sender |
+| D | Motor de prospecção — gerar-fila.js (Claude), 4 crons, AprovacaoHoje |
+| E | Cockpit — Tela Hoje, Painel de metas, fechamento automático sexta, 5 melhorias |
+
+## Telas principais
+
+- **Hoje** — progresso diário (aprovações pendentes, enviados, respostas, reuniões)
+- **Holding** → Pipeline — kanban global drag-and-drop, filtros por agência/etapa
+- **Holding** → Metas semanais — funil por agência últimas 4 semanas
+- **Agências** — pipeline por agência, notícias, serviços, cases, credenciais, textos
+- **Aprovar** — fila de emails/WA/LinkedIn gerados por IA para revisão e envio
+- **Base** — 2.300+ empresas com decisores, estrelas, temperatura
+
+## Crons automáticos (Vercel)
+
+| Cron | Horário BRT | Função |
+|------|-------------|--------|
+| gerar-fila-diario | 6h diário | Gera fila de prospecção via Claude |
+| noticias-semanal | seg 7h | Google News para empresas ★≥3 |
+| enriquecimento-diario | 10h30 diário | Lusha: email (★≥3) e telefone (★=5) |
+| fechamento-sexta | sex 17h | Move cards stale; gera relatório semanal |
+| agent-daily | 10h30 diário | Agente IA diário |
+
+## Env vars necessárias (Vercel)
+
+| Variável | Descrição |
+|---------|-----------|
+| `SUPA_CRM_URL` | URL do projeto Supabase |
+| `SUPA_CRM_ANON_KEY` | Chave pública (usada no frontend) |
+| `SUPA_CRM_SERVICE_KEY` | Chave de service role (backend only) |
+| `SUPABASE_SERVICE_ROLE_KEY` | Alias para `SUPA_CRM_SERVICE_KEY` (adicionar) |
+| `ANTHROPIC_API_KEY` | Para geração de textos via Claude |
+| `CRON_SECRET` | Token de autenticação dos crons |
+| `LUSHA_API_KEY` | Enriquecimento de contatos |
 
 ## Configurar IA
 Em ⚙ Configurações, insira sua Claude API Key (`sk-ant-...`)  
