@@ -1,16 +1,16 @@
 // D3 — Gerar fila de prospecção
 // POST /api/gerar-fila
-// Body: { agencia_slug?, canais?, limite? }
-// Auth: Bearer Supabase JWT
-// Regras D1: exclusividade semanal, etapa_cadencia, pausa, status ativo, email_valido
-// Regras D2: ordena estrelas→sinal_recente→temperatura, 1 decisor/empresa, limites diários
-// Gera texto via Claude (claude-sonnet-4-6), ≤120 palavras, ≤8 palavras assunto
+// Auth: Bearer CRON_SECRET ou JWT Supabase
+// D1: exclusividade semanal, etapa_cadencia, pausa, status, email_valido
+// D2: ordena por crm_empresa_agencia_estrelas (estrelas_manual vence estrelas_calculadas)
+// Gera texto via Claude claude-sonnet-4-6
 
 import Anthropic from '@anthropic-ai/sdk';
 
 const SUPA_URL = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
-const SUPA_KEY = process.env.SUPA_CRM_SERVICE_KEY;
+const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPA_CRM_SERVICE_KEY;
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
+const CRON_SECRET = process.env.CRON_SECRET;
 
 const LIMITES = { email: 50, whatsapp: 80, linkedin_convite: 20, linkedin_mensagem: 20 };
 
@@ -34,7 +34,6 @@ async function verifyJWT(jwt) {
   return r.ok;
 }
 
-// Início da semana BRT (segunda-feira 00:00)
 function inicioSemana() {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
   const dia = now.getDay();
@@ -44,18 +43,16 @@ function inicioSemana() {
   return seg.toISOString();
 }
 
-// Contagem enviados hoje por canal
 async function contadosHoje(canal) {
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const rows = await sg(`crm_fila?canal=eq.${canal}&status=in.(aprovado,enviado)&enviado_em=gte.${hoje.toISOString()}&select=id`);
   return Array.isArray(rows) ? rows.length : 0;
 }
 
-// D1 — elegibilidade de um decisor
 function elegivel(d, semanaInicio) {
   if (!d) return false;
   if (d.status && ['inativo', 'removido', 'descadastrado'].includes(d.status)) return false;
-  if (d.email_valido === false && !d.wa) return false; // sem contato válido
+  if (d.email_valido === false && !d.wa) return false;
   if (d.pausa_ate_em && new Date(d.pausa_ate_em) > new Date()) return false;
   if (d.etapa_cadencia === 'off') return false;
   return true;
@@ -86,7 +83,6 @@ Regras absolutas:
 Formato de resposta (JSON):
 {"assunto":"...","corpo":"..."}`
   });
-
   const txt = r.content[0]?.text || '';
   let obj = {};
   try { const m = txt.match(/\{[\s\S]+\}/); if (m) obj = JSON.parse(m[0]); } catch (e) {}
@@ -99,11 +95,30 @@ Formato de resposta (JSON):
   };
 }
 
+// Busca mapa de estrelas por empresa para uma agência
+// Usa COALESCE(estrelas_manual, estrelas_calculadas), fallback = 0
+async function estrelasPorEmpresa(agenciaId) {
+  const rows = await sg(
+    `crm_empresa_agencia_estrelas?agencia_id=eq.${agenciaId}&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=500`
+  );
+  const map = {};
+  for (const r of (Array.isArray(rows) ? rows : [])) {
+    map[r.empresa_id] = r.estrelas_manual != null ? Number(r.estrelas_manual) : Number(r.estrelas_calculadas || 0);
+  }
+  return map;
+}
+
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Method not allowed' });
 
-  const auth = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  if (!auth || !(await verifyJWT(auth))) return res.status(401).json({ error: 'Não autenticado' });
+  const authHeader = (req.headers.authorization || '').replace('Bearer ', '').trim();
+  // Aceita: CRON_SECRET, service role key (fallback quando CRON_SECRET não configurado), ou JWT válido
+  const isCron = authHeader && (
+    (CRON_SECRET && authHeader === CRON_SECRET) ||
+    (SUPA_KEY && authHeader === SUPA_KEY)
+  );
+  const isJWT = !isCron && authHeader && await verifyJWT(authHeader);
+  if (!isCron && !isJWT) return res.status(401).json({ error: 'Não autenticado' });
 
   const { agencia_slug, canais = ['email', 'whatsapp'], limite = 30 } = req.body || {};
 
@@ -111,18 +126,20 @@ export default async function handler(req, res) {
   const semana = inicioSemana();
   const gerados = [];
   const erros = [];
+  const bloqueados = [];
 
-  // D2 — buscar agências a processar
   let agencias;
   if (agencia_slug) {
-    agencias = await sg(`crm_agencias?id_slug=eq.${agencia_slug}&select=*`) ||
-               await sg(`crm_agencias?select=*&limit=14`);
-  } else {
+    agencias = await sg(`crm_agencias?id_slug=eq.${agencia_slug}&select=*`);
+    if (!Array.isArray(agencias) || agencias.length === 0) {
+      agencias = await sg(`crm_agencias?id=eq.${agencia_slug}&select=*`);
+    }
+  }
+  if (!Array.isArray(agencias) || agencias.length === 0) {
     agencias = await sg('crm_agencias?select=*&order=nome.asc&limit=14');
   }
   if (!Array.isArray(agencias) || agencias.length === 0) return res.status(200).json({ gerados: 0, erros: [] });
 
-  // Limites restantes por canal hoje
   const restante = {};
   for (const c of canais) {
     const usados = await contadosHoje(c);
@@ -134,29 +151,40 @@ export default async function handler(req, res) {
   for (const ag of agencias) {
     if (totalGerado >= limite) break;
 
-    // D2: buscar decisores elegíveis ordenados por estrelas desc, sinal_recente desc, temperatura desc
-    // 1 decisor por empresa — usar DISTINCT ON empresa_id
+    // D2 — buscar mapa de estrelas por empresa para esta agência
+    const scoreMap = await estrelasPorEmpresa(ag.id);
+
+    // D2 — buscar decisores elegíveis
     const decisores = await sg(
-      `crm_decisores?etapa_cadencia=neq.off&status=neq.inativo&select=*,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,estrelas,sinal_recente_em,cliente_ativo,agencia_atendendo)` +
-      `&order=estrelas.desc,sinal_recente_em.desc,temperatura.desc&limit=50`
+      `crm_decisores?etapa_cadencia=neq.off&status=neq.inativo` +
+      `&select=*,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,sinal_recente_em,cliente_ativo,agencia_atendendo)` +
+      `&limit=100`
     );
     if (!Array.isArray(decisores)) continue;
 
-    // D1 — filtrar elegíveis, 1 por empresa
+    // D1 — filtrar elegíveis, 1 por empresa, ordenar por estrelas desc
     const empresasVistas = new Set();
-    const elegiveis = decisores.filter(d => {
-      if (!elegivel(d, semana)) return false;
-      if (empresasVistas.has(d.empresa_id)) return false;
-      // Exclusividade semanal: não recebeu nesta semana
-      if (d.ultimo_toque_em && new Date(d.ultimo_toque_em) > new Date(semana)) return false;
-      // Empresa não pode estar em carteira/cliente ativo de outra agência com conflito
-      const emp = d.crm_empresas;
-      if (emp && emp.cliente_ativo && emp.agencia_atendendo && emp.agencia_atendendo !== ag.id) return false;
-      empresasVistas.add(d.empresa_id);
-      return true;
-    });
+    const semanaInicio = semana;
+    const elegiveis = decisores
+      .filter(d => {
+        if (!elegivel(d, semanaInicio)) { bloqueados.push({decisor:d.nome,motivo:'inelegivel'}); return false; }
+        if (empresasVistas.has(d.empresa_id)) { bloqueados.push({decisor:d.nome,motivo:'empresa_ja_na_fila'}); return false; }
+        if (d.ultimo_toque_em && new Date(d.ultimo_toque_em) > new Date(semanaInicio)) { bloqueados.push({decisor:d.nome,motivo:'tocado_esta_semana'}); return false; }
+        const emp = d.crm_empresas;
+        if (emp && emp.cliente_ativo && emp.agencia_atendendo && emp.agencia_atendendo !== ag.id) { bloqueados.push({decisor:d.nome,motivo:'cliente_ativo_outra_agencia'}); return false; }
+        empresasVistas.add(d.empresa_id);
+        return true;
+      })
+      .sort((a, b) => {
+        const sa = scoreMap[a.empresa_id] || 0;
+        const sb = scoreMap[b.empresa_id] || 0;
+        if (sb !== sa) return sb - sa;
+        const ta = new Date(a.sinal_recente_em || 0).getTime();
+        const tb = new Date(b.sinal_recente_em || 0).getTime();
+        if (tb !== ta) return tb - ta;
+        return (b.temperatura || 0) - (a.temperatura || 0);
+      });
 
-    // Buscar templates e cases para esta agência
     const templates = await sg(`crm_templates?agencia_id=eq.${ag.id}&tipo=eq.prospeccao&select=*`);
     const cases = await sg(`crm_cases?agencia_id=eq.${ag.id}&ativo=eq.true&permitido_em_prospeccao=eq.true&destaque=eq.true&select=id,titulo,marca,resumo,url_pagina&limit=5`);
 
@@ -168,10 +196,9 @@ export default async function handler(req, res) {
 
       const canal = canalList[0];
       const etapa = d.etapa_cadencia || 'etapa1';
-
-      // Selecionar template para este canal e etapa
       const tpl = (templates || []).find(t => t.canal === canal && t.etapa && t.etapa.includes(etapa.replace('etapa', '')));
-      const caso = cases && cases[Math.floor(Math.random() * (cases.length || 1))];
+      const caso = cases && cases.length > 0 ? cases[Math.floor(Math.random() * cases.length)] : null;
+      const estrelas = scoreMap[d.empresa_id] || 0;
 
       const prompt = `Gere uma mensagem de prospecção.
 Agência: ${ag.nome}
@@ -180,6 +207,7 @@ Setor: ${emp.setor || emp.segmento_detalhe || 'não especificado'}
 Decisor: ${d.nome}, ${d.cargo || 'cargo desconhecido'}
 Canal: ${canal}
 Etapa: ${etapa}
+Relevância da empresa: ${estrelas}/5 estrelas
 ${tpl ? 'Template base: ' + tpl.corpo.slice(0, 300) : ''}
 ${caso ? 'Case de referência: ' + caso.titulo + ' (' + (caso.marca || '') + ') — ' + (caso.resumo || '') : ''}
 Personalize o template para esta empresa e decisor específicos.`;
@@ -187,7 +215,7 @@ Personalize o template para esta empresa e decisor específicos.`;
       try {
         const txt = await gerarTexto(anthropic, prompt, canal);
         const row = await sp('crm_fila', {
-          agencia_id: ag.id, agencia_slug: ag.id,
+          agencia_id: ag.id, agencia_slug: ag.nome,
           empresa_id: d.empresa_id, decisor_id: d.id,
           canal, etapa, status: 'rascunho',
           assunto: txt.assunto || null,
@@ -196,14 +224,13 @@ Personalize o template para esta empresa e decisor específicos.`;
           template_id: tpl?.id || null,
           tokens_prompt: txt.tokens_prompt, tokens_resposta: txt.tokens_resposta,
           custo_usd: txt.custo_usd, modelo: 'claude-sonnet-4-6',
-          contexto_para_aprovacao: `${emp.nome || ''} · ${d.nome} · ${d.cargo || ''}`
+          contexto_para_aprovacao: `${emp.nome || ''} · ${d.nome} · ${d.cargo || ''} · ${estrelas}★`
         });
 
         if (row) {
           restante[canal] = (restante[canal] || 0) - 1;
           totalGerado++;
-          gerados.push({ id: row[0]?.id, empresa: emp.nome, decisor: d.nome, canal });
-          // Atualizar ultimo_toque_em no decisor
+          gerados.push({ id: row[0]?.id, empresa: emp.nome, decisor: d.nome, canal, estrelas });
           await sp(`crm_decisores?id=eq.${d.id}`, { ultimo_toque_em: new Date().toISOString() }, 'PATCH');
         }
       } catch (e) {
@@ -212,12 +239,5 @@ Personalize o template para esta empresa e decisor específicos.`;
     }
   }
 
-  // Atualizar custos em crm_configuracoes
-  const totalCusto = gerados.reduce((acc, g) => acc, 0); // simplificado
-  await sp('crm_configuracoes?id=eq.custos_tokens', {
-    valor: { ultimo_run: new Date().toISOString(), ultimo_gerado: totalGerado },
-    atualizado_em: new Date().toISOString()
-  }, 'PATCH').catch(() => {});
-
-  return res.status(200).json({ gerados: totalGerado, itens: gerados, erros });
+  return res.status(200).json({ gerados: totalGerado, itens: gerados, erros, bloqueados });
 }
