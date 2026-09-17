@@ -58,8 +58,20 @@
 
 ---
 
+## Git — Fase B encerrada
+
+| Passo | Status | Detalhe |
+|---|---|---|
+| Tag `pre-fase1` local | ✅ | commit 9ec5449 |
+| `git push origin fase1` | ✅ | branch remota ok |
+| `git push origin pre-fase1` | ✅ | tag no GitHub |
+| `git merge --no-ff fase1` → main | ✅ | merge 4eabd49 |
+| `git push origin main` | ✅ | Vercel auto-deploy disparado |
+
+---
+
 ## Fases futuras
 
-- **FASE C** — A definir
+- **FASE C** — A definir (hints: AI em AgTextosTab; Blocklist em FerramentasModal como "Carteira")
 - **FASE D** — A definir
 - **FASE E** — A definir
