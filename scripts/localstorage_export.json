@@ -1,0 +1,67 @@
+{
+  "ghub_mailing_v2": 1,
+  "ghub_custom_leads": [
+    {"rank":9001,"nome":"NATURA","setor":"Beleza","custom":true},
+    {"rank":9002,"nome":"AVON","setor":"Beleza","custom":true},
+    {"rank":9003,"nome":"HINODE GROUP","setor":"Beleza","custom":true},
+    {"rank":9004,"nome":"HERBALIFE","setor":"FMCG","custom":true},
+    {"rank":9005,"nome":"AMWAY","setor":"FMCG","custom":true},
+    {"rank":9006,"nome":"MARY KAY","setor":"Beleza","custom":true},
+    {"rank":9007,"nome":"JEQUITI","setor":"Beleza","custom":true},
+    {"rank":9008,"nome":"CACAU SHOW","setor":"Food","custom":true},
+    {"rank":9009,"nome":"FOREVER LIVING","setor":"FMCG","custom":true},
+    {"rank":9010,"nome":"TUPPERWARE","setor":"Varejo","custom":true},
+    {"rank":9011,"nome":"IGREEN ENERGY","setor":"Energia","custom":true},
+    {"rank":9012,"nome":"AMAKHA PARIS","setor":"Beleza","custom":true},
+    {"rank":9013,"nome":"ZYONE","setor":"Beleza","custom":true},
+    {"rank":9014,"nome":"ATLANTICA NATURAL","setor":"FMCG","custom":true},
+    {"rank":9015,"nome":"AKMOS","setor":"FMCG","custom":true},
+    {"rank":9016,"nome":"AKMEL","setor":"FMCG","custom":true},
+    {"rank":9017,"nome":"MOMENTS PARIS","setor":"Beleza","custom":true},
+    {"rank":9018,"nome":"BOULEVARD MONDE","setor":"FMCG","custom":true},
+    {"rank":9019,"nome":"OMNILIFE","setor":"FMCG","custom":true},
+    {"rank":9020,"nome":"NU SKIN","setor":"Beleza","custom":true},
+    {"rank":9021,"nome":"ORIFLAME","setor":"Beleza","custom":true},
+    {"rank":9022,"nome":"JEUNESSE","setor":"Beleza","custom":true},
+    {"rank":9023,"nome":"VORWERK","setor":"Varejo","custom":true},
+    {"rank":9024,"nome":"YOUNG LIVING","setor":"FMCG","custom":true},
+    {"rank":9025,"nome":"4LIFE RESEARCH","setor":"FMCG","custom":true},
+    {"rank":9026,"nome":"HY CITE","setor":"Varejo","custom":true},
+    {"rank":9027,"nome":"MAHOGANY","setor":"Beleza","custom":true},
+    {"rank":9028,"nome":"DEMILLUS","setor":"Varejo","custom":true},
+    {"rank":9029,"nome":"JAN ROSE","setor":"Beleza","custom":true},
+    {"rank":9030,"nome":"CRYSTALLINI","setor":"Beleza","custom":true},
+    {"rank":9031,"nome":"ODORATA","setor":"Beleza","custom":true},
+    {"rank":9032,"nome":"YAKULT","setor":"FMCG","custom":true},
+    {"rank":9033,"nome":"REFIN","setor":"Fintech","custom":true},
+    {"rank":9034,"nome":"APVS BRASIL","setor":"Fintech","custom":true},
+    {"rank":9035,"nome":"MARAVILHAS DA TERRA","setor":"FMCG","custom":true},
+    {"rank":9036,"nome":"NATURE'S SUNSHINE","setor":"FMCG","custom":true}
+  ],
+  "ghub_mmn_import_v1": 1,
+  "gh_autobk_at": "2026-09-16",
+  "gh_kanban_v3": {
+    "2026-09-14": {
+      "para_acionar": ["galeria_9001","galeria_9002","galeria_9003","galeria_9004","galeria_9005","galeria_9006","galeria_9007","galeria_9008","galeria_9009","galeria_9010","galeria_9011","galeria_9012","galeria_9013","galeria_9014","galeria_9015","galeria_9016","galeria_9017","galeria_9018","galeria_9019","galeria_9020","galeria_9021","galeria_9022","galeria_9023","galeria_9024","galeria_9025","galeria_9026","galeria_9027","galeria_9028","galeria_9029","galeria_9030","galeria_9031","galeria_9032","galeria_9033","galeria_9034","galeria_9035","galeria_7084","galeria_9036"]
+    }
+  },
+  "ghub_cfg_shown": true,
+  "ghub_pd": "",
+  "gh_decisores_v3": {
+    "__note": "flat_keyed_object_galeria_XXXX_format_20536_entries_not_empresas_array_format",
+    "__count": 20536,
+    "__sizeBytes": 8010999
+  },
+  "ghub_accs": {
+    "__note": "identical_to_gh_decisores_v3",
+    "__count": 20536,
+    "__sizeBytes": 8010999
+  },
+  "__exportMeta": {
+    "exportedAt": "2026-09-16T18:30:00Z",
+    "origin": "galeria-holding.vercel.app",
+    "method": "claude_browser_javascript_tool",
+    "totalKeys": 10,
+    "note": "Large keys (ghub_accs, gh_decisores_v3, gh_autobk_data) stubbed — format incompatible with sync script extractDecisores (expects {empresas:[...]} array, got flat galeria_XXXX keyed object). Decisores ja estao no Supabase crm_decisores (2742 rows). Pipeline kanban ja esta no crm_kanban (97 cards). gh_kanban_v3 contem dados de regua/scheduling, nao pipeline."
+  }
+}

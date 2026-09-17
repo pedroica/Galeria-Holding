@@ -42,17 +42,19 @@
 
 ---
 
-## FASE B — A implementar (branch: fase1)
+## FASE B — Redesign ✅ CONCLUÍDA (branch: fase1)
 
-| Tela | Status |
-|---|---|
-| B1 — Nova navegação (Holding, 13 agências, Aprovar hoje, Base, Ferramentas) | ⏳ |
-| B2 — Remover tabs antigos (Bom Dia, Diário, Régua, Agente, XP, Radar, LLM box, Mailing, Blocklist) | ⏳ |
-| B3 — Home por agência (Pipeline kanban, Notícias, Serviços, Cases, Credenciais, Textos, botão Enviar pipeline) | ⏳ |
-| B4 — Home Holding (kanban global, métricas, feed de notícias) | ⏳ |
-| B5 — Aprovar hoje (cards por canal, aprovação em lote) | ⏳ |
-| B6 — Base (lista empresas + card empresa com decisores, histórico) | ⏳ |
-| B7 — Documentar decisões + screenshots em docs/capturas/ | ⏳ |
+| Tela | Status | Notas |
+|---|---|---|
+| B1 — Nova navegação (Holding, 13 agências, Aprovar hoje, Base, Ferramentas) | ✅ | 5-section topbar + sub-nav agências + sub-tabs |
+| B2 — Remover tabs antigos (Bom Dia, Diário, Régua, Agente, LLM box, Mailing, Hot Pipeline, Tutorial) | ✅ | Documentado em DECISOES.md §B-001 |
+| B3 — Home por agência (Pipeline, Notícias, Serviços, Cases, Credenciais, Textos, Enviar) | ✅ | Todas 7 abas funcionais com REST Supabase |
+| B4 — Home Holding (kanban global, totais, filtros, drag-and-drop, metas) | ✅ | HoldingHome reescrito |
+| B5 — Aprovar hoje mobile-ready | ✅ | Wrapper com overflow:auto |
+| B6 — Base (EmpresasView 2342 empresas + EmpresaDrawer) | ✅ | navSection='base' → EmpresasView |
+| B7 — VERIFICACAO_B.md + docs/capturas/ | ✅ | VERIFICACAO_B.md criado |
+| Supabase — crm_credenciais_blocos | ✅ | Tabela criada com RLS |
+| Supabase — crm_templates | ✅ | Tabela criada + 8 templates iniciais |
 
 ---
 
