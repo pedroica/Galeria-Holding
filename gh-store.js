@@ -426,7 +426,9 @@
   // Chaves estruturais → tabelas próprias (NÃO vão para crm_shared)
   var STRUCT_KEYS = ['gh_decisores_v3', 'gh_blocklist_v1', 'ghub_custom_leads'];
 
-  // Hydrate: carrega tabelas Supabase → localStorage (requer sessão)
+  // Hydrate: sincroniza Supabase ↔ localStorage (não-destrutivo)
+  // Regras: (1) local ausente → escreve do Supabase; (2) conflito → local vence se sem timestamp
+  //         ou se timestamp local >= Supabase; (3) SEMPRE faz push do local para Supabase primeiro.
   async function hydrateFromSupabase() {
     if (!supa) return;
     try {
@@ -434,89 +436,198 @@
       if (!sess) return;
       var uid = sess.user.id;
 
-      // 1. crm_shared → LS_SHARED_KEYS (preferências de interface)
-      var res = await supa.from('crm_shared').select('key, value').in('key', LS_SHARED_KEYS);
+      // Lê o mapa de timestamps locais (gravado pelo monkey-patch)
+      var localTs = {};
+      try { localTs = JSON.parse(localStorage.getItem('gh_ls_timestamps_v1') || '{}'); } catch(e) {}
+
+      // Utilitário: compara timestamps; retorna true se t1 >= t2 (ou t2 desconhecido)
+      function localIsNewer(localKey, supaUpdatedAt) {
+        var lt = localTs[localKey] ? new Date(localTs[localKey]).getTime() : null;
+        if (lt === null) return true;  // sem timestamp local → local vence por segurança
+        var st = supaUpdatedAt ? new Date(supaUpdatedAt).getTime() : 0;
+        return lt >= st;
+      }
+
+      // ── FASE 1: push local → Supabase (nunca perde dado local) ──────────────
+      // 1a. crm_shared
+      var sharedPush = [];
+      LS_SHARED_KEYS.forEach(function(k) {
+        var raw = localStorage.getItem(k);
+        if (raw !== null) {
+          var parsed; try { parsed = JSON.parse(raw); } catch(e) { parsed = raw; }
+          sharedPush.push({ key: k, value: parsed,
+            updated_at: localTs[k] || new Date().toISOString() });
+        }
+      });
+      if (sharedPush.length) {
+        try {
+          var existSh = await supa.from('crm_shared').select('key, updated_at')
+            .in('key', sharedPush.map(function(r) { return r.key; }));
+          var existShMap = {};
+          if (existSh && existSh.data) existSh.data.forEach(function(r) { existShMap[r.key] = r.updated_at; });
+          var toUpsertSh = sharedPush.filter(function(r) {
+            if (!existShMap[r.key]) return true; // ausente no Supabase → push
+            return localIsNewer(r.key, existShMap[r.key]);
+          });
+          if (toUpsertSh.length) {
+            await supa.from('crm_shared').upsert(toUpsertSh, { onConflict: 'key' });
+          }
+        } catch(e) { console.warn('[gh-store] hydrate push shared error', e); }
+      }
+
+      // 1b. crm_personal
+      var personalPush = [];
+      LS_PERSONAL_KEYS.forEach(function(k) {
+        var raw = localStorage.getItem(k);
+        if (raw !== null) {
+          var parsed; try { parsed = JSON.parse(raw); } catch(e) { parsed = raw; }
+          personalPush.push({ user_id: uid, key: k, value: parsed,
+            updated_at: localTs[k] || new Date().toISOString() });
+        }
+      });
+      if (personalPush.length) {
+        try {
+          var existPer = await supa.from('crm_personal').select('key, updated_at')
+            .eq('user_id', uid)
+            .in('key', personalPush.map(function(r) { return r.key; }));
+          var existPerMap = {};
+          if (existPer && existPer.data) existPer.data.forEach(function(r) { existPerMap[r.key] = r.updated_at; });
+          var toUpsertPer = personalPush.filter(function(r) {
+            if (!existPerMap[r.key]) return true;
+            return localIsNewer(r.key, existPerMap[r.key]);
+          });
+          if (toUpsertPer.length) {
+            await supa.from('crm_personal').upsert(toUpsertPer, { onConflict: 'user_id,key' });
+          }
+        } catch(e) { console.warn('[gh-store] hydrate push personal error', e); }
+      }
+
+      // 1c. Push estruturais (decisores, custom_leads, blocklist) — só se local existir
+      var localDec = localStorage.getItem('gh_decisores_v3');
+      if (localDec) {
+        try {
+          var pd; try { pd = JSON.parse(localDec); } catch(e) { pd = null; }
+          if (pd) { pushDecisoresToSupabase(pd); }
+        } catch(e) {}
+      }
+      var localCL = localStorage.getItem('ghub_custom_leads');
+      if (localCL) {
+        try {
+          var pcl; try { pcl = JSON.parse(localCL); } catch(e) { pcl = null; }
+          if (pcl) { pushCustomLeadsToSupabase(pcl); }
+        } catch(e) {}
+      }
+      var localBL = localStorage.getItem('gh_blocklist_v1');
+      if (localBL) {
+        try {
+          var pbl; try { pbl = JSON.parse(localBL); } catch(e) { pbl = null; }
+          if (pbl) { pushBlocklistToSupabase(pbl); }
+        } catch(e) {}
+      }
+
+      // ── FASE 2: pull Supabase → local (somente onde local está vazio ou Supabase é mais novo) ─
+      // 2a. crm_shared → LS_SHARED_KEYS
+      var res = await supa.from('crm_shared').select('key, value, updated_at').in('key', LS_SHARED_KEYS);
+      var sharedPulled = 0;
       if (res && res.data) {
         res.data.forEach(function(row) {
           try {
-            var v = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
-            localStorage.setItem(row.key, v);
+            var localRaw = localStorage.getItem(row.key);
+            if (localRaw === null) {
+              // ausente localmente → escreve
+              var v = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
+              localStorage.setItem(row.key, v);
+              sharedPulled++;
+            } else if (!localIsNewer(row.key, row.updated_at)) {
+              // Supabase é mais novo → atualiza local
+              var v = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
+              localStorage.setItem(row.key, v);
+              sharedPulled++;
+            }
+            // else: local é igual ou mais novo → mantém local
           } catch(e) {}
         });
       }
 
-      // 2. crm_personal → LS_PERSONAL_KEYS
-      var pRes = await supa.from('crm_personal').select('key, value')
+      // 2b. crm_personal → LS_PERSONAL_KEYS
+      var pRes = await supa.from('crm_personal').select('key, value, updated_at')
         .eq('user_id', uid).in('key', LS_PERSONAL_KEYS);
       if (pRes && pRes.data) {
         pRes.data.forEach(function(row) {
           try {
-            var v = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
-            localStorage.setItem(row.key, v);
+            var localRaw = localStorage.getItem(row.key);
+            if (localRaw === null || !localIsNewer(row.key, row.updated_at)) {
+              var v = typeof row.value === 'string' ? row.value : JSON.stringify(row.value);
+              localStorage.setItem(row.key, v);
+            }
           } catch(e) {}
         });
       }
 
-      // 3. crm_decisores → gh_decisores_v3 (reconstrói formato legado)
-      try {
-        var dRes = await supa.from('crm_decisores')
-          .select('legacy_key, nome, cargo, email, wa, linkedin_url, status, raw_legacy');
-        if (dRes && dRes.data && dRes.data.length) {
-          var decDB = {};
-          dRes.data.forEach(function(row) {
-            var rl = null;
-            try { rl = typeof row.raw_legacy === 'string' ? JSON.parse(row.raw_legacy) : row.raw_legacy; } catch(e) {}
-            var accKey = (rl && rl.accKey) ? rl.accKey
-              : (row.legacy_key || '').split('_').slice(0, 2).join('_'); // galeria_{rank}
-            if (!accKey) return;
-            if (!decDB[accKey]) decDB[accKey] = { decisors: [], sugeridos: [], activities: [] };
-            var d = { nome: row.nome, cargo: row.cargo || '', email: row.email || '',
-                      wa: row.wa || '', li: row.linkedin_url || '' };
-            if (row.status === 'sugerido') decDB[accKey].sugeridos.push(d);
-            else decDB[accKey].decisors.push(d);
-          });
-          localStorage.setItem('gh_decisores_v3', JSON.stringify(decDB));
-        }
-      } catch(e) { console.warn('[gh-store] hydrate decisores error', e); }
+      // 2c. Estruturais — só preenche se local está vazio
+      if (!localStorage.getItem('gh_decisores_v3')) {
+        try {
+          var dRes = await supa.from('crm_decisores')
+            .select('legacy_key, nome, cargo, email, wa, linkedin_url, status, raw_legacy');
+          if (dRes && dRes.data && dRes.data.length) {
+            var decDB = {};
+            dRes.data.forEach(function(row) {
+              var rl = null;
+              try { rl = typeof row.raw_legacy === 'string' ? JSON.parse(row.raw_legacy) : row.raw_legacy; } catch(e) {}
+              var accKey = (rl && rl.accKey) ? rl.accKey
+                : (row.legacy_key || '').split('_').slice(0, 2).join('_');
+              if (!accKey) return;
+              if (!decDB[accKey]) decDB[accKey] = { decisors: [], sugeridos: [], activities: [] };
+              var d = { nome: row.nome, cargo: row.cargo || '', email: row.email || '',
+                        wa: row.wa || '', li: row.linkedin_url || '' };
+              if (row.status === 'sugerido') decDB[accKey].sugeridos.push(d);
+              else decDB[accKey].decisors.push(d);
+            });
+            localStorage.setItem('gh_decisores_v3', JSON.stringify(decDB));
+          }
+        } catch(e) { console.warn('[gh-store] hydrate decisores error', e); }
+      }
 
-      // 4. crm_empresas (fonte='custom') → ghub_custom_leads (reconstrói formato legado)
-      try {
-        var clRes = await supa.from('crm_empresas')
-          .select('legacy_key, nome, setor, segmento_detalhe, website, tier, porte, fonte, raw_legacy')
-          .eq('fonte', 'custom');
-        if (clRes && clRes.data && clRes.data.length) {
-          var customLeads = clRes.data.map(function(row) {
-            var rl = null;
-            try { rl = typeof row.raw_legacy === 'string' ? JSON.parse(row.raw_legacy) : row.raw_legacy; } catch(e) {}
-            if (rl && rl.nome) return rl;
-            var rank = row.legacy_key ? parseInt((row.legacy_key || '').replace('galeria_', ''), 10) : 9999;
-            return { rank: rank, nome: row.nome, setor: row.setor,
-                     segmento_detalhe: row.segmento_detalhe, website: row.website,
-                     tier: row.tier, porte: row.porte, cli: false, custom: true };
-          });
-          localStorage.setItem('ghub_custom_leads', JSON.stringify(customLeads));
-        }
-      } catch(e) { console.warn('[gh-store] hydrate custom_leads error', e); }
+      if (!localStorage.getItem('ghub_custom_leads')) {
+        try {
+          var clRes = await supa.from('crm_empresas')
+            .select('legacy_key, nome, setor, segmento_detalhe, website, tier, porte, raw_legacy')
+            .eq('fonte', 'custom');
+          if (clRes && clRes.data && clRes.data.length) {
+            var customLeads = clRes.data.map(function(row) {
+              var rl = null;
+              try { rl = typeof row.raw_legacy === 'string' ? JSON.parse(row.raw_legacy) : row.raw_legacy; } catch(e) {}
+              if (rl && rl.nome) return rl;
+              var rank = row.legacy_key ? parseInt((row.legacy_key || '').replace('galeria_', ''), 10) : 9999;
+              return { rank: rank, nome: row.nome, setor: row.setor,
+                       segmento_detalhe: row.segmento_detalhe, website: row.website,
+                       tier: row.tier, porte: row.porte, cli: false, custom: true };
+            });
+            localStorage.setItem('ghub_custom_leads', JSON.stringify(customLeads));
+          }
+        } catch(e) { console.warn('[gh-store] hydrate custom_leads error', e); }
+      }
 
-      // 5. crm_carteira_clientes (tipo='cliente_ativo') → gh_blocklist_v1 (reconstrói)
-      try {
-        var blRes = await supa.from('crm_carteira_clientes')
-          .select('empresa_id, tipo, grupo_economico, aliases, dominios, note, crm_empresas(nome)')
-          .eq('tipo', 'cliente_ativo');
-        if (blRes && blRes.data && blRes.data.length) {
-          var blocklist = blRes.data.map(function(row) {
-            var nome = row.crm_empresas ? row.crm_empresas.nome : '';
-            return { id: _normKey(nome).replace(/ /g, '-'),
-                     canonicalName: nome, aliases: row.aliases || [],
-                     domains: row.dominios || [], economicGroup: row.grupo_economico || '',
-                     note: row.note || '', active: true };
-          });
-          localStorage.setItem('gh_blocklist_v1', JSON.stringify(blocklist));
-        }
-      } catch(e) { console.warn('[gh-store] hydrate blocklist error', e); }
+      if (!localStorage.getItem('gh_blocklist_v1')) {
+        try {
+          var blRes = await supa.from('crm_carteira_clientes')
+            .select('empresa_id, tipo, grupo_economico, aliases, dominios, note, crm_empresas(nome)')
+            .eq('tipo', 'cliente_ativo');
+          if (blRes && blRes.data && blRes.data.length) {
+            var blocklist = blRes.data.map(function(row) {
+              var nome = row.crm_empresas ? row.crm_empresas.nome : '';
+              return { id: _normKey(nome).replace(/ /g, '-'),
+                       canonicalName: nome, aliases: row.aliases || [],
+                       domains: row.dominios || [], economicGroup: row.grupo_economico || '',
+                       note: row.note || '', active: true };
+            });
+            localStorage.setItem('gh_blocklist_v1', JSON.stringify(blocklist));
+          }
+        } catch(e) { console.warn('[gh-store] hydrate blocklist error', e); }
+      }
 
-      console.log('[gh-store] hydrate OK — shared:', (res && res.data && res.data.length) || 0,
-        '| decisores: from crm_decisores | leads: from crm_empresas');
+      console.log('[gh-store] hydrate OK (não-destrutivo) — shared pulled:', sharedPulled,
+        '| local data pushed to Supabase first');
     } catch(e) { console.warn('[gh-store] hydrate error', e); }
   }
 
@@ -653,13 +764,20 @@
     } catch(e) {}
   }
 
-  // Monkey-patch localStorage.setItem
+  // Monkey-patch localStorage.setItem — tracks write timestamps
   (function() {
     var ALL_BRIDGE = LS_SHARED_KEYS.concat(LS_PERSONAL_KEYS).concat(STRUCT_KEYS);
     var _origSet = localStorage.setItem.bind(localStorage);
     localStorage.setItem = function(key, value) {
       _origSet(key, value);
       if (ALL_BRIDGE.indexOf(key) !== -1) {
+        // Track write timestamp so hydrate can do conflict resolution
+        try {
+          var ts = {};
+          try { ts = JSON.parse(localStorage.getItem('gh_ls_timestamps_v1') || '{}'); } catch(e) {}
+          ts[key] = new Date().toISOString();
+          _origSet('gh_ls_timestamps_v1', JSON.stringify(ts));
+        } catch(e) {}
         pushKeyToSupabase(key, value); // fire-and-forget
       }
     };
