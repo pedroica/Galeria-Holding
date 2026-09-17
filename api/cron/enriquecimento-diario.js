@@ -1,10 +1,11 @@
 // D4 — Cron diário: enriquecimento Lusha
-// 1.400 revelações/dia máx; 1 email em empresas estrelas>=3; 2 telefone nas estrelas=5
+// Usa crm_empresa_agencia_estrelas; estrelas_manual vence estrelas_calculadas
+// 1.400 revelações/dia máx; 1 email em empresas estrelas>=3; 2 telefone em estrelas=5
 // Schedule: "30 13 * * *" (13h30 UTC = 10h30 BRT)
 
 const SUPA_URL = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
-const SUPA_KEY = process.env.SUPA_CRM_SERVICE_KEY;
-const LUSHA_KEY = process.env.LUSHA_KEY;
+const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPA_CRM_SERVICE_KEY;
+const LUSHA_KEY = process.env.LUSHA_API_KEY || process.env.LUSHA_KEY;
 
 async function sg(path) {
   const r = await fetch(SUPA_URL + '/rest/v1/' + path, {
@@ -19,34 +20,31 @@ async function sp(path, body) {
   });
 }
 
-async function lushaEmail(decisor) {
-  if (!LUSHA_KEY || !decisor.nome) return null;
+async function lushaCall(nome, empresa_nome) {
+  if (!LUSHA_KEY || !nome) return null;
   try {
-    const [fn, ...ln] = decisor.nome.split(' ');
+    const [fn, ...ln] = nome.split(' ');
     const r = await fetch('https://api.lusha.com/person', {
       method: 'POST',
       headers: { api_key: LUSHA_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ firstName: fn, lastName: ln.join(' '), company: decisor.empresa_nome || '' })
+      body: JSON.stringify({ firstName: fn, lastName: ln.join(' '), company: empresa_nome || '' })
     });
     if (!r.ok) return null;
-    const d = await r.json();
-    return d.emailAddresses?.[0]?.emailAddress || null;
+    return r.json();
   } catch (e) { return null; }
 }
 
-async function lushaPhone(decisor) {
-  if (!LUSHA_KEY || !decisor.nome) return null;
-  try {
-    const [fn, ...ln] = decisor.nome.split(' ');
-    const r = await fetch('https://api.lusha.com/person', {
-      method: 'POST',
-      headers: { api_key: LUSHA_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ firstName: fn, lastName: ln.join(' '), company: decisor.empresa_nome || '' })
-    });
-    if (!r.ok) return null;
-    const d = await r.json();
-    return d.phoneNumbers?.[0]?.internationalNumber || null;
-  } catch (e) { return null; }
+// Retorna empresa_ids com estrelas efetivas >= threshold (via crm_empresa_agencia_estrelas)
+async function empIdsComEstrelas(threshold) {
+  const rows = await sg(
+    `crm_empresa_agencia_estrelas?or=(estrelas_manual.gte.${threshold},estrelas_calculadas.gte.${threshold})&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=500`
+  );
+  const ids = new Set();
+  for (const r of (Array.isArray(rows) ? rows : [])) {
+    const eff = r.estrelas_manual != null ? Number(r.estrelas_manual) : Number(r.estrelas_calculadas || 0);
+    if (eff >= threshold) ids.add(r.empresa_id);
+  }
+  return [...ids];
 }
 
 export default async function handler(req, res) {
@@ -54,41 +52,57 @@ export default async function handler(req, res) {
   if (process.env.CRON_SECRET && auth !== 'Bearer ' + process.env.CRON_SECRET) {
     return res.status(401).json({ error: 'unauthorized' });
   }
-  if (!LUSHA_KEY) return res.status(200).json({ ok: true, msg: 'LUSHA_KEY não configurada' });
+  if (!LUSHA_KEY) return res.status(200).json({ ok: true, msg: 'LUSHA_API_KEY não configurada' });
 
-  // 1 email em estrelas>=3 sem email
-  const semEmail = await sg(
-    'crm_decisores?email=is.null&select=id,nome,empresa_id,crm_empresas!empresa_id(nome,estrelas)&limit=20'
-  );
   let revelados = 0;
-  for (const d of (semEmail || [])) {
-    if (revelados >= 1400) break;
-    const emp = d.crm_empresas || {};
-    if ((emp.estrelas || 0) < 3) continue;
-    const email = await lushaEmail({ ...d, empresa_nome: emp.nome });
-    if (email) {
-      await sp('crm_decisores?id=eq.' + d.id, { email, fonte: 'lusha', atualizado_em: new Date().toISOString() });
-      revelados++;
+
+  // 1 email em empresas estrelas>=3 sem email
+  const ids3 = await empIdsComEstrelas(3);
+  if (ids3.length > 0) {
+    const inClause = ids3.slice(0, 100).join(',');
+    const semEmail = await sg(
+      `crm_decisores?email=is.null&empresa_id=in.(${inClause})&select=id,nome,empresa_id&limit=20`
+    );
+    // Busca nomes de empresa para contexto
+    const empNomes = await sg(`crm_empresas?id=in.(${ids3.slice(0,50).join(',')})&select=id,nome`);
+    const empNomeMap = {};
+    for (const e of (Array.isArray(empNomes) ? empNomes : [])) empNomeMap[e.id] = e.nome;
+
+    for (const d of (Array.isArray(semEmail) ? semEmail : [])) {
+      if (revelados >= 1400) break;
+      const data = await lushaCall(d.nome, empNomeMap[d.empresa_id] || '');
+      const email = data?.emailAddresses?.[0]?.emailAddress;
+      if (email) {
+        await sp('crm_decisores?id=eq.' + d.id, { email, fonte: 'lusha', atualizado_em: new Date().toISOString() });
+        revelados++;
+      }
+      await new Promise(r => setTimeout(r, 500));
     }
-    await new Promise(r => setTimeout(r, 500));
   }
 
-  // 2 telefones em estrelas=5 sem WA
-  const semWA = await sg(
-    'crm_decisores?wa=is.null&select=id,nome,empresa_id,crm_empresas!empresa_id(nome,estrelas)&limit=10'
-  );
-  for (const d of (semWA || [])) {
-    if (revelados >= 1400) break;
-    const emp = d.crm_empresas || {};
-    if ((emp.estrelas || 0) < 5) continue;
-    const tel = await lushaPhone({ ...d, empresa_nome: emp.nome });
-    if (tel) {
-      await sp('crm_decisores?id=eq.' + d.id, { wa: tel, fonte: 'lusha', atualizado_em: new Date().toISOString() });
-      revelados++;
+  // 2 telefones em empresas estrelas=5 sem WA
+  const ids5 = await empIdsComEstrelas(5);
+  if (ids5.length > 0) {
+    const inClause = ids5.slice(0, 50).join(',');
+    const semWA = await sg(
+      `crm_decisores?wa=is.null&empresa_id=in.(${inClause})&select=id,nome,empresa_id&limit=10`
+    );
+    const empNomes5 = await sg(`crm_empresas?id=in.(${ids5.slice(0,50).join(',')})&select=id,nome`);
+    const empNomeMap5 = {};
+    for (const e of (Array.isArray(empNomes5) ? empNomes5 : [])) empNomeMap5[e.id] = e.nome;
+
+    for (const d of (Array.isArray(semWA) ? semWA : [])) {
+      if (revelados >= 1400) break;
+      const data = await lushaCall(d.nome, empNomeMap5[d.empresa_id] || '');
+      const tel = data?.phoneNumbers?.[0]?.internationalNumber;
+      if (tel) {
+        await sp('crm_decisores?id=eq.' + d.id, { wa: tel, fonte: 'lusha', atualizado_em: new Date().toISOString() });
+        revelados++;
+      }
+      await new Promise(r => setTimeout(r, 500));
     }
-    await new Promise(r => setTimeout(r, 500));
   }
 
-  console.log('[cron:enriquecimento-diario]', revelados, 'revelações Lusha');
-  return res.status(200).json({ ok: true, revelados });
+  console.log('[cron:enriquecimento-diario]', revelados, 'revelações Lusha; ids3=', ids3.length, 'ids5=', ids5.length);
+  return res.status(200).json({ ok: true, revelados, empresas_gte3: ids3.length, empresas_e5: ids5.length });
 }
