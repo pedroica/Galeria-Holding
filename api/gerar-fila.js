@@ -87,7 +87,12 @@ Formato de resposta (JSON):
   });
   const txt = r.content[0]?.text || '';
   let obj = {};
-  try { const m = txt.match(/\{[\s\S]+\}/); if (m) obj = JSON.parse(m[0]); } catch (e) {}
+  try {
+    // Strip markdown code fences before JSON extraction
+    const clean = txt.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+    const m = clean.match(/\{[\s\S]+\}/);
+    if (m) obj = JSON.parse(m[0]);
+  } catch (e) {}
   return {
     assunto: obj.assunto || '',
     corpo: obj.corpo || txt.slice(0, 600),
