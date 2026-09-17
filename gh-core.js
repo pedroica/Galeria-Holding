@@ -6,7 +6,7 @@
 /* ── 1. PROXY DE APIs ─────────────────────────────────────────────
    Intercepta fetch() para api.anthropic.com / api.hunter.io /
    api.lusha.com e redireciona para as Vercel Serverless Functions
-   (/api/claude, /api/hunter, /api/lusha) quando disponíveis.
+   (/api/claude, /api/enrich) quando disponíveis.
    Se o proxy não existir (ex: rodando local via file://), cai no
    modo direto usando chaves salvas em localStorage.
    Resultado: nenhuma chave precisa existir no HTML. */
@@ -17,7 +17,7 @@
   async function getProxyInfo(){
     if(proxyInfo !== null) return proxyInfo;
     try{
-      var r = await origFetch('/api/health');
+      var r = await origFetch('/api/enrich?health=1');
       if(r.ok){ proxyInfo = await r.json(); }
       else proxyInfo = false;
     }catch(e){ proxyInfo = false; }
@@ -45,7 +45,7 @@
             var u = new URL(url);
             u.searchParams.delete('api_key');
             var mode = u.pathname.indexOf('email-verifier') >= 0 ? 'verify' : 'domain';
-            return origFetch('/api/hunter?mode=' + mode + '&' + u.searchParams.toString(), opts);
+            return origFetch('/api/enrich?provider=hunter&mode=' + mode + '&' + u.searchParams.toString(), opts);
           }
         } else if(url.indexOf('https://api.lusha.com/') === 0){
           var p3 = await getProxyInfo();
@@ -55,7 +55,7 @@
             var h2 = Object.assign({}, o2.headers||{});
             delete h2['api_key'];
             o2.headers = h2;
-            return origFetch('/api/lusha?' + u2.searchParams.toString(), o2);
+            return origFetch('/api/enrich?provider=lusha&' + u2.searchParams.toString(), o2);
           }
         }
       }

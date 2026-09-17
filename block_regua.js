@@ -501,7 +501,7 @@ async function _hunterDomain(domain, limit) {
     var url = key
       ? "https://api.hunter.io/v2/domain-search?domain=" + encodeURIComponent(domain) +
         "&api_key=" + key + "&limit=" + (limit || 20)
-      : "/api/hunter?mode=domain&domain=" + encodeURIComponent(domain) +
+      : "/api/enrich?provider=hunter&mode=domain&domain=" + encodeURIComponent(domain) +
         "&limit=" + (limit || 20);
     var r = await fetch(url);
     if (!r.ok) return [];

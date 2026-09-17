@@ -3,10 +3,6 @@
   "outputDirectory": ".",
   "crons": [
     {
-      "path": "/api/cron/agent-daily",
-      "schedule": "30 10 * * *"
-    },
-    {
       "path": "/api/cron/gerar-fila-diario",
       "schedule": "0 9 * * *"
     },
