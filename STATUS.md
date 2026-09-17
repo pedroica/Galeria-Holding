@@ -87,14 +87,14 @@
 
 | Tarefa | Status | Detalhe |
 |---|---|---|
-| C1 — Storage buckets | ⏳ | cases, credenciais, assets (public), backups (auth) |
+| C1 — Storage buckets | ✅ | cases, credenciais, assets (public=true, 50/10MB), backups (auth, 100MB) — 4 buckets + RLS (2026-09-17) |
 | C2 — Import cases | ✅ | 47 casos em crm_cases |
-| C3 — Tela Cases (block3.js) | ⏳ | Grade, filtros, player, STAR, cadastro rápido |
-| C4 — Serviços screen | ⏳ | — |
-| C5 — Credenciais screen | ⏳ | — |
-| C6 — HTML renderer | ⏳ | — |
-| C7 — Credential builder | ⏳ | — |
-| C8 — Pipeline sender | ⏳ | — |
+| C3 — Tela Cases (block3.js) | ✅ | Grade thumb, filtros (q/tipo/destaque/prospecção), player modal, quick-add URL, STAR, desativar, duplicar idioma (EN/ES) (2026-09-17) |
+| C4 — Serviços screen | ✅ | AgServicosTab expandida: descricao_longa, entregaveis, sinais_de_encaixe, preco, desativar, accordion (2026-09-17) |
+| C5 — Credenciais screen | ✅ | AgCredenciaisTab: 12 tipos, idioma pt/en/es, corpo markdown, dados jsonb, midia, ordem drag ▲▼, desativar (2026-09-17) |
+| C6 — HTML renderer | ✅ | api/c/[token].js — Cinema P&B, páginas 16:9, teclado, touch, fullscreen (2026-09-17) |
+| C7 — Credential builder | ✅ | api/gerar-credencial.js + UI no AgCredenciaisTab: selecionar blocos, gerar link token 7d (2026-09-17) |
+| C8 — Pipeline sender | ✅ | AgEnviarTab: lista credenciais geradas, copy link/email/WA/LinkedIn (2026-09-17) |
 
 ---
 

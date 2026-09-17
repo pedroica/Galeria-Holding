@@ -4892,59 +4892,90 @@ function AgServicosTab({ agencia, agenciaUuids }) {
   var [loading, setLoading] = React.useState(true);
   var [form, setForm] = React.useState(null);
   var [saving, setSaving] = React.useState(false);
+  var [expanded, setExpanded] = React.useState({});
   var agUuid = agenciaUuids && agencia ? (agenciaUuids[agencia.id] || null) : null;
+  var mono = 'IBM Plex Mono,monospace';
 
   React.useEffect(function() {
     if (!agUuid) { setLoading(false); return; }
-    supaFetch('/rest/v1/crm_servicos?agencia_id=eq.'+agUuid+'&order=nome.asc').then(function(d) {
+    supaFetch('/rest/v1/crm_servicos?agencia_id=eq.'+agUuid+'&ativo=eq.true&order=nome.asc').then(function(d) {
       setServicos(Array.isArray(d)?d:[]); setLoading(false);
     }).catch(function(){setLoading(false);});
   }, [agUuid]);
 
+  function blankForm() { return {nome:'',descricao:'',descricao_longa:'',preco_min:'',preco_max:'',sinais_de_encaixe:'',entregaveis:'',ativo:true}; }
+  function setF(f, v) { setForm(function(p){var o=Object.assign({},p);o[f]=v;return o;}); }
+
   function save() {
     if (!form || !form.nome) return;
     setSaving(true);
+    var payload = {nome:form.nome,descricao:form.descricao||null,descricao_longa:form.descricao_longa||null,preco_min:form.preco_min?Number(form.preco_min):null,preco_max:form.preco_max?Number(form.preco_max):null,sinais_de_encaixe:form.sinais_de_encaixe||null,entregaveis:form.entregaveis||null,ativo:form.ativo!==false,atualizado_em:new Date().toISOString()};
     if (form.id) {
-      supaFetch('/rest/v1/crm_servicos?id=eq.'+form.id, {method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify({nome:form.nome,descricao:form.descricao,preco_min:form.preco_min||null,preco_max:form.preco_max||null,sinais_de_encaixe:form.sinais_de_encaixe})})
-        .then(function(d){setSaving(false);setForm(null);setServicos(function(p){return p.map(function(s){return s.id===form.id?Object.assign({},s,d[0]):s;});});});
+      supaFetch('/rest/v1/crm_servicos?id=eq.'+form.id, {method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify(payload)})
+        .then(function(d){setSaving(false);setForm(null);setServicos(function(p){return p.map(function(s){return s.id===form.id?Object.assign({},s,Array.isArray(d)?d[0]:{}):s;});});});
     } else {
-      supaFetch('/rest/v1/crm_servicos', {method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify({agencia_id:agUuid,nome:form.nome,descricao:form.descricao,preco_min:form.preco_min||null,preco_max:form.preco_max||null,sinais_de_encaixe:form.sinais_de_encaixe,ativo:true})})
-        .then(function(d){setSaving(false);setForm(null);if(Array.isArray(d))setServicos(function(p){return[...p,...d];});});
+      supaFetch('/rest/v1/crm_servicos', {method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(Object.assign({agencia_id:agUuid},payload))})
+        .then(function(d){setSaving(false);setForm(null);if(Array.isArray(d))setServicos(function(p){return p.concat(d);});});
     }
   }
 
-  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:'IBM Plex Mono,monospace'};
-  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11,padding:20}},'…');
+  function deactivate(s) {
+    if (!confirm('Desativar "'+s.nome+'"?')) return;
+    supaFetch('/rest/v1/crm_servicos?id=eq.'+s.id, {method:'PATCH',body:JSON.stringify({ativo:false})}).then(function(){
+      setServicos(function(p){return p.filter(function(x){return x.id!==s.id;});});
+    });
+  }
+
+  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:mono};
+  var LABELS = {nome:'Nome *',descricao:'Descrição curta',descricao_longa:'Descrição longa',preco_min:'Preço mín (R$)',preco_max:'Preço máx (R$)',sinais_de_encaixe:'Sinais de encaixe',entregaveis:'Entregáveis'};
+  var TEXTAREAS = ['descricao','descricao_longa','sinais_de_encaixe','entregaveis'];
+
+  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:mono,fontSize:11,padding:20}},'…');
+
   return React.createElement("div",{style:{flex:1,overflowY:'auto',padding:'12px 20px'}},
-    !form && React.createElement("button",{onClick:function(){setForm({nome:'',descricao:'',preco_min:'',preco_max:'',sinais_de_encaixe:'',ticket:'',ativo:true});},style:{marginBottom:12,padding:'6px 14px',border:'.5px solid #FF6B2B44',borderRadius:6,background:'transparent',color:'#FF6B2B',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'+ Novo serviço'),
-    form && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:8,padding:'12px',marginBottom:12}},
-      React.createElement("div",{style:{fontSize:11,fontWeight:700,color:'#FF6B2B',fontFamily:'IBM Plex Mono,monospace',marginBottom:10}}, form.id?'Editar serviço':'Novo serviço'),
-      ['nome','descricao','preco_min','preco_max','sinais_de_encaixe'].map(function(f) {
-        return React.createElement("div",{key:f,style:{marginBottom:8}},
-          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}}, ({nome:'Nome',descricao:'Descrição',preco_min:'Preço mín (R$)',preco_max:'Preço máx (R$)',sinais_de_encaixe:'Ticket de entrada / sinais de encaixe'})[f]),
-          f==='descricao' || f==='sinais_de_encaixe'
-            ? React.createElement("textarea",{style:Object.assign({},inp,{height:60,resize:'vertical'}),value:form[f]||'',onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,Object.fromEntries([[f,v]]));});}})
-            : React.createElement("input",{style:inp,value:form[f]||'',type:f.includes('preco')?'number':'text',onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,Object.fromEntries([[f,v]]));});}})
+    !form && React.createElement("button",{onClick:function(){setForm(blankForm());},style:{marginBottom:12,padding:'6px 14px',border:'.5px solid #FF6B2B44',borderRadius:6,background:'transparent',color:'#FF6B2B',fontSize:11,fontFamily:mono,cursor:'pointer'}},'+ Novo serviço'),
+    form && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #FF6B2B44',borderRadius:8,padding:'14px',marginBottom:14}},
+      React.createElement("div",{style:{fontSize:11,fontWeight:700,color:'#FF6B2B',fontFamily:mono,marginBottom:10}},form.id?'Editar serviço':'Novo serviço'),
+      Object.keys(LABELS).map(function(f) {
+        return React.createElement("div",{key:f,style:{marginBottom:7}},
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},LABELS[f]),
+          TEXTAREAS.indexOf(f)>=0
+            ? React.createElement("textarea",{style:Object.assign({},inp,{height:f==='descricao_longa'||f==='entregaveis'?80:50,resize:'vertical'}),value:form[f]||'',onChange:function(e){setF(f,e.target.value);}})
+            : React.createElement("input",{style:inp,value:form[f]||'',type:f.includes('preco')?'number':'text',onChange:function(e){setF(f,e.target.value);}})
         );
       }),
-      React.createElement("div",{style:{display:'flex',gap:8,marginTop:6}},
-        React.createElement("button",{onClick:save,disabled:saving,style:{padding:'5px 12px',borderRadius:5,border:'none',background:'#FF6B2B',color:'#fff',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}}, saving?'…':'Salvar'),
-        React.createElement("button",{onClick:function(){setForm(null);},style:{padding:'5px 12px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}}, 'Cancelar')
+      React.createElement("div",{style:{display:'flex',gap:8,marginTop:8}},
+        React.createElement("button",{onClick:save,disabled:saving,style:{padding:'5px 12px',borderRadius:5,border:'none',background:'#FF6B2B',color:'#fff',fontSize:10,fontFamily:mono,cursor:'pointer'}},saving?'…':'Salvar'),
+        React.createElement("button",{onClick:function(){setForm(null);},style:{padding:'5px 12px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:10,fontFamily:mono,cursor:'pointer'}},'Cancelar')
       )
     ),
-    !agUuid && React.createElement("div",{style:{color:'#E24B4A',fontFamily:'IBM Plex Mono,monospace',fontSize:11}},'Agência sem UUID cadastrado.'),
+    servicos.length===0 && !form && React.createElement("div",{style:{color:'#555',fontFamily:mono,fontSize:10,padding:'20px 0'}},'Nenhum serviço cadastrado para esta agência.'),
     servicos.map(function(s) {
+      var open = !!expanded[s.id];
       return React.createElement("div",{key:s.id,style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,padding:'10px 14px',marginBottom:8}},
         React.createElement("div",{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
-          React.createElement("div",{style:{flex:1}},
-            React.createElement("div",{style:{fontSize:13,fontWeight:600,color:'#F5F5F5',marginBottom:3}}, s.nome),
-            s.descricao && React.createElement("div",{style:{fontSize:11,color:'#9B9BB4',lineHeight:1.5,marginBottom:6}}, s.descricao),
-            React.createElement("div",{style:{display:'flex',gap:10,flexWrap:'wrap'}},
-              s.preco_min && React.createElement("span",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#34D399'}}, 'R$ '+Number(s.preco_min).toLocaleString('pt-BR')+' – '+Number(s.preco_max||s.preco_min).toLocaleString('pt-BR')),
-              s.sinais_de_encaixe && React.createElement("span",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#A78BFA'}}, s.sinais_de_encaixe)
-            )
+          React.createElement("div",{style:{flex:1,cursor:'pointer'},onClick:function(){setExpanded(function(p){var o=Object.assign({},p);o[s.id]=!o[s.id];return o;});}},
+            React.createElement("div",{style:{fontSize:12,fontWeight:600,color:'#F5F5F5',marginBottom:2}},s.nome),
+            s.descricao && React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',lineHeight:1.5}},s.descricao)
           ),
-          React.createElement("button",{onClick:function(){setForm(Object.assign({},s));},style:{padding:'3px 8px',border:'.5px solid #2D2D44',borderRadius:4,background:'transparent',color:'#555',fontSize:9,cursor:'pointer'}},'Editar')
+          React.createElement("div",{style:{display:'flex',gap:6,marginLeft:10,flexShrink:0}},
+            React.createElement("button",{onClick:function(){setForm(Object.assign({},s));},style:{padding:'3px 8px',border:'.5px solid #2D2D44',borderRadius:4,background:'transparent',color:'#555',fontSize:8,cursor:'pointer',fontFamily:mono}},'Editar'),
+            React.createElement("button",{onClick:function(){deactivate(s);},style:{padding:'3px 8px',border:'none',borderRadius:4,background:'transparent',color:'#F87171',fontSize:8,cursor:'pointer',fontFamily:mono}},'×')
+          )
+        ),
+        open && React.createElement("div",{style:{marginTop:8,paddingTop:8,borderTop:'.5px solid #1A1A2E'}},
+          s.descricao_longa && React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',lineHeight:1.6,marginBottom:6,whiteSpace:'pre-wrap'}},s.descricao_longa),
+          s.entregaveis && React.createElement("div",{style:{marginBottom:6}},
+            React.createElement("div",{style:{fontSize:9,color:'#A78BFA',fontFamily:mono,marginBottom:2}},'Entregáveis'),
+            React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',lineHeight:1.5,whiteSpace:'pre-wrap'}},s.entregaveis)
+          ),
+          s.sinais_de_encaixe && React.createElement("div",{style:{marginBottom:6}},
+            React.createElement("div",{style:{fontSize:9,color:'#A78BFA',fontFamily:mono,marginBottom:2}},'Sinais de encaixe'),
+            React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',lineHeight:1.5}},s.sinais_de_encaixe)
+          ),
+          (s.preco_min||s.preco_max) && React.createElement("div",{style:{fontSize:9,fontFamily:mono,color:'#34D399'}},
+            'R$ '+Number(s.preco_min||0).toLocaleString('pt-BR')+(s.preco_max?' – R$ '+Number(s.preco_max).toLocaleString('pt-BR'):'')
+          )
         )
       );
     })
@@ -4956,11 +4987,15 @@ function AgCasesTab({ agencia, agenciaUuids }) {
   var [loading, setLoading] = React.useState(true);
   var [form, setForm] = React.useState(null);
   var [saving, setSaving] = React.useState(false);
+  var [player, setPlayer] = React.useState(null);
+  var [quickUrl, setQuickUrl] = React.useState('');
+  var [filter, setFilter] = React.useState({q:'',tipo:'',destaque:'',prospeccao:''});
   var agUuid = agenciaUuids && agencia ? (agenciaUuids[agencia.id] || null) : null;
+  var mono = 'IBM Plex Mono,monospace';
 
   React.useEffect(function() {
     if (!agUuid) { setLoading(false); return; }
-    supaFetch('/rest/v1/crm_cases?agencia_id=eq.'+agUuid+'&order=titulo.asc').then(function(d) {
+    supaFetch('/rest/v1/crm_cases?agencia_id=eq.'+agUuid+'&order=ano.desc,titulo.asc&select=*').then(function(d) {
       setCases(Array.isArray(d)?d:[]); setLoading(false);
     }).catch(function(){setLoading(false);});
   }, [agUuid]);
@@ -4971,54 +5006,201 @@ function AgCasesTab({ agencia, agenciaUuids }) {
     if (yt) return 'https://img.youtube.com/vi/'+yt[1]+'/mqdefault.jpg';
     return null;
   }
-
+  function embedUrl(url) {
+    if (!url) return null;
+    var yt = url.match(/(?:v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    if (yt) return 'https://www.youtube.com/embed/'+yt[1]+'?autoplay=1';
+    var vm = url.match(/vimeo\.com\/(\d+)/);
+    if (vm) return 'https://player.vimeo.com/video/'+vm[1]+'?autoplay=1';
+    return null;
+  }
+  function blankForm(url) {
+    return {titulo:'',marca:'',categoria_da_marca:'',tipo:'star',url_video:url||'',url_pagina:'',idioma:'pt',resumo:'',tarefa:'',acao:'',resultado:'',ano:'',tags:'',destaque:false,permitido_em_prospeccao:true,ativo:true};
+  }
   function save() {
     if (!form || !form.titulo) return;
     setSaving(true);
-    var payload = {titulo:form.titulo,marca:form.marca,categoria_da_marca:form.categoria_da_marca,tipo:form.tipo,url_video:form.url_video,url_pagina:form.url_pagina,idioma:form.idioma||'pt',resumo:form.resumo,ativo:true};
+    var tags = form.tags ? form.tags.split(',').map(function(t){return t.trim();}).filter(Boolean) : null;
+    var payload = {titulo:form.titulo,marca:form.marca||null,categoria_da_marca:form.categoria_da_marca||null,tipo:form.tipo||'star',url_video:form.url_video||null,url_pagina:form.url_pagina||null,idioma:form.idioma||'pt',resumo:form.resumo||null,tarefa:form.tarefa||null,acao:form.acao||null,resultado:form.resultado||null,ano:form.ano?Number(form.ano):null,tags:tags,destaque:!!form.destaque,permitido_em_prospeccao:form.permitido_em_prospeccao!==false,ativo:form.ativo!==false};
     if (form.id) {
       supaFetch('/rest/v1/crm_cases?id=eq.'+form.id, {method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify(payload)})
         .then(function(d){setSaving(false);setForm(null);setCases(function(p){return p.map(function(s){return s.id===form.id?Object.assign({},s,Array.isArray(d)?d[0]:{}):s;});});});
     } else {
       supaFetch('/rest/v1/crm_cases', {method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(Object.assign({agencia_id:agUuid},payload))})
-        .then(function(d){setSaving(false);setForm(null);if(Array.isArray(d))setCases(function(p){return[...p,...d];});});
+        .then(function(d){setSaving(false);setForm(null);if(Array.isArray(d))setCases(function(p){return[d[0]].concat(p);});});
     }
   }
+  function deactivate(c) {
+    if (!confirm('Desativar "'+c.titulo+'"?')) return;
+    supaFetch('/rest/v1/crm_cases?id=eq.'+c.id, {method:'PATCH',body:JSON.stringify({ativo:false})}).then(function(){
+      setCases(function(p){return p.filter(function(s){return s.id!==c.id;});});
+    });
+  }
+  function duplicate(c, idioma) {
+    var payload = Object.assign({},c,{id:undefined,idioma:idioma,criado_em:undefined,atualizado_em:undefined,agencia_id:agUuid,titulo:c.titulo+' ('+idioma+')'});
+    delete payload.id; delete payload.criado_em; delete payload.atualizado_em;
+    supaFetch('/rest/v1/crm_cases', {method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(payload)})
+      .then(function(d){if(Array.isArray(d)&&d[0])setCases(function(p){return[d[0]].concat(p);});});
+  }
+  function setF(field, val) { setForm(function(p){var o=Object.assign({},p);o[field]=val;return o;}); }
 
-  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:'IBM Plex Mono,monospace'};
-  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11,padding:20}},'…');
+  var filtered = cases.filter(function(c) {
+    if (!c.ativo) return false;
+    var q = filter.q.toLowerCase();
+    if (q && !(c.titulo||'').toLowerCase().includes(q) && !(c.marca||'').toLowerCase().includes(q)) return false;
+    if (filter.tipo && c.tipo !== filter.tipo) return false;
+    if (filter.destaque === 'sim' && !c.destaque) return false;
+    if (filter.prospeccao === 'sim' && !c.permitido_em_prospeccao) return false;
+    return true;
+  });
+
+  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:mono};
+  var btnSm = {fontSize:8,color:'#555',background:'none',border:'none',cursor:'pointer',fontFamily:mono,padding:'2px 4px'};
+  var TIPO_CLR = {filme:{bg:'#1e3a5f',tx:'#60A5FA'},star:{bg:'#2d1a4a',tx:'#A78BFA'},internacional:{bg:'#1e3d2e',tx:'#34D399'}};
+
+  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:mono,fontSize:11,padding:20}},'…');
+
   return React.createElement("div",{style:{flex:1,overflowY:'auto',padding:'12px 20px'}},
-    !form && React.createElement("button",{onClick:function(){setForm({titulo:'',marca:'',categoria_da_marca:'',tipo:'',url_video:'',url_pagina:'',idioma:'pt',resumo:''});},style:{marginBottom:12,padding:'6px 14px',border:'.5px solid #FF6B2B44',borderRadius:6,background:'transparent',color:'#FF6B2B',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'+ Novo case'),
-    form && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:8,padding:'12px',marginBottom:12}},
-      React.createElement("div",{style:{fontSize:11,fontWeight:700,color:'#FF6B2B',fontFamily:'IBM Plex Mono,monospace',marginBottom:10}},form.id?'Editar case':'Novo case'),
-      [['titulo','Título'],['marca','Marca'],['categoria_da_marca','Categoria'],['tipo','Tipo (video/projeto)'],['url_video','URL do vídeo (YouTube/Vimeo)'],['url_pagina','URL da página'],['resumo','Resumo']].map(function(pair) {
+    // Player modal
+    player && React.createElement("div",{onClick:function(){setPlayer(null);},style:{position:'fixed',top:0,left:0,right:0,bottom:0,background:'rgba(0,0,0,.88)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center',cursor:'pointer'}},
+      React.createElement("iframe",{src:player,style:{width:'80vw',height:'45vw',maxWidth:900,maxHeight:506,border:'none',borderRadius:8},allow:'autoplay; fullscreen',onClick:function(e){e.stopPropagation();}})
+    ),
+    // Barra quick-add
+    React.createElement("div",{style:{display:'flex',gap:8,marginBottom:10,flexWrap:'wrap',alignItems:'center'}},
+      React.createElement("input",{placeholder:'Colar URL YouTube/Vimeo para cadastro rápido…',value:quickUrl,onChange:function(e){setQuickUrl(e.target.value);},onKeyDown:function(e){if(e.key==='Enter'&&quickUrl.trim()){setForm(blankForm(quickUrl.trim()));setQuickUrl('');}},style:Object.assign({},inp,{flex:'1 1 260px',minWidth:200})}),
+      React.createElement("button",{onClick:function(){if(quickUrl.trim()){setForm(blankForm(quickUrl.trim()));setQuickUrl('');}},style:{padding:'5px 10px',border:'.5px solid #FF6B2B44',borderRadius:6,background:'transparent',color:'#FF6B2B',fontSize:10,cursor:'pointer',fontFamily:mono,whiteSpace:'nowrap'}},'+ URL'),
+      React.createElement("button",{onClick:function(){setForm(blankForm(''));},style:{padding:'5px 10px',border:'.5px solid #2D2D44',borderRadius:6,background:'transparent',color:'#9B9BB4',fontSize:10,cursor:'pointer',fontFamily:mono,whiteSpace:'nowrap'}},'+ Manual')
+    ),
+    // Filtros
+    React.createElement("div",{style:{display:'flex',gap:8,marginBottom:12,flexWrap:'wrap',alignItems:'center'}},
+      React.createElement("input",{placeholder:'Buscar…',value:filter.q,onChange:function(e){setFilter(function(f){return Object.assign({},f,{q:e.target.value});});},style:Object.assign({},inp,{flex:'1 1 120px',minWidth:100})}),
+      React.createElement("select",{value:filter.tipo,onChange:function(e){setFilter(function(f){return Object.assign({},f,{tipo:e.target.value});});},style:Object.assign({},inp,{flex:'0 0 130px',width:'auto'})},
+        React.createElement("option",{value:''},'Todos os tipos'),
+        React.createElement("option",{value:'filme'},'Filme'),
+        React.createElement("option",{value:'star'},'STAR'),
+        React.createElement("option",{value:'internacional'},'Internacional')
+      ),
+      React.createElement("select",{value:filter.destaque,onChange:function(e){setFilter(function(f){return Object.assign({},f,{destaque:e.target.value});});},style:Object.assign({},inp,{flex:'0 0 110px',width:'auto'})},
+        React.createElement("option",{value:''},'Todos'),
+        React.createElement("option",{value:'sim'},'★ Destaque')
+      ),
+      React.createElement("select",{value:filter.prospeccao,onChange:function(e){setFilter(function(f){return Object.assign({},f,{prospeccao:e.target.value});});},style:Object.assign({},inp,{flex:'0 0 140px',width:'auto'})},
+        React.createElement("option",{value:''},'Todos'),
+        React.createElement("option",{value:'sim'},'✓ Prospecção')
+      ),
+      React.createElement("span",{style:{fontSize:9,color:'#555',fontFamily:mono,whiteSpace:'nowrap'}},filtered.length+' case'+(filtered.length!==1?'s':''))
+    ),
+    // Formulário
+    form && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #FF6B2B44',borderRadius:8,padding:'14px',marginBottom:14}},
+      React.createElement("div",{style:{fontSize:11,fontWeight:700,color:'#FF6B2B',fontFamily:mono,marginBottom:10}},form.id?'Editar case':'Novo case'),
+      React.createElement("div",{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px 10px',marginBottom:8}},
+        React.createElement("div",{style:{gridColumn:'1/-1'}},
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Título *'),
+          React.createElement("input",{style:inp,value:form.titulo||'',onChange:function(e){setF('titulo',e.target.value);}})
+        ),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Marca'),
+          React.createElement("input",{style:inp,value:form.marca||'',onChange:function(e){setF('marca',e.target.value);}})
+        ),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Categoria'),
+          React.createElement("input",{style:inp,value:form.categoria_da_marca||'',onChange:function(e){setF('categoria_da_marca',e.target.value);}})
+        ),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Ano'),
+          React.createElement("input",{style:inp,type:'number',value:form.ano||'',onChange:function(e){setF('ano',e.target.value);}})
+        ),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Idioma'),
+          React.createElement("select",{style:inp,value:form.idioma||'pt',onChange:function(e){setF('idioma',e.target.value);}},
+            React.createElement("option",{value:'pt'},'pt'),
+            React.createElement("option",{value:'en'},'en'),
+            React.createElement("option",{value:'es'},'es')
+          )
+        ),
+        React.createElement("div",{style:{gridColumn:'1/-1'}},
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'URL Vídeo (YouTube / Vimeo)'),
+          React.createElement("input",{style:inp,value:form.url_video||'',onChange:function(e){setF('url_video',e.target.value);}})
+        ),
+        React.createElement("div",{style:{gridColumn:'1/-1'}},
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'URL Página'),
+          React.createElement("input",{style:inp,value:form.url_pagina||'',onChange:function(e){setF('url_pagina',e.target.value);}})
+        ),
+        React.createElement("div",{style:{gridColumn:'1/-1'}},
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Tags (separar por vírgula)'),
+          React.createElement("input",{style:inp,value:form.tags||'',onChange:function(e){setF('tags',e.target.value);}})
+        )
+      ),
+      form.url_video && thumbUrl(form.url_video) && React.createElement("img",{src:thumbUrl(form.url_video),alt:'',style:{width:'100%',borderRadius:6,marginBottom:8,objectFit:'cover',maxHeight:90}}),
+      // Tipo
+      React.createElement("div",{style:{marginBottom:8}},
+        React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:4}},'Tipo'),
+        React.createElement("div",{style:{display:'flex',gap:6}},
+          ['filme','star','internacional'].map(function(t){
+            return React.createElement("button",{key:t,onClick:function(){setF('tipo',t);},style:{padding:'3px 10px',borderRadius:4,border:'none',background:form.tipo===t?(TIPO_CLR[t]||{bg:'#2D2D44'}).bg:'#1A1A2E',color:form.tipo===t?(TIPO_CLR[t]||{tx:'#fff'}).tx:'#555',fontSize:9,cursor:'pointer',fontFamily:mono}},t);
+          })
+        )
+      ),
+      // STAR
+      React.createElement("div",{style:{fontSize:9,fontWeight:700,color:'#A78BFA',fontFamily:mono,marginBottom:6}},'STAR — Situação / Tarefa / Ação / Resultado'),
+      [['tarefa','Situação / Tarefa'],['acao','Ação'],['resultado','Resultado'],['resumo','Resumo curto (exibição)']].map(function(pair){
         var f=pair[0],l=pair[1];
-        return React.createElement("div",{key:f,style:{marginBottom:8}},
-          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}}, l),
-          f==='resumo'
-            ? React.createElement("textarea",{style:Object.assign({},inp,{height:60,resize:'vertical'}),value:form[f]||'',onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,Object.fromEntries([[f,v]]));});}})
-            : React.createElement("input",{style:inp,value:form[f]||'',onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,Object.fromEntries([[f,v]]));});}})
+        return React.createElement("div",{key:f,style:{marginBottom:6}},
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},l),
+          React.createElement("textarea",{style:Object.assign({},inp,{height:50,resize:'vertical'}),value:form[f]||'',onChange:function(e){setF(f,e.target.value);}})
         );
       }),
-      form.url_video && thumbUrl(form.url_video) && React.createElement("img",{src:thumbUrl(form.url_video),alt:'thumb',style:{width:'100%',borderRadius:6,marginBottom:8,objectFit:'cover',maxHeight:120}}),
-      React.createElement("div",{style:{display:'flex',gap:8,marginTop:6}},
-        React.createElement("button",{onClick:save,disabled:saving,style:{padding:'5px 12px',borderRadius:5,border:'none',background:'#FF6B2B',color:'#fff',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}}, saving?'…':'Salvar'),
-        React.createElement("button",{onClick:function(){setForm(null);},style:{padding:'5px 12px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}}, 'Cancelar')
+      // Flags
+      React.createElement("div",{style:{display:'flex',gap:16,marginTop:8,flexWrap:'wrap'}},
+        [['destaque','★ Destaque'],['permitido_em_prospeccao','✓ Usar em prospecção'],['ativo','Ativo']].map(function(pair){
+          var f=pair[0],l=pair[1];
+          return React.createElement("label",{key:f,style:{display:'flex',alignItems:'center',gap:4,fontSize:10,color:'#9B9BB4',cursor:'pointer',fontFamily:mono}},
+            React.createElement("input",{type:'checkbox',checked:form[f]!==false&&!!form[f],onChange:function(e){setF(f,e.target.checked);}}),
+            l
+          );
+        })
+      ),
+      React.createElement("div",{style:{display:'flex',gap:8,marginTop:10}},
+        React.createElement("button",{onClick:save,disabled:saving,style:{padding:'5px 12px',borderRadius:5,border:'none',background:'#FF6B2B',color:'#fff',fontSize:10,cursor:'pointer',fontFamily:mono}},saving?'…':'Salvar'),
+        React.createElement("button",{onClick:function(){setForm(null);},style:{padding:'5px 12px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:10,cursor:'pointer',fontFamily:mono}},'Cancelar')
       )
     ),
-    React.createElement("div",{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(240px,1fr))',gap:12}},
-      cases.map(function(c) {
+    // Grade de cards
+    React.createElement("div",{style:{display:'grid',gridTemplateColumns:'repeat(auto-fill,minmax(230px,1fr))',gap:12}},
+      filtered.map(function(c) {
         var thumb = thumbUrl(c.url_video);
-        return React.createElement("div",{key:c.id,style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,overflow:'hidden'}},
-          thumb && React.createElement("img",{src:thumb,alt:'thumb',style:{width:'100%',height:120,objectFit:'cover',display:'block'}}),
-          React.createElement("div",{style:{padding:'10px 12px'}},
-            React.createElement("div",{style:{fontSize:12,fontWeight:600,color:'#F5F5F5',marginBottom:3}}, c.titulo),
-            c.marca && React.createElement("div",{style:{fontSize:10,color:'#A78BFA',marginBottom:4}}, c.marca+(c.categoria_da_marca?' · '+c.categoria_da_marca:'')),
-            c.resumo && React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',lineHeight:1.5,marginBottom:6}}, c.resumo),
-            React.createElement("div",{style:{display:'flex',gap:6}},
-              c.url_video && React.createElement("a",{href:c.url_video,target:'_blank',rel:'noopener',style:{fontSize:9,color:'#60A5FA',fontFamily:'IBM Plex Mono,monospace'}},'▶ Vídeo'),
-              c.url_pagina && React.createElement("a",{href:c.url_pagina,target:'_blank',rel:'noopener',style:{fontSize:9,color:'#60A5FA',fontFamily:'IBM Plex Mono,monospace'}},'↗ Página'),
-              React.createElement("button",{onClick:function(){setForm(Object.assign({},c));},style:{fontSize:9,color:'#555',background:'none',border:'none',cursor:'pointer',fontFamily:'IBM Plex Mono,monospace'}},'Editar')
+        var embed = embedUrl(c.url_video);
+        var tc = TIPO_CLR[c.tipo]||{bg:'#1A1A2E',tx:'#555'};
+        return React.createElement("div",{key:c.id,style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,overflow:'hidden',display:'flex',flexDirection:'column'}},
+          React.createElement("div",{style:{position:'relative',height:110,background:'#080810',cursor:embed?'pointer':'default',flexShrink:0},onClick:function(){if(embed)setPlayer(embed);}},
+            thumb ? React.createElement("img",{src:thumb,alt:'',style:{width:'100%',height:'100%',objectFit:'cover',display:'block'}})
+                  : React.createElement("div",{style:{height:'100%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:24,color:'#1A1A2E'}},'🎬'),
+            embed && React.createElement("div",{style:{position:'absolute',top:0,left:0,right:0,bottom:0,display:'flex',alignItems:'center',justifyContent:'center',background:'rgba(0,0,0,.25)'}},
+              React.createElement("span",{style:{fontSize:24,color:'rgba(255,255,255,.85)'}},'▶')
+            )
+          ),
+          React.createElement("div",{style:{padding:'8px 10px',flex:1,display:'flex',flexDirection:'column',gap:3}},
+            React.createElement("div",{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start'}},
+              React.createElement("div",{style:{fontSize:11,fontWeight:600,color:'#F5F5F5',lineHeight:1.3,flex:1}},c.titulo),
+              c.destaque && React.createElement("span",{style:{fontSize:13,marginLeft:4,flexShrink:0}},'★')
+            ),
+            c.marca && React.createElement("div",{style:{fontSize:9,color:'#A78BFA',fontFamily:mono}},c.marca+(c.categoria_da_marca?' · '+c.categoria_da_marca:'')+(c.ano?' · '+c.ano:'')),
+            React.createElement("div",{style:{display:'flex',gap:3,flexWrap:'wrap'}},
+              c.tipo && React.createElement("span",{style:{fontSize:8,fontFamily:mono,background:tc.bg,color:tc.tx,borderRadius:3,padding:'1px 5px'}},c.tipo),
+              c.permitido_em_prospeccao && React.createElement("span",{style:{fontSize:8,fontFamily:mono,background:'#1e3a1e',color:'#4ade80',borderRadius:3,padding:'1px 5px'}},'prospecção')
+            ),
+            c.tags && c.tags.length>0 && React.createElement("div",{style:{display:'flex',gap:3,flexWrap:'wrap'}},
+              c.tags.slice(0,3).map(function(t){return React.createElement("span",{key:t,style:{fontSize:8,fontFamily:mono,background:'#111',color:'#555',borderRadius:3,padding:'1px 4px'}},t);}),
+              c.tags.length>3 && React.createElement("span",{style:{fontSize:8,fontFamily:mono,color:'#555'}},'+'+String(c.tags.length-3))
+            ),
+            c.resumo && React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',lineHeight:1.4,overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}},c.resumo),
+            React.createElement("div",{style:{display:'flex',gap:2,flexWrap:'wrap',marginTop:'auto',paddingTop:4}},
+              c.url_video && React.createElement("a",{href:c.url_video,target:'_blank',rel:'noopener noreferrer',style:{fontSize:8,color:'#60A5FA',fontFamily:mono,textDecoration:'none'}},'▶ vídeo'),
+              c.url_pagina && React.createElement("a",{href:c.url_pagina,target:'_blank',rel:'noopener noreferrer',style:{fontSize:8,color:'#60A5FA',fontFamily:mono,textDecoration:'none'}},' ↗ página'),
+              React.createElement("button",{onClick:function(){setForm(Object.assign({},c,{tags:Array.isArray(c.tags)?c.tags.join(', '):''}));},style:btnSm},'editar'),
+              React.createElement("button",{onClick:function(){deactivate(c);},style:Object.assign({},btnSm,{color:'#F87171'})},'×'),
+              c.idioma==='pt' && React.createElement("button",{onClick:function(){duplicate(c,'en');},style:btnSm},'EN↗'),
+              c.idioma==='pt' && React.createElement("button",{onClick:function(){duplicate(c,'es');},style:btnSm},'ES↗')
             )
           )
         );
@@ -5032,61 +5214,177 @@ function AgCredenciaisTab({ agencia }) {
   var [loading, setLoading] = React.useState(true);
   var [form, setForm] = React.useState(null);
   var [saving, setSaving] = React.useState(false);
+  var [idiomaFiltro, setIdiomaFiltro] = React.useState('pt');
+  var [gerador, setGerador] = React.useState(null);
+  var [gerando, setGerando] = React.useState(false);
+  var [geradoUrl, setGeradoUrl] = React.useState(null);
   var agId = agencia ? agencia.id : '';
+  var mono = 'IBM Plex Mono,monospace';
+  var TIPOS = ['capa','manifesto','numeros','ecossistema','servicos','metodologia','case','time','clientes','premios','fechamento','livre'];
+  var TIPO_CLR = {capa:'#F59E0B',manifesto:'#60A5FA',numeros:'#34D399',ecossistema:'#A78BFA',servicos:'#F472B6',metodologia:'#FB923C',case:'#38BDF8',time:'#4ADE80',clientes:'#E879F9',premios:'#FBBF24',fechamento:'#F87171',livre:'#9B9BB4'};
 
-  React.useEffect(function() {
+  function load() {
     if (!agId) return;
-    supaFetch('/rest/v1/crm_credenciais_blocos?agencia_id=eq.'+agId+'&ativo=eq.true&order=titulo.asc').then(function(d) {
+    supaFetch('/rest/v1/crm_credenciais_blocos?agencia_id=eq.'+agId+'&ativo=eq.true&idioma=eq.'+idiomaFiltro+'&order=ordem.asc,titulo.asc').then(function(d) {
       setBlocos(Array.isArray(d)?d:[]); setLoading(false);
     }).catch(function(){setLoading(false);});
-  }, [agId]);
+  }
+  React.useEffect(function(){setLoading(true);load();}, [agId, idiomaFiltro]);
+
+  function blankForm() { return {titulo:'',tipo:'livre',idioma:idiomaFiltro,ordem:blocos.length,corpo:'',midia:'',dadosRaw:'{}'}; }
+  function setF(f, v) { setForm(function(p){var o=Object.assign({},p);o[f]=v;return o;}); }
 
   function save() {
     if (!form || !form.titulo) return;
     setSaving(true);
-    var payload = {agencia_id:agId,titulo:form.titulo,tipo:form.tipo||'geral',bloco:form.bloco||{},ativo:true};
+    var dados = null;
+    try { dados = JSON.parse(form.dadosRaw||'{}'); } catch(e) { dados = null; }
+    var payload = {titulo:form.titulo,tipo:form.tipo||'livre',idioma:form.idioma||'pt',ordem:Number(form.ordem)||0,corpo:form.corpo||null,midia:form.midia||null,dados:dados,ativo:true,atualizado_em:new Date().toISOString()};
     if (form.id) {
-      supaFetch('/rest/v1/crm_credenciais_blocos?id=eq.'+form.id, {method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify({titulo:form.titulo,tipo:form.tipo,bloco:form.bloco,atualizado_em:new Date().toISOString()})})
-        .then(function(){setSaving(false);setForm(null);supaFetch('/rest/v1/crm_credenciais_blocos?agencia_id=eq.'+agId+'&ativo=eq.true&order=titulo.asc').then(function(d){setBlocos(Array.isArray(d)?d:[]);});});
+      supaFetch('/rest/v1/crm_credenciais_blocos?id=eq.'+form.id, {method:'PATCH',headers:{'Prefer':'return=representation'},body:JSON.stringify(payload)})
+        .then(function(){setSaving(false);setForm(null);load();});
     } else {
-      supaFetch('/rest/v1/crm_credenciais_blocos', {method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(payload)})
-        .then(function(d){setSaving(false);setForm(null);if(Array.isArray(d))setBlocos(function(p){return[...p,...d];});});
+      supaFetch('/rest/v1/crm_credenciais_blocos', {method:'POST',headers:{'Prefer':'return=representation'},body:JSON.stringify(Object.assign({agencia_id:agId},payload))})
+        .then(function(d){setSaving(false);setForm(null);if(Array.isArray(d))setBlocos(function(p){return p.concat(d);});});
     }
   }
 
-  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:'IBM Plex Mono,monospace'};
-  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11,padding:20}},'…');
+  function deactivate(b) {
+    supaFetch('/rest/v1/crm_credenciais_blocos?id=eq.'+b.id, {method:'PATCH',body:JSON.stringify({ativo:false})}).then(function(){
+      setBlocos(function(p){return p.filter(function(x){return x.id!==b.id;});});
+    });
+  }
+
+  function moveOrdem(b, dir) {
+    var next = Number(b.ordem||0)+dir;
+    supaFetch('/rest/v1/crm_credenciais_blocos?id=eq.'+b.id, {method:'PATCH',body:JSON.stringify({ordem:next})}).then(function(){load();});
+  }
+
+  function gerarCredencial() {
+    var sel = gerador && gerador.selecionados || [];
+    if (sel.length === 0) return;
+    setGerando(true);
+    var jwt = window.__supaSession && window.__supaSession.access_token;
+    fetch('/api/gerar-credencial', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+(jwt||'')},
+      body:JSON.stringify({agencia_ids:[],idioma:idiomaFiltro,blocos:sel,cases:[],titulo:agencia?agencia.name+' — Credencial':''})
+    }).then(function(r){return r.json();}).then(function(d){
+      setGerando(false);
+      if (d.html_url) setGeradoUrl(d.html_url);
+      else alert('Erro ao gerar: '+(d.error||'desconhecido'));
+    }).catch(function(){setGerando(false);alert('Falha ao conectar com o servidor.');});
+  }
+
+  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:mono};
+
+  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:mono,fontSize:11,padding:20}},'…');
+
   return React.createElement("div",{style:{flex:1,overflowY:'auto',padding:'12px 20px'}},
-    !form && React.createElement("button",{onClick:function(){setForm({titulo:'',tipo:'geral',blocoRaw:'{}'});},style:{marginBottom:12,padding:'6px 14px',border:'.5px solid #FF6B2B44',borderRadius:6,background:'transparent',color:'#FF6B2B',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'+ Nova credencial'),
-    form && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:8,padding:'12px',marginBottom:12}},
-      React.createElement("div",{style:{fontSize:11,fontWeight:700,color:'#FF6B2B',fontFamily:'IBM Plex Mono,monospace',marginBottom:10}}, form.id?'Editar credencial':'Nova credencial'),
-      [['titulo','Título'],['tipo','Tipo']].map(function(pair) {
-        var f=pair[0],l=pair[1];
-        return React.createElement("div",{key:f,style:{marginBottom:8}},
-          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}}, l),
-          React.createElement("input",{style:inp,value:form[f]||'',onChange:function(e){var v=e.target.value;setForm(function(p){return Object.assign({},p,Object.fromEntries([[f,v]]));});}})
-        );
+    // Barra topo
+    React.createElement("div",{style:{display:'flex',gap:8,marginBottom:12,alignItems:'center'}},
+      ['pt','en','es'].map(function(l){
+        return React.createElement("button",{key:l,onClick:function(){setIdiomaFiltro(l);},style:{padding:'3px 10px',borderRadius:4,border:'none',background:idiomaFiltro===l?'#FF6B2B':'#1A1A2E',color:idiomaFiltro===l?'#fff':'#555',fontSize:9,cursor:'pointer',fontFamily:mono}},l.toUpperCase());
       }),
-      React.createElement("div",{style:{marginBottom:8}},
-        React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:2}},'Dados (JSON)'),
-        React.createElement("textarea",{style:Object.assign({},inp,{height:100,resize:'vertical',fontFamily:'monospace'}),value:form.blocoRaw||JSON.stringify(form.bloco||{}),onChange:function(e){var v=e.target.value;setForm(function(p){var b=p.bloco;try{b=JSON.parse(v);}catch(ex){}return Object.assign({},p,{blocoRaw:v,bloco:b});});}})
+      React.createElement("span",{style:{fontSize:9,color:'#555',fontFamily:mono}},blocos.length+' bloco'+(blocos.length!==1?'s':'')),
+      React.createElement("button",{onClick:function(){setForm(blankForm());},style:{marginLeft:'auto',padding:'5px 12px',border:'.5px solid #FF6B2B44',borderRadius:6,background:'transparent',color:'#FF6B2B',fontSize:10,fontFamily:mono,cursor:'pointer'}},'+ Novo bloco'),
+      React.createElement("button",{onClick:function(){setGerador({selecionados:blocos.map(function(b){return b.id;})});setGeradoUrl(null);},style:{padding:'5px 12px',border:'.5px solid #34D39944',borderRadius:6,background:'transparent',color:'#34D399',fontSize:10,fontFamily:mono,cursor:'pointer'}},'Gerar credencial')
+    ),
+    // Gerador modal
+    gerador && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #34D39944',borderRadius:8,padding:'14px',marginBottom:14}},
+      React.createElement("div",{style:{fontSize:11,fontWeight:700,color:'#34D399',fontFamily:mono,marginBottom:8}},'Gerar credencial — '+idiomaFiltro.toUpperCase()),
+      React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:6}},'Selecione os blocos a incluir:'),
+      React.createElement("div",{style:{display:'flex',flexDirection:'column',gap:4,marginBottom:10}},
+        blocos.map(function(b){
+          var sel = gerador.selecionados.indexOf(b.id)>=0;
+          return React.createElement("label",{key:b.id,style:{display:'flex',alignItems:'center',gap:6,fontSize:10,color:sel?'#F5F5F5':'#9B9BB4',cursor:'pointer',fontFamily:mono}},
+            React.createElement("input",{type:'checkbox',checked:sel,onChange:function(e){
+              setGerador(function(g){
+                var s = g.selecionados.slice();
+                if(e.target.checked){if(s.indexOf(b.id)<0)s.push(b.id);}else{s=s.filter(function(x){return x!==b.id;});}
+                return Object.assign({},g,{selecionados:s});
+              });
+            }}),
+            React.createElement("span",{style:{fontSize:8,color:'#555',fontFamily:mono,background:'#1A1A2E',padding:'1px 4px',borderRadius:3}},b.tipo),
+            b.titulo
+          );
+        })
+      ),
+      geradoUrl && React.createElement("div",{style:{marginBottom:10}},
+        React.createElement("div",{style:{fontSize:9,color:'#34D399',fontFamily:mono,marginBottom:4}},'✓ Link gerado (válido 7 dias):'),
+        React.createElement("input",{readOnly:true,value:geradoUrl,style:Object.assign({},inp,{color:'#60A5FA',cursor:'pointer'}),onClick:function(e){e.target.select();try{navigator.clipboard.writeText(geradoUrl);}catch(ex){}}}),
+        React.createElement("a",{href:geradoUrl,target:'_blank',rel:'noopener',style:{fontSize:9,color:'#60A5FA',fontFamily:mono,display:'block',marginTop:4}},'↗ Abrir preview')
       ),
       React.createElement("div",{style:{display:'flex',gap:8}},
-        React.createElement("button",{onClick:save,disabled:saving,style:{padding:'5px 12px',borderRadius:5,border:'none',background:'#FF6B2B',color:'#fff',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},saving?'…':'Salvar'),
-        React.createElement("button",{onClick:function(){setForm(null);},style:{padding:'5px 12px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'Cancelar')
+        React.createElement("button",{onClick:gerarCredencial,disabled:gerando||!gerador.selecionados.length,style:{padding:'5px 12px',borderRadius:5,border:'none',background:'#34D399',color:'#000',fontSize:10,fontFamily:mono,cursor:'pointer'}},gerando?'Gerando…':'Gerar link'),
+        React.createElement("button",{onClick:function(){setGerador(null);setGeradoUrl(null);},style:{padding:'5px 12px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:10,fontFamily:mono,cursor:'pointer'}},'Cancelar')
       )
     ),
-    blocos.length===0 && !form && React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11}},'Nenhuma credencial cadastrada.'),
-    blocos.map(function(b) {
-      return React.createElement("div",{key:b.id,style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,padding:'10px 14px',marginBottom:8}},
-        React.createElement("div",{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:6}},
-          React.createElement("span",{style:{fontSize:12,fontWeight:600,color:'#F5F5F5'}}, b.titulo),
-          React.createElement("div",{style:{display:'flex',gap:6}},
-            React.createElement("span",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#A78BFA',background:'#A78BFA22',padding:'1px 6px',borderRadius:100}}, b.tipo),
-            React.createElement("button",{onClick:function(){setForm(Object.assign({},b,{blocoRaw:JSON.stringify(b.bloco||{},null,2)}));},style:{fontSize:9,color:'#555',background:'none',border:'none',cursor:'pointer'}},'Editar')
+    // Formulário
+    form && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #FF6B2B44',borderRadius:8,padding:'14px',marginBottom:14}},
+      React.createElement("div",{style:{fontSize:11,fontWeight:700,color:'#FF6B2B',fontFamily:mono,marginBottom:10}},form.id?'Editar bloco':'Novo bloco'),
+      React.createElement("div",{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:'6px 10px',marginBottom:8}},
+        React.createElement("div",{style:{gridColumn:'1/-1'}},
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Título *'),
+          React.createElement("input",{style:inp,value:form.titulo||'',onChange:function(e){setF('titulo',e.target.value);}})
+        ),
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:4}},'Tipo'),
+          React.createElement("div",{style:{display:'flex',flexWrap:'wrap',gap:4}},
+            TIPOS.map(function(t){
+              return React.createElement("button",{key:t,onClick:function(){setF('tipo',t);},style:{padding:'2px 7px',borderRadius:3,border:'none',background:form.tipo===t?'#1A1A2E':'transparent',color:form.tipo===t?(TIPO_CLR[t]||'#fff'):'#555',fontSize:8,cursor:'pointer',fontFamily:mono,outline:form.tipo===t?'1px solid '+(TIPO_CLR[t]||'#fff'):'none'}},t);
+            })
           )
         ),
-        b.bloco && Object.keys(b.bloco).length>0 && React.createElement("pre",{style:{fontSize:10,color:'#9B9BB4',background:'#08080F',borderRadius:4,padding:'6px 8px',margin:0,overflowX:'auto',fontFamily:'monospace',whiteSpace:'pre-wrap'}},JSON.stringify(b.bloco,null,2))
+        React.createElement("div",null,
+          React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Idioma / Ordem'),
+          React.createElement("div",{style:{display:'flex',gap:6}},
+            React.createElement("select",{style:Object.assign({},inp,{width:60}),value:form.idioma||'pt',onChange:function(e){setF('idioma',e.target.value);}},
+              React.createElement("option",{value:'pt'},'pt'),
+              React.createElement("option",{value:'en'},'en'),
+              React.createElement("option",{value:'es'},'es')
+            ),
+            React.createElement("input",{style:Object.assign({},inp,{width:60}),type:'number',value:form.ordem||0,onChange:function(e){setF('ordem',e.target.value);}})
+          )
+        )
+      ),
+      React.createElement("div",{style:{marginBottom:7}},
+        React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Corpo (markdown)'),
+        React.createElement("textarea",{style:Object.assign({},inp,{height:90,resize:'vertical',fontFamily:'monospace',fontSize:10}),value:form.corpo||'',onChange:function(e){setF('corpo',e.target.value);}})
+      ),
+      React.createElement("div",{style:{marginBottom:7}},
+        React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Mídia (URL)'),
+        React.createElement("input",{style:inp,value:form.midia||'',onChange:function(e){setF('midia',e.target.value);}})
+      ),
+      React.createElement("div",{style:{marginBottom:7}},
+        React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Dados estruturados (JSON)'),
+        React.createElement("textarea",{style:Object.assign({},inp,{height:60,resize:'vertical',fontFamily:'monospace',fontSize:10}),value:form.dadosRaw||'{}',onChange:function(e){setF('dadosRaw',e.target.value);}})
+      ),
+      React.createElement("div",{style:{display:'flex',gap:8,marginTop:8}},
+        React.createElement("button",{onClick:save,disabled:saving,style:{padding:'5px 12px',borderRadius:5,border:'none',background:'#FF6B2B',color:'#fff',fontSize:10,fontFamily:mono,cursor:'pointer'}},saving?'…':'Salvar'),
+        React.createElement("button",{onClick:function(){setForm(null);},style:{padding:'5px 12px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:10,fontFamily:mono,cursor:'pointer'}},'Cancelar')
+      )
+    ),
+    // Lista de blocos
+    blocos.length===0 && !form && React.createElement("div",{style:{color:'#555',fontFamily:mono,fontSize:10,padding:'20px 0'}},'Nenhum bloco cadastrado para '+idiomaFiltro.toUpperCase()+'.'),
+    blocos.map(function(b, idx) {
+      var clr = TIPO_CLR[b.tipo]||'#9B9BB4';
+      return React.createElement("div",{key:b.id,style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,padding:'10px 14px',marginBottom:8}},
+        React.createElement("div",{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:b.corpo?6:0}},
+          React.createElement("div",{style:{display:'flex',alignItems:'center',gap:8,flex:1}},
+            React.createElement("div",{style:{display:'flex',flexDirection:'column',gap:1}},
+              React.createElement("button",{onClick:function(){moveOrdem(b,-1);},disabled:idx===0,style:{fontSize:8,background:'none',border:'none',color:'#555',cursor:'pointer',padding:'0 2px',lineHeight:1}},'▲'),
+              React.createElement("button",{onClick:function(){moveOrdem(b,1);},disabled:idx===blocos.length-1,style:{fontSize:8,background:'none',border:'none',color:'#555',cursor:'pointer',padding:'0 2px',lineHeight:1}},'▼')
+            ),
+            React.createElement("span",{style:{fontSize:8,fontFamily:mono,color:clr,background:clr+'22',padding:'1px 5px',borderRadius:100,flexShrink:0}},b.tipo),
+            React.createElement("span",{style:{fontSize:12,fontWeight:600,color:'#F5F5F5'}},b.titulo)
+          ),
+          React.createElement("div",{style:{display:'flex',gap:4,flexShrink:0,marginLeft:8}},
+            React.createElement("button",{onClick:function(){setForm(Object.assign({},b,{dadosRaw:JSON.stringify(b.dados||b.bloco||{},null,2)}));},style:{fontSize:8,color:'#555',background:'none',border:'none',cursor:'pointer',fontFamily:mono}},'editar'),
+            React.createElement("button",{onClick:function(){deactivate(b);},style:{fontSize:8,color:'#F87171',background:'none',border:'none',cursor:'pointer',fontFamily:mono}},'×')
+          )
+        ),
+        b.corpo && React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',lineHeight:1.5,whiteSpace:'pre-wrap',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:3,WebkitBoxOrient:'vertical'}},b.corpo)
       );
     })
   );
@@ -5176,50 +5474,59 @@ function AgTextosTab({ agencia }) {
 }
 
 function AgEnviarTab({ agencia }) {
-  var [cards, setCards] = React.useState([]);
+  var [geradas, setGeradas] = React.useState([]);
   var [loading, setLoading] = React.useState(true);
-  var [generating, setGenerating] = React.useState(false);
-  var [html, setHtml] = React.useState(null);
-  var agId = agencia ? agencia.id : '';
+  var [copiado, setCopiado] = React.useState(null);
+  var mono = 'IBM Plex Mono,monospace';
+  var agNome = agencia ? (agencia.name||agencia.id) : '';
 
   React.useEffect(function() {
-    if (!agId) return;
-    supaFetch('/rest/v1/crm_kanban?responsavel=ilike.*'+encodeURIComponent(agId)+'*&select=*&order=col.asc,nome.asc').then(function(d) {
-      setCards(Array.isArray(d)?d:[]); setLoading(false);
+    supaFetch('/rest/v1/crm_credenciais_geradas?order=criado_em.desc&limit=20&select=id,token,titulo,html_url,idioma,expira_em,criado_em').then(function(d) {
+      setGeradas(Array.isArray(d)?d:[]); setLoading(false);
     }).catch(function(){setLoading(false);});
-  }, [agId]);
+  }, []);
 
-  function generate() {
-    setGenerating(true);
-    var colLabels = {contato:'1º Contato',reuniao:'Reunião',proposta:'Proposta',negociacao:'Negociação',fechamento:'Fechamento'};
-    var byCol = {};
-    cards.forEach(function(c){if(!byCol[c.col])byCol[c.col]=[];byCol[c.col].push(c);});
-    var colOrder = ['contato','reuniao','proposta','negociacao','fechamento'];
-    var rows = colOrder.filter(function(c){return byCol[c]&&byCol[c].length>0;}).map(function(col) {
-      var cs = byCol[col];
-      var items = cs.map(function(c){return '<li style="margin-bottom:6px"><strong>'+c.nome+'</strong>'+(c.produto?' — '+c.produto:'')+(c.valor?' <span style="color:#34D399">R$ '+Number(c.valor).toLocaleString('pt-BR')+'</span>':'')+'</li>';}).join('');
-      return '<div style="margin-bottom:24px"><h3 style="font-family:monospace;font-size:11px;color:#FF6B2B;letter-spacing:1px;text-transform:uppercase;margin:0 0 10px">'+(colLabels[col]||col)+'</h3><ul style="padding-left:18px;margin:0">'+items+'</ul></div>';
-    }).join('');
-    var htmlStr = '<!DOCTYPE html><html><head><meta charset=UTF-8><title>Pipeline '+agencia.name+'</title></head><body style="background:#060610;color:#F5F5F5;font-family:sans-serif;padding:32px;max-width:600px;margin:0 auto"><div style="display:flex;align-items:center;gap:12px;margin-bottom:24px;border-bottom:1px solid #1A1A2E;padding-bottom:16px"><div style="width:32px;height:32px;background:#FF6B2B;border-radius:8px;display:flex;align-items:center;justify-content:center;font-family:monospace;font-weight:bold;color:#fff">G</div><div><div style="font-family:monospace;font-size:14px;font-weight:700">GALERIA HOLDING</div><div style="font-family:monospace;font-size:10px;color:#9B9BB4">Pipeline — '+(agencia.name||'')+'</div></div></div>'+rows+'<div style="margin-top:32px;padding-top:16px;border-top:1px solid #1A1A2E;font-family:monospace;font-size:9px;color:#555">Gerado em '+new Date().toLocaleDateString('pt-BR')+' · Galeria Holding · Confidencial</div></body></html>';
-    setHtml(htmlStr);
-    setGenerating(false);
+  function copiar(texto, id) {
+    try { navigator.clipboard.writeText(texto); } catch(e){}
+    setCopiado(id);
+    setTimeout(function(){setCopiado(null);}, 1800);
   }
 
-  function copyHtml() { try { navigator.clipboard.writeText(html||''); } catch(e){} }
+  function msgEmail(url) {
+    return 'Olá,\n\nSegue nossa credencial com cases e serviços relevantes para vocês:\n\n'+url+'\n\n(Link válido por 7 dias)\n\nPedro Ica, Head of Growth, Galeria Holding';
+  }
+  function msgWA(url) { return 'Oi! Segue nossa credencial: '+url+' (válido 7 dias)'; }
+  function msgLI(url) { return 'Segue nossa credencial: '+url; }
 
-  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11,padding:20}},'…');
+  if (loading) return React.createElement("div",{style:{color:'#555',fontFamily:mono,fontSize:11,padding:20}},'…');
+
   return React.createElement("div",{style:{flex:1,overflowY:'auto',padding:'12px 20px'}},
-    React.createElement("div",{style:{marginBottom:16}},
-      React.createElement("div",{style:{fontSize:11,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace',marginBottom:8}}, cards.length+' cards no pipeline desta agência'),
-      React.createElement("div",{style:{display:'flex',gap:8}},
-        React.createElement("button",{onClick:generate,disabled:generating,style:{padding:'6px 16px',border:'none',borderRadius:6,background:'#FF6B2B',color:'#fff',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}}, generating?'Gerando…':'Gerar HTML do pipeline'),
-        html && React.createElement("button",{onClick:copyHtml,style:{padding:'6px 16px',border:'.5px solid #2D2D44',borderRadius:6,background:'transparent',color:'#9B9BB4',fontSize:11,fontFamily:'IBM Plex Mono,monospace',cursor:'pointer'}},'Copiar HTML')
-      )
+    React.createElement("div",{style:{marginBottom:14}},
+      React.createElement("div",{style:{fontSize:11,fontWeight:600,color:'#F5F5F5',marginBottom:4}},'Credenciais geradas'),
+      React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:8}},'Gere credenciais na aba Credenciais → botão "Gerar credencial". Links válidos 7 dias.')
     ),
-    html && React.createElement("div",{style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:8,overflow:'hidden'}},
-      React.createElement("div",{style:{padding:'8px 14px',borderBottom:'.5px solid #1A1A2E',fontFamily:'IBM Plex Mono,monospace',fontSize:9,color:'#555'}},'Preview (iframe)'),
-      React.createElement("iframe",{srcDoc:html,style:{width:'100%',height:400,border:'none'},title:'Pipeline preview'})
-    )
+    geradas.length === 0 && React.createElement("div",{style:{color:'#555',fontFamily:mono,fontSize:10,padding:'20px 0'}},'Nenhuma credencial gerada ainda. Vá em Credenciais → Gerar credencial.'),
+    geradas.map(function(g) {
+      var expired = new Date(g.expira_em) < new Date();
+      var url = g.html_url || ('https://galeria-holding.vercel.app/c/'+(g.token||''));
+      var expDate = g.expira_em ? new Date(g.expira_em).toLocaleDateString('pt-BR') : '—';
+      return React.createElement("div",{key:g.id,style:{background:'#0D0D1A',border:'.5px solid '+(expired?'#2D2D44':'#1A1A2E'),borderRadius:8,padding:'10px 14px',marginBottom:8,opacity:expired?0.5:1}},
+        React.createElement("div",{style:{display:'flex',justifyContent:'space-between',alignItems:'flex-start',marginBottom:6}},
+          React.createElement("div",null,
+            React.createElement("div",{style:{fontSize:11,fontWeight:600,color:'#F5F5F5'}},(g.titulo||'Credencial')+(g.idioma?' ('+g.idioma+')':'')),
+            React.createElement("div",{style:{fontSize:9,color:'#555',fontFamily:mono}},'Expira: '+expDate+(expired?' — EXPIRADO':'')),
+            React.createElement("a",{href:url,target:'_blank',rel:'noopener',style:{fontSize:9,color:'#60A5FA',fontFamily:mono}},url.slice(0,50)+'…')
+          ),
+          !expired && React.createElement("a",{href:url,target:'_blank',rel:'noopener noreferrer',style:{padding:'4px 10px',border:'.5px solid #60A5FA44',borderRadius:4,color:'#60A5FA',fontSize:9,fontFamily:mono,textDecoration:'none',whiteSpace:'nowrap'}},'↗ Abrir')
+        ),
+        !expired && React.createElement("div",{style:{display:'flex',gap:6,flexWrap:'wrap'}},
+          React.createElement("button",{onClick:function(){copiar(url,g.id+'u');},style:{padding:'3px 8px',border:'.5px solid #2D2D44',borderRadius:4,background:'transparent',color:copiado===g.id+'u'?'#34D399':'#9B9BB4',fontSize:8,cursor:'pointer',fontFamily:mono}},copiado===g.id+'u'?'✓ Copiado':'Copiar link'),
+          React.createElement("button",{onClick:function(){copiar(msgEmail(url),g.id+'e');},style:{padding:'3px 8px',border:'.5px solid #2D2D44',borderRadius:4,background:'transparent',color:copiado===g.id+'e'?'#34D399':'#9B9BB4',fontSize:8,cursor:'pointer',fontFamily:mono}},copiado===g.id+'e'?'✓ Copiado':'Texto e-mail'),
+          React.createElement("button",{onClick:function(){copiar(msgWA(url),g.id+'w');},style:{padding:'3px 8px',border:'.5px solid #2D2D44',borderRadius:4,background:'transparent',color:copiado===g.id+'w'?'#34D399':'#9B9BB4',fontSize:8,cursor:'pointer',fontFamily:mono}},copiado===g.id+'w'?'✓ Copiado':'Texto WA'),
+          React.createElement("button",{onClick:function(){copiar(msgLI(url),g.id+'l');},style:{padding:'3px 8px',border:'.5px solid #2D2D44',borderRadius:4,background:'transparent',color:copiado===g.id+'l'?'#34D399':'#9B9BB4',fontSize:8,cursor:'pointer',fontFamily:mono}},copiado===g.id+'l'?'✓ Copiado':'Texto LinkedIn')
+        )
+      );
+    })
   );
 }
 
