@@ -13,7 +13,7 @@
 | Login (magic link) | ✅ Funciona | CDN Supabase JS adicionado ao index.html (92595a4) |
 | `window.__supaSession` JWT | ✅ Corrigido | gh-store.js popula na carga e no onAuthStateChange (0783ffa) |
 | Aba **Cases** (agência) | ✅ Corrigido | Requer login — RLS `{authenticated}` + fix do JWT acima |
-| Aba **Textos / Templates** | ✅ Corrigido | Requer login — RLS `auth.role()='authenticated'` + fix JWT |
+| Aba **Textos / Templates** | ✅ Corrigido | Requer login — RLS `auth.role()='authenticated'` + fix JWT (232 total, 14 agências) |
 | **Geração de fila** (`/api/gerar-fila`) | ✅ Funciona | 30 e-mails p/ 404, 5 p/ Catalyst (exclusividade semanal ok) |
 | Parser JSON markdown fence | ✅ Corrigido | gerarTexto strip de ```json fences (18aae1f) |
 | `SUPABASE_SERVICE_ROLE_KEY` no Vercel | ✅ Config type | Copiada da Supabase → Vercel como Config (não Secret) |
