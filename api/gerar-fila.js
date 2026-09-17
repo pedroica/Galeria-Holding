@@ -133,7 +133,7 @@ export default async function handler(req, res) {
 
   let agencias;
   if (agencia_slug) {
-    agencias = await sg(`crm_agencias?id_slug=eq.${agencia_slug}&select=*`);
+    agencias = await sg(`crm_agencias?slug=eq.${agencia_slug}&select=*`);
     if (!Array.isArray(agencias) || agencias.length === 0) {
       agencias = await sg(`crm_agencias?id=eq.${agencia_slug}&select=*`);
     }
