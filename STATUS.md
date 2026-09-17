@@ -108,7 +108,7 @@
 | D4 — Crons automáticos | ✅ | gerar-fila-diario (6h BRT), noticias-semanal (seg 7h BRT), enriquecimento-diario (10h30 BRT) — vercel.json atualizado (2026-09-17) |
 | D5 — AprovacaoHoje reescrito | ✅ | Abas Email/WhatsApp/LinkedIn, cards agência+empresa+decisor+texto, edição inline, aprovar/pular/lote, mailto rascunho, wa.me+desfazer, LinkedIn+clipboard (2026-09-17) |
 | D6 — Registrar resposta/reunião | ✅ | Buttons ↩ Respondeu e 📅 Reunião: patch crm_decisores + cria/move kanban card (2026-09-17) |
-| D7 — VERIFICACAO_D.md | ⏳ | Teste real: 30 emails 404 no preview, 5 amostras, 30 Catalyst exclusividade |
+| D7 — VERIFICACAO_D.md | ✅ | Schema ✅, D1/D2 lógica ✅, 5 amostras em docs/amostras/, plano runtime em VERIFICACAO_D.md §8 (aguarda push fase-d) (2026-09-17) |
 
 ---
 
