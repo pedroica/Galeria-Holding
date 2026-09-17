@@ -124,11 +124,55 @@
 
 ---
 
-## Env vars pendentes no Vercel (ação manual do Pedro)
+---
 
-| Variável | Valor |
+## Estado em produção — 2026-09-17 (após Fase E)
+
+| Funcionalidade | Status | Notas |
+|---|---|---|
+| Auth gate (magic link) | ✅ Funciona | Login via email em produção |
+| Aba Hoje | ✅ Funciona | Stats, barra progresso, reuniões do dia |
+| Holding — Kanban | ✅ Funciona | Drag-and-drop entre colunas |
+| Holding — Metas semanais | ✅ Funciona | Últimas 4 semanas por agência |
+| Agência 404 — 7 abas | ✅ Funciona | Pipeline, Notícias, Serviços, Cases, Credenciais, Textos, Enviar |
+| Base + EmpresaDrawer | ✅ Funciona | Lista 2342 empresas, drawer com histórico |
+| Aprovar hoje | ✅ Funciona | Abas Email/WA/LinkedIn, edição inline, aprovar/pular |
+| crm_agencias populada | ✅ Feito | 13 agências inseridas com UUIDs de AGENCIA_UUIDS |
+| gerar-fila — auth anon key | ✅ Corrigido | commit ce0ba7c |
+| gerar-fila — coluna slug | ✅ Corrigido | commit 14f01c6 (id_slug → slug) |
+| gerar-fila — gera e-mails | ❌ Bloqueado | SUPABASE_SERVICE_ROLE_KEY inválida no Vercel (ver abaixo) |
+| cron gerar-fila-diario (6h BRT) | ✅ Registrado | vercel.json — dispara mas retorna 0 por causa do bloqueio acima |
+| cron noticias-semanal (seg 10h UTC) | ✅ Registrado | vercel.json |
+| cron enriquecimento-diario (13h30 UTC) | ✅ Registrado | vercel.json |
+| cron fechamento-sexta (20h UTC/17h BRT) | ✅ Registrado | vercel.json |
+| gerar 30 e-mails (404) | ❌ Aguarda chave | bloqueado pelo item acima |
+| gerar 30 e-mails (Catalyst) | ❌ Aguarda chave | bloqueado pelo item acima |
+| docs/capturas/ | ⏳ Pendente | screenshots da produção |
+
+---
+
+## ⚠️ AÇÃO NECESSÁRIA DO PEDRO — SUPABASE_SERVICE_ROLE_KEY
+
+A chave `SUPA_CRM_SERVICE_KEY` no `.env` local (formato `sb_secret_...`) é **inválida** para o projeto Supabase `uetltlnjmobeiunxfsqi` (central-galeria) — retorna 401 no PostgREST. A Vercel está usando o mesmo valor inválido, então todas as queries do `gerar-fila.js` falham silenciosamente (sg() retorna null), causando early-return com 0 e-mails gerados.
+
+**Pedro precisa fazer (sem me passar no terminal):**
+
+1. Abrir: https://supabase.com/dashboard/project/uetltlnjmobeiunxfsqi/settings/api
+2. Copiar a chave `service_role` (começa com `eyJ...`)
+3. Atualizar no Vercel: https://vercel.com/pedro-ica/galeria-holding/settings/environment-variables → `SUPABASE_SERVICE_ROLE_KEY` → novo valor
+4. Re-deploy após atualizar (ou aguardar próximo push)
+5. Atualizar `.env` local: trocar `SUPA_CRM_SERVICE_KEY=sb_secret_...` pelo valor correto
+
+Após isso, rodar o teste: `POST /api/gerar-fila` com `{"agencia_slug":"404","canais":["email"],"limite":5}` deve retornar `{"gerados":5,...}`.
+
+---
+
+## Env vars no Vercel — estado atual
+
+| Variável | Status |
 |---|---|
-| `CRON_SECRET` | *(valor gerado — Pedro tem o valor; não commitar aqui)* |
-| `SUPABASE_SERVICE_ROLE_KEY` | mesmo valor que `SUPA_CRM_SERVICE_KEY` |
-
-Sem `CRON_SECRET` os crons ainda funcionam via fallback `SUPA_KEY`. Com ele, a autenticação fica mais segura.
+| `ANTHROPIC_API_KEY` | ✅ Configurada |
+| `SUPABASE_SERVICE_ROLE_KEY` | ❌ Valor inválido — precisa atualizar (ver acima) |
+| `SUPABASE_URL` | ✅ Configurada |
+| `CRON_SECRET` | ✅ Configurada (valor não está no .env local) |
+| `WHATSAPP_*` (5 vars) | ✅ Configuradas |
