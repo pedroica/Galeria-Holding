@@ -16,6 +16,8 @@ function FigurinhasV2({
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [selEmpresa, setSelEmpresa] = useState(null);
   const [enrichLoading, setEnrichLoading] = useState({});
+  const [lushaStatus, setLushaStatus] = useState({});
+  const [lushaMsg, setLushaMsg] = useState({});
   const [abordagemDecidor, setAbordagemDecidor] = useState(null);
   const empresas = useMemo(() => {
     const base = (typeof PROSP !== "undefined" ? PROSP : []).filter(e => e.setor);
@@ -101,6 +103,89 @@ Mínimo 5 pessoas. Retorne SOMENTE o JSON, sem texto adicional.`;
       ...p,
       [empresa.rank]: false
     }));
+  };
+  const enriquecerLusha = async empresa => {
+    const rank = empresa.rank;
+    setLushaStatus(p => ({
+      ...p,
+      [rank]: 'loading'
+    }));
+    setLushaMsg(p => ({
+      ...p,
+      [rank]: ''
+    }));
+    try {
+      const k = curGrupo.id + "_" + rank;
+      const existing = (accs || {})[k] || {
+        decisors: [],
+        sugeridos: [],
+        activities: []
+      };
+      const resp = await fetch('/api/enrich?provider=enriquecer', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          nome: empresa.nome,
+          dominio: empresa.site || '',
+          existentes: existing.decisors || []
+        })
+      });
+      const data = await resp.json();
+      if (!resp.ok) {
+        const msg = data.error || `Erro ${resp.status}`;
+        setLushaStatus(p => ({
+          ...p,
+          [rank]: 'error'
+        }));
+        setLushaMsg(p => ({
+          ...p,
+          [rank]: msg
+        }));
+        return;
+      }
+      const decisores = data.decisores || [];
+      if (decisores.length === 0) {
+        setLushaStatus(p => ({
+          ...p,
+          [rank]: 'empty'
+        }));
+        setLushaMsg(p => ({
+          ...p,
+          [rank]: 'Nenhum decisor encontrado na Lusha.'
+        }));
+        return;
+      }
+      const novoAcc = {
+        ...existing,
+        decisors: [...(existing.decisors || []), ...decisores]
+      };
+      const newAccs = {
+        ...(accs || {}),
+        [k]: novoAcc
+      };
+      setAccs(newAccs);
+      lsSet("gh_decisores_v3", newAccs);
+      if (typeof window.ghXpAward === 'function') window.ghXpAward(decisores.length, 'lusha');
+      setLushaStatus(p => ({
+        ...p,
+        [rank]: 'success'
+      }));
+      setLushaMsg(p => ({
+        ...p,
+        [rank]: `${decisores.length} decisor${decisores.length > 1 ? 'es' : ''} encontrado${decisores.length > 1 ? 's' : ''}`
+      }));
+    } catch (err) {
+      setLushaStatus(p => ({
+        ...p,
+        [rank]: 'error'
+      }));
+      setLushaMsg(p => ({
+        ...p,
+        [rank]: 'Erro de rede. Tente novamente.'
+      }));
+    }
   };
   const confirmarSugerido = (empresa, sugerido) => {
     const k = curGrupo.id + "_" + empresa.rank;
@@ -1217,7 +1302,7 @@ Mínimo 5 pessoas. Retorne SOMENTE o JSON, sem texto adicional.`;
         width: pct + "%",
         background: nVer >= 5 ? "#1D9E75" : nVer > 0 ? "#EF9F27" : "#E24B4A"
       }
-    })), nVer === 0 && nSug === 0 && /*#__PURE__*/React.createElement("button", {
+    })), /*#__PURE__*/React.createElement(React.Fragment, null, nVer === 0 && nSug === 0 && /*#__PURE__*/React.createElement("button", {
       className: "gh-btn-secondary",
       style: {
         width: "100%",
@@ -1231,7 +1316,23 @@ Mínimo 5 pessoas. Retorne SOMENTE o JSON, sem texto adicional.`;
         ev.stopPropagation();
         setSelEmpresa(e);
       }
-    }, "+ Adicionar decisor"));
+    }, "+ Adicionar decisor"), nVer < 5 && /*#__PURE__*/React.createElement("button", {
+      className: "gh-btn-secondary",
+      style: {
+        width: "100%",
+        marginTop: 4,
+        fontSize: 9,
+        padding: "5px 0",
+        opacity: lushaStatus[e.rank] === 'loading' ? 0.6 : 1,
+        pointerEvents: lushaStatus[e.rank] === 'loading' ? 'none' : 'auto',
+        color: lushaStatus[e.rank] === 'success' ? '#1D9E75' : lushaStatus[e.rank] === 'error' ? '#E24B4A' : '#7B6FFF',
+        borderColor: lushaStatus[e.rank] === 'success' ? 'rgba(29,158,117,.3)' : lushaStatus[e.rank] === 'error' ? 'rgba(226,75,74,.3)' : 'rgba(123,111,255,.3)'
+      },
+      onClick: ev => {
+        ev.stopPropagation();
+        enriquecerLusha(e);
+      }
+    }, lushaStatus[e.rank] === 'loading' ? '⏳ Buscando…' : lushaStatus[e.rank] === 'success' ? `✓ ${lushaMsg[e.rank]}` : lushaStatus[e.rank] === 'empty' ? '∅ Sem decisores na Lusha' : lushaStatus[e.rank] === 'error' ? `⚠ ${(lushaMsg[e.rank] || '').slice(0, 28)}` : '⚡ Enriquecer via Lusha')));
   }))));
 }
 var KA_COLS_V2 = [{
