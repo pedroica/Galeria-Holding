@@ -5,14 +5,16 @@ const {
   useCallback
 } = React;
 
-// Captura callback OAuth do Microsoft Graph antes de qualquer render
+// Detecta retorno do OAuth Graph (callback tratado no servidor, redireciona com ?graph_connected=1)
 (function() {
   try {
     var p = new URLSearchParams(window.location.search);
-    var code = p.get('code');
-    var state = p.get('state');
-    if (code && state && state.startsWith('graphoauth_')) {
-      localStorage.setItem('gh_graph_pending', JSON.stringify({code:code, state:state}));
+    if (p.get('graph_connected') === '1') {
+      localStorage.setItem('gh_graph_connected', '1');
+      history.replaceState({}, '', window.location.pathname);
+    }
+    if (p.get('graph_error')) {
+      localStorage.setItem('gh_graph_error', p.get('graph_error'));
       history.replaceState({}, '', window.location.pathname);
     }
   } catch(e) {}
@@ -2641,15 +2643,20 @@ function FilaDoDia() {
 
   useEffect(function(){
     load();
-    // Na primeira montagem: checa status do Graph e processa callback OAuth pendente
+    // Na primeira montagem: checa status do Graph e processa retorno do OAuth
     if (tick===0) {
       checkGraphStatus();
       try {
-        var pending = localStorage.getItem('gh_graph_pending');
-        if (pending) {
-          localStorage.removeItem('gh_graph_pending');
-          var p = JSON.parse(pending);
-          if (p.code && p.state) exchangeGraphToken(p.code, p.state);
+        if (localStorage.getItem('gh_graph_connected')) {
+          localStorage.removeItem('gh_graph_connected');
+          setNotif({msg:'✅ Outlook conectado!', color:'#34D399'});
+          setTimeout(function(){setNotif(null);},5000);
+        }
+        var graphErr = localStorage.getItem('gh_graph_error');
+        if (graphErr) {
+          localStorage.removeItem('gh_graph_error');
+          setNotif({msg:'⚠ Erro ao conectar Outlook: '+graphErr, color:'#E24B4A'});
+          setTimeout(function(){setNotif(null);},8000);
         }
       } catch(e) {}
     }
@@ -2666,24 +2673,6 @@ function FilaDoDia() {
     apiCall('/api/enrich?provider=graph-status').then(function(d){
       setGraphStatus(d && d.connected ? d : {connected:false});
     }).catch(function(){setGraphStatus({connected:false});});
-  }
-
-  function exchangeGraphToken(code, state) {
-    setGraphLoading(true);
-    apiCall('/api/enrich?provider=graph-token', {
-      method:'POST', body:JSON.stringify({code:code, state:state})
-    }).then(function(d){
-      if (d && d.connected) {
-        setGraphStatus(d);
-        notify('✓ Outlook conectado: '+d.email, '#34D399');
-      } else {
-        notify('⚠ Erro ao conectar: '+(d&&d.error||'desconhecido'), '#E24B4A');
-      }
-      setGraphLoading(false);
-    }).catch(function(){
-      notify('⚠ Erro de rede ao trocar tokens', '#E24B4A');
-      setGraphLoading(false);
-    });
   }
 
   function connectOutlook() {
@@ -4424,7 +4413,7 @@ function App() {
   // Auto-navega para Fila quando retorna do OAuth Microsoft
   useEffect(() => {
     try {
-      if (localStorage.getItem('gh_graph_pending')) navTo('fila', null, null);
+      if (localStorage.getItem('gh_graph_connected') || localStorage.getItem('gh_graph_error')) navTo('fila', null, null);
     } catch(e) {}
   }, []);
   useEffect(() => {

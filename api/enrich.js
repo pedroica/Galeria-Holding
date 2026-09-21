@@ -1,18 +1,20 @@
 // Proxy unificado: Hunter.io, Lusha, Microsoft Graph e health check.
 // Consolida múltiplas integrações num único handler para respeitar
 // o limite de 12 Serverless Functions do plano Hobby da Vercel.
-import { randomBytes, createHash } from 'crypto';
+import { randomBytes } from 'crypto';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
-const HUNTER_KEY   = process.env.HUNTER_KEY;
-const LUSHA_KEY    = process.env.LUSHA_KEY;
-const ANTHROPIC_KEY= process.env.ANTHROPIC_API_KEY;
-const MS_CLIENT_ID = process.env.MS_CLIENT_ID;
-const SUPA_URL     = 'https://uetltlnjmobeiunxfsqi.supabase.co';
-const SUPA_SVC     = process.env.SUPA_CRM_SERVICE_KEY;
-const SUPA_ANON    = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
+const HUNTER_KEY      = process.env.HUNTER_KEY;
+const LUSHA_KEY       = process.env.LUSHA_KEY;
+const ANTHROPIC_KEY   = process.env.ANTHROPIC_API_KEY;
+const MS_CLIENT_ID    = process.env.MS_CLIENT_ID;
+const MS_CLIENT_SECRET= process.env.MS_CLIENT_SECRET;
+const MS_TENANT_ID    = process.env.MS_TENANT_ID;
+const SUPA_URL        = 'https://uetltlnjmobeiunxfsqi.supabase.co';
+const SUPA_SVC        = process.env.SUPA_CRM_SERVICE_KEY;
+const SUPA_ANON       = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
 
 // Carrega imagem de assinatura uma vez no cold start
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -23,14 +25,8 @@ try {
 } catch {}
 
 // ─── helpers ────────────────────────────────────────────────────────────────
-function toBase64Url(buf) {
-  return buf.toString('base64').replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
-}
-function generatePkce() {
-  const verifier  = toBase64Url(randomBytes(96)).slice(0, 128);
-  const challenge = toBase64Url(createHash('sha256').update(verifier).digest());
-  const state     = 'graphoauth_' + randomBytes(16).toString('hex');
-  return { verifier, challenge, state };
+function generateState() {
+  return 'graphoauth_' + randomBytes(24).toString('hex');
 }
 
 function supaReq(path, opts) {
@@ -52,9 +48,16 @@ async function verifyUserJwt(token) {
 }
 
 // ─── Graph token management ─────────────────────────────────────────────────
-const MS_TOKEN_URL = 'https://login.microsoftonline.com/common/oauth2/v2.0/token';
-const MS_SCOPE     = 'Mail.ReadWrite Mail.Send offline_access';
-const REDIRECT_URI = 'https://galeria-holding-sage.vercel.app';
+const MS_SCOPE     = 'https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Mail.Send https://graph.microsoft.com/User.Read offline_access';
+const REDIRECT_URI = 'https://galeria-holding-sage.vercel.app/api/enrich';
+function msTokenUrl() {
+  const tid = MS_TENANT_ID || 'common';
+  return `https://login.microsoftonline.com/${tid}/oauth2/v2.0/token`;
+}
+function msAuthUrl() {
+  const tid = MS_TENANT_ID || 'common';
+  return `https://login.microsoftonline.com/${tid}/oauth2/v2.0/authorize`;
+}
 
 async function getGraphToken() {
   const rows = await supaReq(
@@ -71,15 +74,17 @@ async function getGraphToken() {
   if (!needsRefresh) return { token: row.access_token, email: row.account_email };
 
   // Refresh
-  const resp = await fetch(MS_TOKEN_URL, {
+  const refreshParams = {
+    client_id:     MS_CLIENT_ID,
+    client_secret: MS_CLIENT_SECRET,
+    grant_type:    'refresh_token',
+    refresh_token: row.refresh_token,
+    scope:         MS_SCOPE
+  };
+  const resp = await fetch(msTokenUrl(), {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({
-      client_id:     MS_CLIENT_ID,
-      grant_type:    'refresh_token',
-      refresh_token: row.refresh_token,
-      scope:         MS_SCOPE
-    }).toString()
+    body: new URLSearchParams(refreshParams).toString()
   });
   const data = await resp.json();
   if (data.error) return null;
@@ -150,10 +155,85 @@ function buildDraftPayload(item) {
   return payload;
 }
 
+// ─── OAuth callback (GET redirect from Microsoft) ────────────────────────────
+async function handleOAuthCallback(req, res) {
+  const { code, state, error, error_description } = req.query;
+  const CRM_ROOT = 'https://galeria-holding-sage.vercel.app';
+
+  if (error) {
+    return res.redirect(302, CRM_ROOT + '?graph_error=' + encodeURIComponent(error_description || error));
+  }
+  if (!code || !state || !String(state).startsWith('graphoauth_')) {
+    return res.redirect(302, CRM_ROOT + '?graph_error=invalid_callback');
+  }
+  if (!SUPA_SVC || !MS_CLIENT_ID || !MS_CLIENT_SECRET) {
+    return res.redirect(302, CRM_ROOT + '?graph_error=server_not_configured');
+  }
+
+  try {
+    // Verifica state no banco
+    const rows = await supaReq(
+      '/rest/v1/crm_oauth_tokens?pkce_state=eq.' + encodeURIComponent(state) + '&select=id'
+    );
+    const row = rows && rows[0];
+    if (!row) return res.redirect(302, CRM_ROOT + '?graph_error=state_not_found');
+
+    // Troca code por token — confidential client com client_secret
+    const tokenResp = await fetch(msTokenUrl(), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        client_id:     MS_CLIENT_ID,
+        client_secret: MS_CLIENT_SECRET,
+        grant_type:    'authorization_code',
+        code:          code,
+        redirect_uri:  REDIRECT_URI,
+        scope:         MS_SCOPE
+      }).toString()
+    });
+    const tokenData = await tokenResp.json();
+    if (tokenData.error) {
+      return res.redirect(302, CRM_ROOT + '?graph_error=' + encodeURIComponent(tokenData.error_description || tokenData.error));
+    }
+
+    // Descobre e-mail da conta
+    const meResp = await fetch('https://graph.microsoft.com/v1.0/me', {
+      headers: { 'Authorization': 'Bearer ' + tokenData.access_token }
+    });
+    const meData = await meResp.json();
+    const email  = meData.mail || meData.userPrincipalName || '';
+    const expiry = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
+
+    // Armazena tokens (nunca chegam ao frontend)
+    await supaReq('/rest/v1/crm_oauth_tokens?id=eq.' + row.id, {
+      method: 'PATCH',
+      headers: { 'Prefer': 'return=minimal' },
+      body: JSON.stringify({
+        account_email:  email,
+        access_token:   tokenData.access_token,
+        refresh_token:  tokenData.refresh_token,
+        expires_at:     expiry,
+        pkce_state:     null,
+        pkce_verifier:  null,
+        updated_at:     new Date().toISOString()
+      })
+    });
+
+    return res.redirect(302, CRM_ROOT + '?graph_connected=1');
+  } catch (e) {
+    return res.redirect(302, CRM_ROOT + '?graph_error=' + encodeURIComponent(String(e)));
+  }
+}
+
 // ─── Main handler ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const { provider, health } = req.query;
+
+  // ── OAuth callback: Microsoft redireciona aqui com code+state ──────────────
+  if (req.method === 'GET' && req.query.code && req.query.state) {
+    return handleOAuthCallback(req, res);
+  }
 
   // ── Health check ──────────────────────────────────────────────────────────
   if (health || provider === 'health') {
@@ -194,97 +274,39 @@ export default async function handler(req, res) {
 
   // ── Microsoft Graph ───────────────────────────────────────────────────────
   if (provider && provider.startsWith('graph')) {
-    if (!MS_CLIENT_ID) return res.status(500).json({ error: 'MS_CLIENT_ID não configurado. Configure nas variáveis de ambiente da Vercel.' });
+    if (!MS_CLIENT_ID || !MS_CLIENT_SECRET) return res.status(500).json({ error: 'MS_CLIENT_ID / MS_CLIENT_SECRET não configurados.' });
     if (!SUPA_SVC)     return res.status(500).json({ error: 'SUPA_CRM_SERVICE_KEY não configurado.' });
 
-    // Verifica autenticação (exceto callback de token)
-    if (provider !== 'graph-token') {
-      const authHeader = (req.headers.authorization || '').replace('Bearer ','');
-      const ok = await verifyUserJwt(authHeader);
-      if (!ok) return res.status(401).json({ error: 'Não autenticado no CRM.' });
-    }
+    const authHeader = (req.headers.authorization || '').replace('Bearer ','');
+    const authed = await verifyUserJwt(authHeader);
+    if (!authed) return res.status(401).json({ error: 'Não autenticado no CRM.' });
 
-    // ── graph-init: gera URL de autenticação com PKCE ──────────────────────
+    // ── graph-init: gera URL de autenticação ──────────────────────────────
     if (provider === 'graph-init') {
-      const { verifier, challenge, state } = generatePkce();
-      // Armazena verifier temporariamente
+      const state = generateState();
+      // Armazena state temporariamente para validação no callback
       await supaReq('/rest/v1/crm_oauth_tokens', {
         method: 'POST',
         headers: { 'Prefer': 'return=minimal' },
-        body: JSON.stringify({
-          provider: 'microsoft', pkce_state: state, pkce_verifier: verifier
-        })
+        body: JSON.stringify({ provider: 'microsoft', pkce_state: state })
       }).catch(async () => {
-        // Pode existir estado anterior; atualiza ou insere
         await supaReq('/rest/v1/crm_oauth_tokens?pkce_state=eq.' + state, {
           method: 'PATCH',
           headers: { 'Prefer': 'return=minimal' },
-          body: JSON.stringify({ pkce_verifier: verifier })
+          body: JSON.stringify({ pkce_state: state })
         });
       });
 
-      const authUrl = 'https://login.microsoftonline.com/common/oauth2/v2.0/authorize'
-        + '?client_id=' + encodeURIComponent(MS_CLIENT_ID)
+      const authUrl = msAuthUrl()
+        + '?client_id='     + encodeURIComponent(MS_CLIENT_ID)
         + '&response_type=code'
-        + '&redirect_uri=' + encodeURIComponent(REDIRECT_URI)
-        + '&scope=' + encodeURIComponent(MS_SCOPE)
-        + '&code_challenge=' + encodeURIComponent(challenge)
-        + '&code_challenge_method=S256'
-        + '&state=' + encodeURIComponent(state)
-        + '&prompt=select_account';
+        + '&redirect_uri='  + encodeURIComponent(REDIRECT_URI)
+        + '&scope='         + encodeURIComponent(MS_SCOPE)
+        + '&state='         + encodeURIComponent(state)
+        + '&prompt=select_account'
+        + '&response_mode=query';
 
-      return res.status(200).json({ authUrl, state });
-    }
-
-    // ── graph-token: troca o code pelo token ───────────────────────────────
-    if (provider === 'graph-token') {
-      const { code, state } = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
-      if (!code || !state) return res.status(400).json({ error: 'code e state obrigatórios' });
-
-      // Busca verifier pelo state
-      const rows = await supaReq('/rest/v1/crm_oauth_tokens?pkce_state=eq.' + encodeURIComponent(state) + '&select=id,pkce_verifier');
-      const row = rows && rows[0];
-      if (!row || !row.pkce_verifier) return res.status(400).json({ error: 'State inválido ou expirado. Inicie o fluxo novamente.' });
-
-      const tokenResp = await fetch(MS_TOKEN_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          client_id:     MS_CLIENT_ID,
-          grant_type:    'authorization_code',
-          code:          code,
-          redirect_uri:  REDIRECT_URI,
-          code_verifier: row.pkce_verifier,
-          scope:         MS_SCOPE
-        }).toString()
-      });
-      const tokenData = await tokenResp.json();
-      if (tokenData.error) return res.status(400).json({ error: tokenData.error_description || tokenData.error });
-
-      // Descobre e-mail da conta
-      const meResp  = await fetch('https://graph.microsoft.com/v1.0/me', {
-        headers: { 'Authorization': 'Bearer ' + tokenData.access_token }
-      });
-      const meData  = await meResp.json();
-      const email   = meData.mail || meData.userPrincipalName || '';
-      const expiry  = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
-
-      // Armazena tokens (substitui estado temporário)
-      await supaReq('/rest/v1/crm_oauth_tokens?id=eq.' + row.id, {
-        method: 'PATCH',
-        headers: { 'Prefer': 'return=minimal' },
-        body: JSON.stringify({
-          account_email:  email,
-          access_token:   tokenData.access_token,
-          refresh_token:  tokenData.refresh_token,
-          expires_at:     expiry,
-          pkce_state:     null,
-          pkce_verifier:  null,
-          updated_at:     new Date().toISOString()
-        })
-      });
-
-      return res.status(200).json({ connected: true, email });
+      return res.status(200).json({ authUrl });
     }
 
     // ── graph-status: verifica conexão ─────────────────────────────────────
