@@ -4,6 +4,20 @@ const {
   useEffect,
   useCallback
 } = React;
+
+// Captura callback OAuth do Microsoft Graph antes de qualquer render
+(function() {
+  try {
+    var p = new URLSearchParams(window.location.search);
+    var code = p.get('code');
+    var state = p.get('state');
+    if (code && state && state.startsWith('graphoauth_')) {
+      localStorage.setItem('gh_graph_pending', JSON.stringify({code:code, state:state}));
+      history.replaceState({}, '', window.location.pathname);
+    }
+  } catch(e) {}
+})();
+
 function FigurinhasV2({
   accs,
   setAccs,
@@ -2570,6 +2584,16 @@ function FilaDoDia() {
   const [tick,       setTick]       = useState(0);
   const [seqAtivo,   setSeqAtivo]   = useState(false);
   const [seqTrigger, setSeqTrigger] = useState(0);
+  // Microsoft Graph
+  const [graphStatus,  setGraphStatus]  = useState(null); // null | {connected,email}
+  const [graphLoading, setGraphLoading] = useState(false);
+  const [draftBusy,    setDraftBusy]    = useState({});   // {id: 'creating'|'ok'|'error'}
+  const [sendMode,     setSendMode]     = useState(false);
+  const [sending,      setSending]      = useState(false);
+  const [stopSend,     setStopSend]     = useState(false);
+  const [sendEnabled,  setSendEnabled]  = useState(function(){
+    try{return localStorage.getItem('gh_graph_send_enabled')==='true';}catch{return false;}
+  });
 
   function notify(msg, color) {
     setNotif({msg:msg, color:color||'#60A5FA'});
@@ -2615,7 +2639,186 @@ function FilaDoDia() {
     });
   }
 
-  useEffect(function(){load();}, [tick]);
+  useEffect(function(){
+    load();
+    // Na primeira montagem: checa status do Graph e processa callback OAuth pendente
+    if (tick===0) {
+      checkGraphStatus();
+      try {
+        var pending = localStorage.getItem('gh_graph_pending');
+        if (pending) {
+          localStorage.removeItem('gh_graph_pending');
+          var p = JSON.parse(pending);
+          if (p.code && p.state) exchangeGraphToken(p.code, p.state);
+        }
+      } catch(e) {}
+    }
+  }, [tick]);
+
+  // ── Microsoft Graph helpers ───────────────────────────────────────────────
+  function apiCall(path, opts) {
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || ANON;
+    var h = Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+jwt}, opts&&opts.headers);
+    return fetch(path, Object.assign({},opts,{headers:h})).then(function(r){return r.json();});
+  }
+
+  function checkGraphStatus() {
+    apiCall('/api/enrich?provider=graph-status').then(function(d){
+      setGraphStatus(d && d.connected ? d : {connected:false});
+    }).catch(function(){setGraphStatus({connected:false});});
+  }
+
+  function exchangeGraphToken(code, state) {
+    setGraphLoading(true);
+    apiCall('/api/enrich?provider=graph-token', {
+      method:'POST', body:JSON.stringify({code:code, state:state})
+    }).then(function(d){
+      if (d && d.connected) {
+        setGraphStatus(d);
+        notify('✓ Outlook conectado: '+d.email, '#34D399');
+      } else {
+        notify('⚠ Erro ao conectar: '+(d&&d.error||'desconhecido'), '#E24B4A');
+      }
+      setGraphLoading(false);
+    }).catch(function(){
+      notify('⚠ Erro de rede ao trocar tokens', '#E24B4A');
+      setGraphLoading(false);
+    });
+  }
+
+  function connectOutlook() {
+    setGraphLoading(true);
+    apiCall('/api/enrich?provider=graph-init', {method:'POST',body:'{}'}).then(function(d){
+      setGraphLoading(false);
+      if (d && d.authUrl) {
+        window.location.href = d.authUrl;
+      } else {
+        notify('⚠ Erro ao iniciar OAuth: '+(d&&d.error||'sem URL'), '#E24B4A');
+      }
+    }).catch(function(){setGraphLoading(false);notify('⚠ Erro de rede','#E24B4A');});
+  }
+
+  function disconnectOutlook() {
+    apiCall('/api/enrich?provider=graph-disconnect', {method:'POST',body:'{}'}).then(function(){
+      setGraphStatus({connected:false});
+      notify('Outlook desconectado', '#9B9BB4');
+    });
+  }
+
+  function createDrafts() {
+    var emailItems = (fila||[]).filter(function(x){
+      return x.canal==='email' && x.status==='aprovado' && !x.outlook_message_id;
+    });
+    if (!emailItems.length) { notify('Nenhum item email aprovado sem rascunho','#9B9BB4'); return; }
+    var newBusy = {};
+    emailItems.forEach(function(x){newBusy[x.id]='creating';});
+    setDraftBusy(newBusy);
+    var promises = emailItems.map(function(item){
+      var d = item.crm_decisores||{};
+      return apiCall('/api/enrich?provider=graph-draft', {
+        method:'POST',
+        body: JSON.stringify({
+          fila_id:         item.id,
+          assunto:         item.assunto||'',
+          corpo:           item.corpo||'',
+          decisor:         {email:d.email, nome:d.nome||''},
+          etapa_cadencia:  item.etapa_cadencia,
+          thread_ref:      item.thread_ref||''
+        })
+      }).then(function(resp){
+        if (resp && (resp.outlook_message_id||resp.skipped)) {
+          setDraftBusy(function(p){return Object.assign({},p,{[item.id]:'ok'});});
+          setFila(function(prev){
+            return (prev||[]).map(function(x){
+              return x.id===item.id
+                ? Object.assign({},x,{
+                    outlook_message_id:resp.outlook_message_id||x.outlook_message_id,
+                    rascunho_criado_em:resp.rascunho_criado_em||x.rascunho_criado_em,
+                    outlook_draft_link:resp.outlook_draft_link||x.outlook_draft_link
+                  })
+                : x;
+            });
+          });
+          if (resp.is_reply&&!resp.found_thread) notify('⚠ Thread não encontrada para '+item.assunto+'. Rascunho criado como nova mensagem.','#EF9F27');
+        } else {
+          setDraftBusy(function(p){return Object.assign({},p,{[item.id]:'error'});});
+          var errMsg = resp&&resp.error||'Erro desconhecido';
+          setFila(function(prev){return (prev||[]).map(function(x){return x.id===item.id?Object.assign({},x,{rascunho_erro:errMsg}):x;});});
+        }
+      }).catch(function(e){
+        setDraftBusy(function(p){return Object.assign({},p,{[item.id]:'error'});});
+      });
+    });
+    Promise.all(promises).then(function(){
+      notify('Rascunhos criados! Verifique a pasta Rascunhos no Outlook.','#34D399');
+    });
+  }
+
+  function syncDrafts() {
+    var withDraft = (fila||[]).filter(function(x){return x.canal==='email'&&x.outlook_message_id&&x.status==='aprovado';});
+    if (!withDraft.length) { notify('Nenhum rascunho para sincronizar','#9B9BB4'); return; }
+    var ids = withDraft.map(function(x){return {fila_id:x.id, outlook_message_id:x.outlook_message_id};});
+    apiCall('/api/enrich?provider=graph-sync', {method:'POST', body:JSON.stringify({ids:ids})}).then(function(d){
+      if (!d||!d.synced) return;
+      var enviados = d.synced.filter(function(s){return s.enviado;});
+      if (enviados.length) {
+        var now = new Date().toISOString();
+        setFila(function(prev){
+          return (prev||[]).filter(function(x){
+            return !enviados.find(function(s){return s.fila_id===x.id;});
+          });
+        });
+        setEnvHoje(function(n){return n+enviados.length;});
+        notify('✓ '+enviados.length+' enviado(s) via Outlook sincronizados','#34D399');
+      } else {
+        notify('Nenhum rascunho enviado encontrado','#9B9BB4');
+      }
+    });
+  }
+
+  function sendApproved() {
+    var toSend = (fila||[]).filter(function(x){
+      return x.canal==='email' && x.status==='aprovado' && x.outlook_message_id;
+    });
+    if (!toSend.length) { notify('Nenhum rascunho pronto para enviar','#9B9BB4'); return; }
+    setSending(true); setStopSend(false);
+    var idx = 0;
+    function next() {
+      if (stopSend||idx>=toSend.length) { setSending(false); notify('Envio concluído: '+idx+' e-mails','#34D399'); return; }
+      var item = toSend[idx];
+      var d = item.crm_decisores||{};
+      idx++;
+      apiCall('/api/enrich?provider=graph-send', {
+        method:'POST',
+        body: JSON.stringify({
+          fila_id:            item.id,
+          outlook_message_id: item.outlook_message_id,
+          decisor_id:         item.decisor_id,
+          empresa_id:         item.empresa_id,
+          canal:              item.canal,
+          assunto:            item.assunto,
+          contexto:           item.contexto_para_aprovacao
+        })
+      }).then(function(d){
+        if (d && d.enviado) {
+          setFila(function(prev){return (prev||[]).filter(function(x){return x.id!==item.id;});});
+          setEnvHoje(function(n){return n+1;});
+        }
+        if (idx<toSend.length) {
+          var delay = 60000 + Math.random()*60000; // 60–120s
+          setTimeout(next, delay);
+        } else {
+          setSending(false);
+          notify('Envio concluído: '+idx+' e-mails','#34D399');
+        }
+      }).catch(function(){
+        if (idx<toSend.length) setTimeout(next, 5000);
+        else { setSending(false); }
+      });
+    }
+    next();
+  }
+
   useEffect(function(){
     var t = setInterval(function(){setTick(function(n){return n+1;});},60000);
     return function(){clearInterval(t);};
@@ -2850,8 +3053,53 @@ function FilaDoDia() {
         React.createElement('span',{style:{fontSize:13,fontWeight:500,color:'#F5F5F5',letterSpacing:'-.3px'}},'Fila do dia'),
         React.createElement('span',{style:{fontFamily:mono,fontSize:9,padding:'1px 7px',borderRadius:100,background:'rgba(52,211,153,.07)',color:'#34D399',border:'.5px solid rgba(52,211,153,.18)'}},envHoje+' / '+metaDia+' enviados'),
         abaItems.length>0&&React.createElement('span',{style:{fontFamily:mono,fontSize:8,color:'#9B9BB4'}},abaItems.length+' aprovados nesta aba'),
-        React.createElement('button',{onClick:function(){setCfgOpen(function(s){return !s;});},style:{marginLeft:'auto',fontFamily:mono,fontSize:8,padding:'2px 8px',border:'.5px solid #2D2D44',borderRadius:3,background:cfgOpen?'rgba(255,107,43,.07)':'transparent',color:cfgOpen?'#FF6B2B':'#555',cursor:'pointer'}},'⚙ Config'),
+        // Indicador e botão Outlook
+        graphStatus&&graphStatus.connected
+          ? React.createElement('div',{style:{display:'flex',alignItems:'center',gap:5}},
+              React.createElement('span',{style:{fontFamily:mono,fontSize:8,color:graphStatus.email==='pedro.ica@galeriaholding.co'?'#34D399':'#E24B4A'}},
+                '● '+(graphStatus.email||'conectado')+(graphStatus.email!=='pedro.ica@galeriaholding.co'?'  ⚠ conta errada':'')),
+              React.createElement('button',{onClick:disconnectOutlook,style:{fontFamily:mono,fontSize:7,padding:'1px 6px',borderRadius:3,border:'.5px solid #333',background:'transparent',color:'#555',cursor:'pointer'}},'desconectar')
+            )
+          : React.createElement('button',{
+              disabled:graphLoading,
+              onClick:connectOutlook,
+              style:{fontFamily:mono,fontSize:8,padding:'2px 10px',borderRadius:3,border:'.5px solid rgba(96,165,250,.3)',background:'rgba(96,165,250,.06)',color:graphLoading?'#555':'#60A5FA',cursor:graphLoading?'default':'pointer'}
+            }, graphLoading?'Conectando…':'⚡ Conectar Outlook'),
+        React.createElement('button',{onClick:function(){setCfgOpen(function(s){return !s;});},style:{fontFamily:mono,fontSize:8,padding:'2px 8px',border:'.5px solid #2D2D44',borderRadius:3,background:cfgOpen?'rgba(255,107,43,.07)':'transparent',color:cfgOpen?'#FF6B2B':'#555',cursor:'pointer'}},'⚙ Config'),
         React.createElement('button',{onClick:load,style:{fontFamily:mono,fontSize:8,padding:'2px 8px',border:'.5px solid #2D2D44',borderRadius:3,background:'transparent',color:'#555',cursor:'pointer'}},'↺')
+      ),
+      // Ações em lote (apenas aba Email com Outlook conectado)
+      aba==='email'&&graphStatus&&graphStatus.connected&&React.createElement('div',{style:{display:'flex',gap:5,alignItems:'center',padding:'5px 0',marginBottom:3,flexWrap:'wrap'}},
+        React.createElement('button',{
+          onClick:createDrafts,
+          disabled:!(fila||[]).some(function(x){return x.canal==='email'&&!x.outlook_message_id;}),
+          style:{fontFamily:mono,fontSize:8,padding:'3px 10px',borderRadius:3,
+            border:'.5px solid rgba(96,165,250,.3)',background:'rgba(96,165,250,.06)',color:'#60A5FA',cursor:'pointer'}
+        },'📥 Criar rascunhos do lote'),
+        React.createElement('button',{
+          onClick:syncDrafts,
+          style:{fontFamily:mono,fontSize:8,padding:'3px 10px',borderRadius:3,
+            border:'.5px solid #2D2D44',background:'transparent',color:'#555',cursor:'pointer'}
+        },'⟳ Sincronizar enviados'),
+        sendEnabled&&!sending&&React.createElement('button',{
+          onClick:sendApproved,
+          disabled:!(fila||[]).some(function(x){return x.canal==='email'&&x.outlook_message_id&&x.status==='aprovado';}),
+          style:{fontFamily:mono,fontSize:8,padding:'3px 10px',borderRadius:3,
+            border:'.5px solid rgba(52,211,153,.3)',background:'rgba(52,211,153,.06)',color:'#34D399',cursor:'pointer'}
+        },'▶ Enviar aprovados'),
+        sending&&React.createElement(React.Fragment,null,
+          React.createElement('span',{style:{fontFamily:mono,fontSize:8,color:'#34D399'}},'Enviando…'),
+          React.createElement('button',{onClick:function(){setStopSend(true);},
+            style:{fontFamily:mono,fontSize:8,padding:'3px 8px',borderRadius:3,border:'.5px solid rgba(226,75,74,.3)',background:'rgba(226,75,74,.05)',color:'#E24B4A',cursor:'pointer'}},'⏹ Parar')
+        ),
+        React.createElement('label',{style:{fontFamily:mono,fontSize:7,color:sendEnabled?'#EF9F27':'#333',cursor:'pointer',display:'flex',alignItems:'center',gap:3,marginLeft:'auto'}},
+          React.createElement('input',{type:'checkbox',checked:sendEnabled,onChange:function(e){
+            var v=e.target.checked;
+            setSendEnabled(v);
+            try{localStorage.setItem('gh_graph_send_enabled',v?'true':'false');}catch{}
+          }}),
+          'Envio automático habilitado'
+        )
       ),
       // Barra de progresso
       React.createElement('div',{style:{height:3,background:'#1A1A2E',borderRadius:2,marginBottom:7}},
@@ -2878,7 +3126,17 @@ function FilaDoDia() {
             React.createElement('input',{type:'radio',name:'outlookMode',value:m,checked:outlookMode===m,onChange:function(){setOutlookMode(m);localStorage.setItem('gh_fila_outlook',m);}}),
             lbl
           );
-        })
+        }),
+        React.createElement('div',{style:{marginTop:10,paddingTop:8,borderTop:'.5px solid #1A1A2E'}}),
+        React.createElement('div',{style:{fontFamily:mono,fontSize:9,color:'#9B9BB4',marginBottom:6}},'Envio automático via Graph:'),
+        React.createElement('label',{style:{fontFamily:mono,fontSize:9,color:sendEnabled?'#EF9F27':'#555',cursor:'pointer',display:'flex',alignItems:'center',gap:6}},
+          React.createElement('input',{type:'checkbox',checked:sendEnabled,onChange:function(e){
+            var v=e.target.checked;
+            setSendEnabled(v);
+            try{localStorage.setItem('gh_graph_send_enabled',v?'true':'false');}catch{}
+          }}),
+          sendEnabled?'Habilitado — botão "Enviar aprovados" visível':'Desabilitado (padrão seguro)'
+        )
       ),
       // Abas de canal + botão de sequência (WA/LinkedIn)
       React.createElement('div',{style:{display:'flex',gap:0,alignItems:'center',marginTop:2}},
@@ -3020,7 +3278,21 @@ function FilaDoDia() {
                         )
                   ),
                   busy[item.id]==='enviado'&&React.createElement('span',{style:{fontFamily:mono,fontSize:8,color:'#34D399'}},'↑ Registrando…'),
-                  busy[item.id]==='pular'&&React.createElement('span',{style:{fontFamily:mono,fontSize:8,color:'#555'}},'↑ Pulando…')
+                  busy[item.id]==='pular'&&React.createElement('span',{style:{fontFamily:mono,fontSize:8,color:'#555'}},'↑ Pulando…'),
+                  // Badge rascunho Graph
+                  aba==='email'&&draftBusy[item.id]&&React.createElement('span',{style:{fontFamily:mono,fontSize:7,color:'#60A5FA'}},'📥 criando rascunho…'),
+                  aba==='email'&&!draftBusy[item.id]&&item.rascunho_erro&&React.createElement('span',{
+                    title:item.rascunho_erro,
+                    style:{fontFamily:mono,fontSize:7,color:'#E24B4A',cursor:'help'}
+                  },'⚠ erro rascunho'),
+                  aba==='email'&&!draftBusy[item.id]&&item.outlook_message_id&&!item.rascunho_erro&&React.createElement(
+                    item.outlook_draft_link?'a':'span',
+                    Object.assign(
+                      {style:{fontFamily:mono,fontSize:7,color:'#34D399',textDecoration:'none'}},
+                      item.outlook_draft_link?{href:item.outlook_draft_link,target:'_blank',rel:'noopener noreferrer'}:{}
+                    ),
+                    '📧 rascunho pronto'+(item.outlook_draft_link?' ↗':'')
+                  )
                 )
               );
             }),
@@ -4148,6 +4420,12 @@ function App() {
   }, [accs]);
   useEffect(() => {
     window.__setAlertaBadge = setAlertaBadge;
+  }, []);
+  // Auto-navega para Fila quando retorna do OAuth Microsoft
+  useEffect(() => {
+    try {
+      if (localStorage.getItem('gh_graph_pending')) navTo('fila', null, null);
+    } catch(e) {}
   }, []);
   useEffect(() => {
     // Auto-show config on first load if no Claude key

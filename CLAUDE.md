@@ -126,10 +126,70 @@ Novas funcionalidades de API devem usar um arquivo existente (ex: `api/enrich.js
 ## Tela Fila do dia (FilaDoDia, block3.js)
 
 - Mostra `status='aprovado'` para o canal da aba (Email/WhatsApp/LinkedIn)
-- Ações: Abrir no Outlook (`mailto` ou deeplink outlook.office.com) → Enviei → grava `crm_toques` + atualiza `crm_decisores.ultimo_toque_em`
+- Ações: Abrir no Outlook (Outlook Web deeplink padrão; ou `mailto` via Config) → Enviei → grava `crm_toques` + atualiza `crm_decisores.ultimo_toque_em`
 - Follow-up (`etapa_cadencia >= 2`): copia corpo, mostra thread_ref para localizar thread
 - Pular: grava `motivo_pulo` em `crm_fila`
 - Desfazer: volta para `status='aprovado'`
 - Editável inline (assunto + corpo), salva em `crm_fila` ao sair do campo
 - Atalhos: ↑/↓ navegar, O abrir, E enviei, P pular (desligados em input/textarea)
 - Meta diária: `crm_configuracoes.email_daily_max` (padrão 50)
+- Modo sequência (WA/LinkedIn): "▶ Sequência" → abre o primeiro item; após Enviei/Pular, abre o próximo automaticamente
+- WhatsApp: número normalizado com prefixo 55 (sem duplicação), corpo com `encodeURIComponent`
+
+---
+
+## Microsoft Graph — Rascunhos de E-mail
+
+### Arquitetura
+
+```
+Frontend (block3.js)
+  ↓ POST /api/enrich?provider=graph-init
+  ← { authUrl }  →  window.location.href = authUrl (PKCE)
+  ↓ Microsoft redireciona para https://galeria-holding-sage.vercel.app?code=...&state=graphoauth_...
+  ↓ IIFE no topo de block3.js → localStorage('gh_graph_pending')
+  ↓ useEffect navega para 'fila'; FilaDoDia mount useEffect troca code por token
+  POST /api/enrich?provider=graph-token  →  tokens salvos em crm_oauth_tokens (service-key only)
+```
+
+### Variáveis de ambiente necessárias (Vercel)
+- `MS_CLIENT_ID` — Application (client) ID do app Azure Entra
+- `SUPA_CRM_SERVICE_KEY` — já existente; usado para ler/escrever `crm_oauth_tokens`
+
+### Tabela crm_oauth_tokens
+RLS RESTRICTIVE — política "negar_tudo" bloqueia anon e authenticated.
+Apenas service key (server-side) pode ler/escrever.
+Colunas: `user_id`, `access_token`, `refresh_token`, `expires_at`, `pkce_state`, `pkce_verifier`, `graph_email`
+
+### crm_fila — colunas Graph
+- `outlook_message_id text` — ID do rascunho no Graph
+- `rascunho_criado_em timestamptz` — quando foi criado
+- `outlook_draft_link text` — URL de abertura no Outlook Web
+- `rascunho_erro text` — mensagem de erro se falhar
+
+### Fluxo de segurança
+1. Nunca enviar sem ação do usuário — "Enviar aprovados" só aparece se `sendEnabled=true` (toggle em Config, desligado por padrão)
+2. Nunca criar rascunho de item não-aprovado
+3. Nunca criar duas vezes — verifica `outlook_message_id` antes de chamar Graph
+4. Tokens ficam apenas em `crm_oauth_tokens` server-side; nunca retornam ao frontend
+5. `MS_CLIENT_ID` é variável de ambiente Vercel; nunca no código-fonte
+
+### Providers em api/enrich.js
+- `graph-init` — gera PKCE + authUrl (delegated scopes: Mail.ReadWrite Mail.Send User.Read offline_access)
+- `graph-token` — troca code por tokens, armazena em Supabase
+- `graph-status` — retorna `{connected, email}` sem expor tokens
+- `graph-disconnect` — deleta linha de tokens
+- `graph-draft` — cria rascunho via Graph (ou createReply em follow-up); assina com PNG inline
+- `graph-send` — envia rascunho via `/me/messages/{id}/send`
+- `graph-sync` — verifica isDraft flag, marca enviados no CRM
+
+### Assinatura de e-mail
+Arquivo: `assinatura_galeria_holding.png` na raiz do projeto (não comitar; entregar à parte).
+Carregado como Base64 no cold start de `api/enrich.js`. Se ausente, fallback para texto.
+Incorporado como `fileAttachment` com `isInline:true` e `contentId: "assinatura001"`.
+HTML body referencia via `<img src="cid:assinatura001" width="520">`.
+
+### Regras adicionais de segurança
+8. `.env` é gitignored — nunca commit.
+9. `MS_CLIENT_ID` vai apenas em variável de ambiente Vercel.
+10. Nunca logar access_token ou refresh_token em nenhum arquivo.
