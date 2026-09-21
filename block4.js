@@ -202,6 +202,105 @@ function EmpresasView({
   const [fWa3, setFWa3] = useState("");
   const [fIg, setFIg] = useState("");
   const [fFb, setFFb] = useState("");
+  // ── Lusha enrichment ─────────────────────────────────────────────────────
+  const [lushaOpen,       setLushaOpen]       = useState(false);
+  const [lushaStep,       setLushaStep]       = useState('idle');
+  const [lushaCandidates, setLushaCandidates] = useState([]);
+  const [lushaSelected,   setLushaSelected]   = useState([]);
+  const [lushaResults,    setLushaResults]    = useState([]);
+  const [lushaCredits,    setLushaCredits]    = useState(null);
+  const [lushaError,      setLushaError]      = useState('');
+  const [empresaSupa,     setEmpresaSupa]     = useState(null);
+
+  function supaJwtFig(path, opts) {
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
+    var h = Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+jwt,'apikey':'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r'}, opts&&opts.headers);
+    return fetch('https://uetltlnjmobeiunxfsqi.supabase.co'+path, Object.assign({},opts,{headers:h})).then(function(r){return r.json();});
+  }
+
+  const startLusha = async () => {
+    if (!selEmpresa) return;
+    setLushaOpen(true);
+    setLushaStep('loading');
+    setLushaError('');
+    setLushaCandidates([]);
+    setLushaSelected([]);
+    setLushaResults([]);
+
+    var empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=eq.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominios&limit=1');
+    var emp = (Array.isArray(empRows) && empRows[0]) || null;
+    setEmpresaSupa(emp);
+
+    var domain = '';
+    if (emp && emp.website) domain = emp.website.replace(/^https?:\/\//,'').replace(/\/.*/,'').replace(/^www\./,'');
+    else if (emp && emp.dominios && emp.dominios.length) domain = emp.dominios[0];
+
+    var params = new URLSearchParams({provider:'lusha-search', company: selEmpresa.nome});
+    if (domain) params.set('domain', domain);
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
+    var resp = await fetch('/api/enrich?'+params, {headers:{'Authorization':'Bearer '+jwt}}).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
+
+    if (resp.error || !Array.isArray(resp.contacts)) {
+      setLushaError(resp.error || 'Sem candidatos. Verifique se LUSHA_KEY está configurada na Vercel.');
+      setLushaStep('idle');
+      return;
+    }
+    if (!resp.contacts.length) {
+      setLushaError('Nenhum CEO/CMO encontrado para esta empresa no Lusha.');
+      setLushaStep('idle');
+      return;
+    }
+    setLushaCandidates(resp.contacts);
+    setLushaCredits(resp.credits);
+    setLushaStep('select');
+  };
+
+  const revealLusha = async () => {
+    if (!lushaSelected.length) return;
+    setLushaStep('revealing');
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
+    var resp = await fetch('/api/enrich?provider=lusha-reveal', {
+      method:'POST',
+      headers:{'Content-Type':'application/json','Authorization':'Bearer '+jwt},
+      body: JSON.stringify({contacts: lushaSelected})
+    }).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
+
+    if (resp.error) { setLushaError(resp.error); setLushaStep('select'); return; }
+    if (resp.credits != null) setLushaCredits(resp.credits);
+    setLushaResults(resp.results || []);
+    setLushaStep('done');
+  };
+
+  const saveToSupa = async (result) => {
+    if (!result || result.saved) return;
+    var emp = empresaSupa;
+    if (!emp || !emp.id) { alert('Empresa não encontrada no banco. Cadastre primeiro via Radar.'); return; }
+    var nome = (result.firstName+' '+result.lastName).trim();
+    var qParts = [];
+    if (result.email) qParts.push('email.eq.'+encodeURIComponent(result.email));
+    if (result.linkedin_url) qParts.push('linkedin_url.eq.'+encodeURIComponent(result.linkedin_url));
+    var existRows = [];
+    if (qParts.length) existRows = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+emp.id+'&or=('+qParts.join(',')+')'+'&select=id&limit=1');
+    if (!existRows || !existRows.length) existRows = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+emp.id+'&nome=ilike.'+encodeURIComponent(nome)+'&select=id&limit=1');
+    var now = new Date().toISOString();
+    var row = { empresa_id:emp.id, nome, cargo:result.title||'', email:result.email||null, wa:result.wa||null, linkedin_url:result.linkedin_url||null, fonte:'lusha', status:'ativo', temperatura:0, wa_verificado:false, criado_em:now, atualizado_em:now };
+    var saved;
+    if (existRows && existRows.length && existRows[0].id) {
+      var patch = { cargo:row.cargo, email:row.email, wa:row.wa, linkedin_url:row.linkedin_url, atualizado_em:now };
+      saved = await supaJwtFig('/rest/v1/crm_decisores?id=eq.'+existRows[0].id, { method:'PATCH', headers:{'Prefer':'return=representation'}, body:JSON.stringify(patch) });
+      saved = Array.isArray(saved) ? saved[0] : saved;
+    } else {
+      saved = await supaJwtFig('/rest/v1/crm_decisores', { method:'POST', headers:{'Prefer':'return=representation'}, body:JSON.stringify(row) });
+      saved = Array.isArray(saved) ? saved[0] : saved;
+    }
+    setLushaResults(function(prev){ return prev.map(function(r2){ return (r2.firstName===result.firstName&&r2.lastName===result.lastName)?Object.assign({},r2,{saved:true}):r2; }); });
+    // Atualiza estado local também
+    var k = curGrupo.id+'_'+selEmpresa.rank;
+    var ex = (accs||{})[k] || {decisors:[],sugeridos:[],activities:[]};
+    var novoAcc = Object.assign({}, ex, { decisors: (ex.decisors||[]).concat([{nome, cargo:result.title||'', email:result.email||'', wa:result.wa||'', linkedin:result.linkedin_url||'', addedAt:new Date().toLocaleDateString('pt-BR')}]) });
+    var newAccs = Object.assign({}, accs||{}, {[k]: novoAcc});
+    setAccs(newAccs); lsSet('gh_decisores_v3', newAccs);
+  };
 
   // ── dados ──────────────────────────────────────────────────────────────────
   const empresas = useMemo(() => {
@@ -559,7 +658,89 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         fontSize: 16,
         lineHeight: 1
       }
-    }, "+"), " Adicionar Decisor")), /*#__PURE__*/React.createElement("div", {
+    }, "+"), " Adicionar Decisor"),
+    React.createElement("button", {
+      onClick: startLusha,
+      style: { padding:"8px 14px", borderRadius:7, border:"none", background:"#818CF8", color:"#fff", fontSize:12, cursor:"pointer", fontWeight:700, display:"flex", alignItems:"center", gap:6, marginLeft:8 }
+    }, "🔍 Enriquecer via Lusha")),
+    lushaOpen && React.createElement("div", {
+      style: { position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.75)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center" },
+      onClick: function(e){ if(e.target===e.currentTarget){ setLushaOpen(false); setLushaStep('idle'); } }
+    }, React.createElement("div", {
+      style: { background:"#0d0d1a", border:"1px solid #2D2D44", borderRadius:12, padding:28, minWidth:340, maxWidth:560, width:"90%", maxHeight:"80vh", overflowY:"auto" }
+    },
+      React.createElement("div", {style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}},
+        React.createElement("div", {style:{fontWeight:700,fontSize:15,color:"#818CF8"}}, "🔍 Enriquecer via Lusha — "+selEmpresa.nome),
+        React.createElement("button", {onClick:function(){setLushaOpen(false);setLushaStep('idle');},style:{background:"none",border:"none",color:"#9B9BB4",fontSize:22,cursor:"pointer",lineHeight:1}}, "×")
+      ),
+      lushaError && React.createElement("div", {style:{background:"#2D1414",border:"1px solid #7f2020",borderRadius:8,padding:"10px 14px",marginBottom:16,color:"#FF6B6B",fontSize:12}}, lushaError),
+      lushaStep==="loading" && React.createElement("div", {style:{textAlign:"center",padding:"40px 0",color:"#818CF8",fontSize:13}}, "Buscando decisores no Lusha…"),
+      lushaStep==="select" && React.createElement("div", null,
+        React.createElement("div", {style:{fontSize:12,color:"#9B9BB4",marginBottom:12}},
+          "Selecione até 5 candidatos para revelar (sem gastar crédito ainda):",
+          lushaCredits != null && React.createElement("span", {style:{marginLeft:8,color:lushaCredits<20?'#FF6B6B':'#34D399'}}, "Créditos: "+lushaCredits)
+        ),
+        lushaCandidates.map(function(c,i){
+          var sel = lushaSelected.some(function(s){return s.lushaId===c.lushaId;});
+          return React.createElement("div", {
+            key:c.lushaId||i,
+            onClick:function(){
+              if(sel){ setLushaSelected(lushaSelected.filter(function(s){return s.lushaId!==c.lushaId;})); }
+              else if(lushaSelected.length<5){ setLushaSelected(lushaSelected.concat([c])); }
+            },
+            style:{border:"1px solid "+(sel?"#818CF8":"#2D2D44"),background:sel?"#1a1a3a":"#111120",borderRadius:8,padding:"10px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:12}
+          },
+            React.createElement("div", {style:{width:18,height:18,borderRadius:4,border:"2px solid "+(sel?"#818CF8":"#444"),background:sel?"#818CF8":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff"}}, sel?"✓":""),
+            React.createElement("div", {style:{flex:1}},
+              React.createElement("div", {style:{fontWeight:600,fontSize:13,color:"#F5F5F5"}}, c.firstName+" "+c.lastName),
+              React.createElement("div", {style:{fontSize:11,color:"#818CF8",marginTop:2}}, c.title),
+              React.createElement("div", {style:{fontSize:10,color:"#555",marginTop:2,display:"flex",gap:10}},
+                c.hasEmail && React.createElement("span", null, "✉ e-mail"),
+                c.hasPhone && React.createElement("span", null, "📱 tel"),
+                c.hasLinkedin && React.createElement("span", null, "🔗 linkedin")
+              )
+            )
+          );
+        }),
+        React.createElement("div", {style:{display:"flex",gap:10,marginTop:18}},
+          React.createElement("button", {onClick:function(){setLushaOpen(false);setLushaStep('idle');},style:{padding:"9px 20px",borderRadius:7,border:"1px solid #2D2D44",background:"transparent",color:"#9B9BB4",fontSize:12,cursor:"pointer"}}, "Cancelar"),
+          React.createElement("button", {onClick:revealLusha,disabled:!lushaSelected.length,style:{padding:"9px 20px",borderRadius:7,border:"none",background:lushaSelected.length?"#818CF8":"#333",color:"#fff",fontSize:12,cursor:lushaSelected.length?"pointer":"default",fontWeight:700}},
+            "Revelar "+lushaSelected.length+" selecionado"+(lushaSelected.length===1?"":"s")+" →"
+          )
+        )
+      ),
+      lushaStep==="revealing" && React.createElement("div", {style:{textAlign:"center",padding:"40px 0",color:"#818CF8",fontSize:13}}, "Revelando e salvando…"),
+      lushaStep==="done" && React.createElement("div", null,
+        React.createElement("div", {style:{fontSize:13,color:"#34D399",marginBottom:14,fontWeight:600}},
+          "✓ "+lushaResults.length+" decisor"+(lushaResults.length===1?"":"es")+" processado"+(lushaResults.length===1?"":"s"),
+          lushaCredits != null && React.createElement("span", {style:{marginLeft:10,fontSize:11,color:lushaCredits<20?'#FF6B6B':'#9B9BB4'}},
+            " — Créditos restantes: "+lushaCredits+(lushaCredits<20?" ⚠ Abaixo de 20%!":"")
+          )
+        ),
+        lushaResults.map(function(r,i){
+          return React.createElement("div", {
+            key:i,
+            style:{border:"1px solid "+(r.error?"#7f2020":"#1a3a1a"),background:r.error?"#1a0f0f":"#0f1a0f",borderRadius:8,padding:"10px 14px",marginBottom:8}
+          },
+            React.createElement("div", {style:{fontWeight:600,fontSize:13,color:"#F5F5F5",display:"flex",justifyContent:"space-between"}},
+              React.createElement("span", null, r.firstName+" "+r.lastName),
+              r.saved && React.createElement("span", {style:{fontSize:11,color:"#34D399"}}, "✓ salvo"),
+              r.error && React.createElement("span", {style:{fontSize:11,color:"#FF6B6B"}}, "erro")
+            ),
+            !r.error && React.createElement("div", {style:{fontSize:11,color:"#818CF8",marginTop:2}}, r.title),
+            !r.error && React.createElement("div", {style:{fontSize:10,color:"#555",marginTop:4,display:"flex",flexDirection:"column",gap:2}},
+              r.email && React.createElement("span", null, "✉ "+r.email+" "+(r.emailType?'('+r.emailType+')':'')),
+              r.wa && React.createElement("span", null, "📱 "+r.wa),
+              r.linkedin_url && React.createElement("span", null, "🔗 "+r.linkedin_url)
+            ),
+            !r.error && !r.saved && React.createElement("button", {onClick:function(){saveToSupa(r);},style:{marginTop:8,padding:"5px 12px",borderRadius:5,border:"none",background:"#818CF8",color:"#fff",fontSize:11,cursor:"pointer"}}, "Salvar em decisores"),
+            r.error && React.createElement("div", {style:{fontSize:11,color:"#FF6B6B",marginTop:4}}, r.error)
+          );
+        }),
+        React.createElement("button", {onClick:function(){setLushaOpen(false);setLushaStep('idle');},style:{marginTop:16,padding:"9px 24px",borderRadius:7,border:"none",background:"#2D2D44",color:"#F5F5F5",fontSize:12,cursor:"pointer"}}, "Fechar")
+      )
+    )),
+    /*#__PURE__*/React.createElement("div", {
       style: {
         flex: 1,
         overflowY: "auto",
@@ -764,7 +945,11 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       style: {
         fontSize: 18
       }
-    }, "+"), " Adicionar Decisor"))));
+    }, "+"), " Adicionar Decisor"),
+    React.createElement("button", {
+      onClick: startLusha,
+      style: { padding:"12px 22px", borderRadius:8, border:"none", background:"#818CF8", color:"#fff", fontSize:13, cursor:"pointer", fontWeight:700, display:"inline-flex", alignItems:"center", gap:8, marginTop:10 }
+    }, "🔍 Enriquecer via Lusha"))));
   };
 
   // ── lista de empresas ──────────────────────────────────────────────────────
