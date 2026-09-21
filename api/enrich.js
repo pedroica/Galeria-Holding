@@ -13,7 +13,7 @@ const MS_CLIENT_ID    = process.env.MS_CLIENT_ID;
 const MS_CLIENT_SECRET= process.env.MS_CLIENT_SECRET;
 const MS_TENANT_ID    = process.env.MS_TENANT_ID;
 const SUPA_URL        = 'https://uetltlnjmobeiunxfsqi.supabase.co';
-const SUPA_SVC        = process.env.SUPA_CRM_SERVICE_KEY;
+const SUPA_SVC        = process.env.SUPA_CRM_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SUPA_ANON       = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
 
 // Carrega imagem de assinatura uma vez no cold start
