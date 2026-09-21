@@ -153,8 +153,10 @@ Frontend (block3.js)
 ```
 
 ### Variáveis de ambiente necessárias (Vercel)
-- `MS_CLIENT_ID` — Application (client) ID do app Azure Entra
-- `SUPA_CRM_SERVICE_KEY` — já existente; usado para ler/escrever `crm_oauth_tokens`
+- `MS_CLIENT_ID` — Application (client) ID: `7fa6efd1-e50f-4b08-ade7-4d6385daba69`
+- `MS_CLIENT_SECRET` — client secret, **expira 2028-09-21** — renovar antes com `az ad app credential reset --id 7fa6efd1-e50f-4b08-ade7-4d6385daba69 --years 2 --display-name CRM-Vercel`
+- `MS_TENANT_ID` — tenant GALERIA: `32d2ee77-b1dd-4036-bf8f-b3c09f681bb9`
+- `SUPA_CRM_SERVICE_KEY` / `SUPABASE_SERVICE_ROLE_KEY` — já existente; código aceita ambos
 
 ### Tabela crm_oauth_tokens
 RLS RESTRICTIVE — política "negar_tudo" bloqueia anon e authenticated.
