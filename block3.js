@@ -2564,10 +2564,12 @@ function FilaDoDia() {
   const [focused,    setFocused]    = useState(0);
   const [filtAg,     setFiltAg]     = useState('');
   const [filtEt,     setFiltEt]     = useState('');
-  const [outlookMode,setOutlookMode]= useState(localStorage.getItem('gh_fila_outlook')||'mailto');
+  const [outlookMode,setOutlookMode]= useState(localStorage.getItem('gh_fila_outlook')||'outlook');
   const [cfgOpen,    setCfgOpen]    = useState(false);
   const [notif,      setNotif]      = useState(null);
   const [tick,       setTick]       = useState(0);
+  const [seqAtivo,   setSeqAtivo]   = useState(false);
+  const [seqTrigger, setSeqTrigger] = useState(0);
 
   function notify(msg, color) {
     setNotif({msg:msg, color:color||'#60A5FA'});
@@ -2622,6 +2624,20 @@ function FilaDoDia() {
     try{localStorage.setItem('gh_fila_abertos',JSON.stringify(abertos));}catch{}
   },[abertos]);
 
+  // Modo sequência: após cada Enviei/Pular abre o próximo item automaticamente
+  useEffect(function(){
+    if (!seqAtivo || seqTrigger===0) return;
+    var item = abaItems[focused];
+    if (!item) {
+      setSeqAtivo(false);
+      setNotif({msg:'🎉 Sequência concluída!', color:'#34D399'});
+      setTimeout(function(){setNotif(null);},4000);
+      return;
+    }
+    var t = setTimeout(function(){abrirItem(item);},300);
+    return function(){clearTimeout(t);};
+  },[seqTrigger]);
+
   function gv(item, f) {
     return (editando[item.id]&&editando[item.id][f]!==undefined) ? editando[item.id][f] : (item[f]||'');
   }
@@ -2637,12 +2653,14 @@ function FilaDoDia() {
   }
 
   function buildLink(email, assunto, corpo) {
-    var bodyEnc = corpo.replace(/\r?\n/g,'%0D%0A');
     var subj = encodeURIComponent(assunto);
-    if (outlookMode==='outlook') {
-      return 'https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(email)+'&subject='+subj+'&body='+bodyEnc;
+    if (outlookMode==='mailto') {
+      var bodyEncMail = corpo.replace(/\r?\n/g,'%0D%0A');
+      return 'mailto:'+encodeURIComponent(email)+'?subject='+subj+'&body='+bodyEncMail;
     }
-    return 'mailto:'+encodeURIComponent(email)+'?subject='+subj+'&body='+bodyEnc;
+    // Outlook Web deeplink: encode body fully including newlines
+    var bodyEnc = encodeURIComponent(corpo);
+    return 'https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(email)+'&subject='+subj+'&body='+bodyEnc;
   }
 
   function markAberto(item) {
@@ -2680,29 +2698,32 @@ function FilaDoDia() {
       }
       var link = buildLink(d.email, assunto, corpo);
       markAberto(item);
-      if (link.length>1800) {
+      if (link.length>2000) {
         if (navigator.clipboard) navigator.clipboard.writeText(corpo);
-        var shortLink = outlookMode==='outlook'
-          ? 'https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(d.email)+'&subject='+encodeURIComponent(assunto)
-          : 'mailto:'+encodeURIComponent(d.email)+'?subject='+encodeURIComponent(assunto);
-        window.open(shortLink);
-        notify('📋 Corpo copiado (link > 1.800 chars). Cole no Outlook.','#EF9F27');
+        var shortLink = outlookMode==='mailto'
+          ? 'mailto:'+encodeURIComponent(d.email)+'?subject='+encodeURIComponent(assunto)
+          : 'https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(d.email)+'&subject='+encodeURIComponent(assunto);
+        window.open(shortLink,'_blank','noopener,noreferrer');
+        notify('📋 Corpo copiado (link longo). Cole no Outlook.','#EF9F27');
       } else {
-        window.open(link);
+        window.open(link,'_blank','noopener,noreferrer');
       }
     } else if (aba==='whatsapp') {
       var raw = d.wa||'';
       var digits = raw.replace(/\D/g,'');
-      if (!digits||digits.length<10||digits.length>13){
+      if (!digits||digits.length<10){
         notify('⚠ Número inválido: '+(raw||'vazio — verifique o campo wa deste decisor'),'#E24B4A');
         return;
       }
-      window.open('https://wa.me/55'+digits+'?text='+encodeURIComponent(corpo));
+      // Normaliza: se já tem +55 (12-13 dígitos iniciando com 55), usa como está
+      var phone = (digits.length>=12 && digits.slice(0,2)==='55') ? digits : '55'+digits;
+      var waUrl = 'https://wa.me/'+phone+'?text='+encodeURIComponent(corpo);
+      window.open(waUrl,'_blank','noopener,noreferrer');
       markAberto(item);
     } else if (aba==='linkedin') {
       if (navigator.clipboard) navigator.clipboard.writeText(corpo);
-      notify('📋 Nota copiada!','#818CF8');
-      if (d.linkedin_url) window.open(d.linkedin_url,'_blank');
+      notify('📋 Nota copiada — é só colar no LinkedIn.','#818CF8');
+      if (d.linkedin_url) window.open(d.linkedin_url,'_blank','noopener,noreferrer');
       markAberto(item);
     }
   }
@@ -2727,12 +2748,14 @@ function FilaDoDia() {
         setTail(function(p){return [Object.assign({},item,{status:'enviado',enviado_em:now})].concat(p);});
         setBusy(function(p){var b=Object.assign({},p);delete b[item.id];return b;});
         setEnvHoje(function(n){return n+1;});
+        if (seqAtivo) setSeqTrigger(function(n){return n+1;});
       });
   }
 
   function pularItem(item) {
     if (!item) return;
     var motivo = motPulo[item.id]||'';
+    var _seqAtivo = seqAtivo;
     setBusy(function(p){return Object.assign({},p,{[item.id]:'pular'});});
     sj('/rest/v1/crm_fila?id=eq.'+item.id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({status:'pulado',motivo_pulo:motivo||null})})
       .then(function(){
@@ -2740,6 +2763,7 @@ function FilaDoDia() {
         setTail(function(p){return [Object.assign({},item,{status:'pulado'})].concat(p);});
         setBusy(function(p){var b=Object.assign({},p);delete b[item.id];return b;});
         setPuloOpen(function(p){var n=Object.assign({},p);delete n[item.id];return n;});
+        if (_seqAtivo) setSeqTrigger(function(n){return n+1;});
       });
   }
 
@@ -2848,25 +2872,42 @@ function FilaDoDia() {
       // Painel de config
       cfgOpen&&React.createElement('div',{style:{background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:4,padding:'8px 12px',marginBottom:5}},
         React.createElement('div',{style:{fontFamily:mono,fontSize:9,color:'#9B9BB4',marginBottom:6}},'Modo de abertura de e-mail:'),
-        ['mailto','outlook'].map(function(m){
+        [['outlook','Outlook Web (padrão)'],['mailto','cliente de e-mail local (mailto)']].map(function(pair){
+          var m=pair[0],lbl=pair[1];
           return React.createElement('label',{key:m,style:{fontFamily:mono,fontSize:9,color:outlookMode===m?'#FF6B2B':'#555',cursor:'pointer',display:'flex',alignItems:'center',gap:6,marginBottom:4}},
             React.createElement('input',{type:'radio',name:'outlookMode',value:m,checked:outlookMode===m,onChange:function(){setOutlookMode(m);localStorage.setItem('gh_fila_outlook',m);}}),
-            m==='mailto'?'mailto: (padrão)':'outlook.office.com (deeplink)'
+            lbl
           );
         })
       ),
-      // Abas de canal
-      React.createElement('div',{style:{display:'flex',gap:0,marginTop:2}},
+      // Abas de canal + botão de sequência (WA/LinkedIn)
+      React.createElement('div',{style:{display:'flex',gap:0,alignItems:'center',marginTop:2}},
         [['email','Email','#60A5FA'],['whatsapp','WhatsApp','#34D399'],['linkedin','LinkedIn','#818CF8']].map(function(x){
           var k=x[0],lbl=x[1],cor=x[2];
           var cnt = (fila||[]).filter(function(i){return i.canal===k;}).length;
           var ativo = aba===k;
-          return React.createElement('button',{key:k,onClick:function(){setAba(k);setFocused(0);},
+          return React.createElement('button',{key:k,onClick:function(){setAba(k);setFocused(0);setSeqAtivo(false);},
             style:{fontFamily:mono,fontSize:9,padding:'5px 14px',border:'none',background:'transparent',
               color:ativo?cor:'#555',borderBottom:ativo?'1.5px solid '+cor:'.5px solid transparent',cursor:'pointer',letterSpacing:'.3px'}},
             lbl+(cnt?' ('+cnt+')':'')
           );
-        })
+        }),
+        // Sequência disponível nas abas WA e LinkedIn
+        (aba==='whatsapp'||aba==='linkedin')&&abaItems.length>0&&React.createElement('div',{style:{marginLeft:'auto',display:'flex',alignItems:'center',gap:6}},
+          seqAtivo&&React.createElement('span',{style:{fontFamily:mono,fontSize:8,color:'#9B9BB4'}},
+            (focused+1)+'/'+abaItems.length
+          ),
+          seqAtivo
+            ? React.createElement('button',{onClick:function(){setSeqAtivo(false);},
+                style:{fontFamily:mono,fontSize:8,padding:'3px 9px',borderRadius:3,border:'.5px solid rgba(226,75,74,.3)',background:'rgba(226,75,74,.05)',color:'#E24B4A',cursor:'pointer'}},'⏹ Parar')
+            : React.createElement('button',{onClick:function(){
+                setSeqAtivo(true);
+                setFocused(0);
+                var item = abaItems[0];
+                if (item) setTimeout(function(){abrirItem(item);},100);
+              },style:{fontFamily:mono,fontSize:8,padding:'3px 9px',borderRadius:3,
+                border:'.5px solid rgba(52,211,153,.3)',background:'rgba(52,211,153,.07)',color:'#34D399',cursor:'pointer'}},'▶ Sequência')
+        )
       )
     ),
     // Conteúdo
