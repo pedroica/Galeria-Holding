@@ -259,7 +259,7 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── Lusha ─────────────────────────────────────────────────────────────────
+  // ── Lusha (enriquecimento individual — legado) ────────────────────────────
   if (provider === 'lusha') {
     if (!LUSHA_KEY) return res.status(500).json({ error: 'LUSHA_KEY não configurada' });
     const { firstName = '', lastName = '', company = '' } = req.query;
@@ -270,6 +270,131 @@ export default async function handler(req, res) {
     } catch (e) {
       return res.status(502).json({ error: String(e) });
     }
+  }
+
+  // ── Lusha Search: busca candidatos por empresa/domínio sem gastar créditos ─
+  if (provider === 'lusha-search') {
+    if (!LUSHA_KEY) return res.status(500).json({ error: 'LUSHA_KEY não configurada. Variável: LUSHA_KEY. Obtenha em app.lusha.com → Settings → API.' });
+    const { domain = '', company = '' } = req.query;
+    if (!domain && !company) return res.status(400).json({ error: 'Informe domain ou company.' });
+
+    // Cargos-alvo: C-suite (CEO/equivalente) + Marketing (CMO/equivalente)
+    const targetTitles = [
+      'CEO','Chief Executive Officer','Presidente','Diretor Geral','Director General',
+      'Country Manager','Managing Director','Sócio Fundador','Fundador e CEO',
+      'CMO','Chief Marketing Officer','VP Marketing','VP de Marketing',
+      'VP of Marketing','Diretor de Marketing','Diretora de Marketing',
+      'Director of Marketing','Head de Marketing','Head of Marketing',
+      'Head de Growth','Head of Growth','VP Growth','Diretor de Comunicação',
+      'VP Comunicação','Head de Comunicação'
+    ];
+
+    // Lusha Contacts API (prospecting) — busca sem revelar contatos
+    const params = new URLSearchParams();
+    if (domain) params.set('companyDomain', domain);
+    if (company) params.set('companyName', company);
+    params.set('country', 'Brazil');
+    params.set('size', '30');
+    params.set('page', '0');
+    targetTitles.forEach(t => params.append('jobTitle', t));
+
+    try {
+      const r = await fetch(`https://api.lusha.com/v2/contacts?${params}`, {
+        headers: { api_key: LUSHA_KEY }
+      });
+      const raw = await r.json();
+
+      if (!r.ok) {
+        // Lusha não tem prospecting no plano; tenta via company name search
+        return res.status(r.status).json({ error: raw.error || raw.message || JSON.stringify(raw), raw });
+      }
+
+      // Normaliza resultado: retorna só preview (sem e-mail/telefone)
+      const contacts = (raw.data || raw.contacts || []).map(c => ({
+        firstName:  c.firstName  || c.first_name  || '',
+        lastName:   c.lastName   || c.last_name   || '',
+        title:      c.jobTitle   || c.title       || '',
+        company:    c.companyName|| c.company     || company || domain,
+        hasEmail:   !!(c.emails  || c.email),
+        hasPhone:   !!(c.phones  || c.phone || c.phoneNumbers),
+        hasLinkedin:!!(c.linkedinUrl || c.linkedin_url || c.linkedin),
+        lushaId:    c.id || null
+      }));
+
+      // Filtra só pessoas atuais no Brasil (a maioria já veio filtrada via país)
+      const filtered = contacts.filter(c => c.firstName && c.lastName);
+
+      return res.status(200).json({
+        contacts: filtered,
+        total: raw.total || raw.totalContacts || filtered.length,
+        credits: raw.accountInfo || raw.credits || null
+      });
+    } catch (e) {
+      return res.status(502).json({ error: String(e) });
+    }
+  }
+
+  // ── Lusha Reveal: revela contatos selecionados (gasta créditos) ───────────
+  if (provider === 'lusha-reveal') {
+    if (!LUSHA_KEY) return res.status(500).json({ error: 'LUSHA_KEY não configurada' });
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const contacts = Array.isArray(body.contacts) ? body.contacts : [];
+    if (!contacts.length) return res.status(400).json({ error: 'Nenhum contato informado.' });
+    if (contacts.length > 5) return res.status(400).json({ error: 'Máximo 5 contatos por vez.' });
+
+    const results = [];
+    let lastCredits = null;
+
+    for (const c of contacts) {
+      const params = new URLSearchParams({
+        firstName: c.firstName || '',
+        lastName:  c.lastName  || '',
+        company:   c.company   || ''
+      });
+      try {
+        const r = await fetch(`https://api.lusha.com/v2/person?${params}`, {
+          headers: { api_key: LUSHA_KEY }
+        });
+        const data = await r.json();
+
+        const phones   = (data.data && data.data.phoneNumbers) || [];
+        const emails   = (data.data && data.data.emails)       || [];
+        const linkedin = (data.data && (data.data.linkedInUrl || data.data.linkedInURL || data.data.linkedin_url)) || '';
+        const currentPos = (data.data && data.data.currentPositions && data.data.currentPositions[0]) || {};
+
+        // Créditos (Lusha retorna em data.accountInfo ou similar)
+        if (data.accountInfo) lastCredits = data.accountInfo;
+        else if (data.credits)  lastCredits = data.credits;
+
+        // Filtra só celular brasileiro: dígitos, 11 dígitos (DDD + 9XXXXXXXX)
+        const mobileWa = phones
+          .map(p => (p.internationalNumber || p.localNumber || '').replace(/\D/g, ''))
+          .filter(n => {
+            // Remove prefixo 55 se tiver
+            const local = n.startsWith('55') ? n.slice(2) : n;
+            return local.length === 11 && local[2] === '9'; // celular BR
+          })
+          .map(n => n.startsWith('55') ? n : '55' + n)[0] || '';
+
+        const email = emails.find(e => e.type !== 'risky' && e.emailAddress) || emails[0];
+
+        results.push({
+          firstName:   c.firstName,
+          lastName:    c.lastName,
+          title:       c.title || currentPos.title || '',
+          company:     c.company,
+          email:       email ? email.emailAddress : '',
+          emailType:   email ? email.type : '',
+          wa:          mobileWa,
+          linkedin_url:linkedin,
+          error:       data.error || (!emails.length && !phones.length ? 'sem_dados' : null)
+        });
+      } catch (e) {
+        results.push({ firstName: c.firstName, lastName: c.lastName, error: String(e) });
+      }
+    }
+
+    return res.status(200).json({ results, credits: lastCredits });
   }
 
   // ── Microsoft Graph ───────────────────────────────────────────────────────
