@@ -46,7 +46,8 @@ function assert(cond, label) {
 
 async function cleanup() {
   const emps = await q(`/crm_empresas?nome=eq.${encodeURIComponent(TEST_NOME)}&select=id`);
-  for (const row of (emps || [])) {
+  if (!Array.isArray(emps)) { console.log('  [cleanup] emps raw:', JSON.stringify(emps)); return; }
+  for (const row of emps) {
     await q(`/crm_fila?empresa_id=eq.${row.id}`, { method:'DELETE', headers:{'Prefer':'return=minimal'} });
     await q(`/crm_decisores?empresa_id=eq.${row.id}`, { method:'DELETE', headers:{'Prefer':'return=minimal'} });
     await q(`/crm_logs?empresa_id=eq.${row.id}`, { method:'DELETE', headers:{'Prefer':'return=minimal'} });

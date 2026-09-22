@@ -221,6 +221,9 @@ function EmpresasView({
   const [batchOpen,         setBatchOpen]         = useState(false);
   const [batchProgress,     setBatchProgress]     = useState([]);
   const [batchRunning,      setBatchRunning]      = useState(false);
+  // ── supaDecisores: fonte única — lê de crm_decisores (Supabase) ──────────
+  const [supaDecisores,     setSupaDecisores]     = useState([]);
+  const [supaDecLoading,    setSupaDecLoading]    = useState(false);
 
   // ── supaJwtFig: wrapper Supabase com timeout, 4xx log e 204 seguro ────────
   function supaJwtFig(path, opts) {
@@ -271,6 +274,16 @@ function EmpresasView({
     return raw; // não conseguiu normalizar, mantém original
   }
 
+  // ── lushaCargoPriority: prioridade de cargos para seleção de decisores ─────
+  // retorna: 2=marketing, 1=CEO/founder, 0=outros, -1=excluir
+  function lushaCargoPriority(title) {
+    var t = (title || '').toLowerCase();
+    if (/\b(cfo|chief financial|finan[cç]|juridic|legal|rh\b|recursos humanos|human resource|operac|operation|supply chain|logistic|contabilid|accounti|tax|tribut)\b/.test(t)) return -1;
+    if (/\b(cmo|chief marketing|market|growth|performanc|digital|brand|social|content|comunic|m[ií]dia|media|crm|inbound|outbound|demand gen|acquisition|retention|awareness|campanha|campaign)\b/.test(t)) return 2;
+    if (/\b(ceo|chief executive|coo|chief operating|president|founder|co-founder|cofound|proprietar|owner|managing director|diretor geral|diretor presidente)\b/.test(t)) return 1;
+    return 0;
+  }
+
   // Carrega crm_empresas paginado (1000/página) até esgotamento — sem limite fixo
   useEffect(function() {
     var PAGE = 1000;
@@ -291,6 +304,83 @@ function EmpresasView({
     })();
   }, []);
 
+  // ── Carrega decisores do Supabase quando empresa é selecionada ────────────
+  useEffect(function() {
+    if (!selEmpresa) { setSupaDecisores([]); return; }
+    var empId = selEmpresa.empresa_id || null;
+    if (!empId && supaEmpMap) {
+      var row = supaEmpMap[(selEmpresa.nome||'').toLowerCase().trim()];
+      if (row) empId = row.id;
+    }
+    if (!empId) { setSupaDecisores([]); return; }
+    setSupaDecLoading(true);
+    supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&status=eq.ativo&select=id,nome,cargo,email,wa,wa2,wa3,wa4,linkedin_url,criado_em&order=criado_em.desc')
+      .then(function(rows) {
+        var list = Array.isArray(rows) ? rows : [];
+        setSupaDecisores(list);
+        setSupaDecLoading(false);
+        // Sincroniza cache local (elimina dados fictícios do localStorage)
+        var k = curGrupo.id + '_' + selEmpresa.rank;
+        setAccs(function(prev) {
+          var ex = (prev||{})[k] || {decisors:[],sugeridos:[],activities:[]};
+          var synced = Object.assign({}, ex, { decisors: list.map(function(r){ return {nome:r.nome||'',cargo:r.cargo||'',email:r.email||'',wa:r.wa||'',wa2:r.wa2||'',wa3:r.wa3||'',wa4:r.wa4||'',linkedin:r.linkedin_url||'',addedAt:(r.criado_em||'').slice(0,10)}; }) });
+          var newAccs = Object.assign({}, prev||{}, {[k]: synced});
+          lsSet('gh_decisores_v3', newAccs);
+          return newAccs;
+        });
+      })
+      .catch(function() { setSupaDecLoading(false); });
+  }, [selEmpresa, supaEmpMap]);
+
+  // ── Migração única: localStorage → Supabase (roda uma vez) ───────────────
+  useEffect(function() {
+    if (!supaEmpMap || !Object.keys(supaEmpMap).length) return;
+    if (localStorage.getItem('gh_migration_ls_v1')) return;
+    (async function() {
+      var lsRaw;
+      try { lsRaw = JSON.parse(localStorage.getItem('gh_decisores_v3') || '{}'); } catch(e) { lsRaw = {}; }
+      var totalMigrated = 0, totalSkipped = 0;
+      var prosp = (typeof PROSP !== 'undefined') ? PROSP : [];
+      for (var key of Object.keys(lsRaw)) {
+        var entry = lsRaw[key];
+        var decisors = (entry && entry.decisors) || [];
+        if (!decisors.length) continue;
+        // key = `{grupoId}_{rank}` — extrair rank (último segmento)
+        var parts = key.split('_');
+        var rank = parseInt(parts[parts.length - 1], 10);
+        if (!rank) continue;
+        var prosp_e = prosp.find(function(e){ return e.rank === rank; });
+        if (!prosp_e) continue;
+        var supaRow = supaEmpMap[(prosp_e.nome||'').toLowerCase().trim()];
+        if (!supaRow || !supaRow.id) continue;
+        var empId = supaRow.id;
+        // Verifica se empresa já tem decisores no Supabase
+        var existing = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&status=eq.ativo&select=id,email,linkedin_url&limit=100').catch(function(){ return []; });
+        if (!Array.isArray(existing)) existing = [];
+        if (existing.length > 0) { totalSkipped += decisors.length; continue; }
+        // Migra decisores sem contato real
+        var existEmails = existing.map(function(r){ return (r.email||'').toLowerCase(); }).filter(Boolean);
+        var now = new Date().toISOString();
+        for (var dec of decisors) {
+          // Pular sem contato real (email, wa ou linkedin)
+          var liUrl = dec.li || dec.linkedin || '';
+          if (!dec.email && !dec.wa && !liUrl) { totalSkipped++; continue; }
+          // Dedup por email
+          if (dec.email && existEmails.includes(dec.email.toLowerCase())) { totalSkipped++; continue; }
+          var row = { empresa_id:empId, nome:dec.nome||'', cargo:dec.cargo||null, email:dec.email||null, wa:normE164(dec.wa)||null, wa2:normE164(dec.wa2)||null, linkedin_url:liUrl||null, fonte:'migrado_localStorage', status:'ativo', temperatura:0, wa_verificado:false, criado_em:now, atualizado_em:now };
+          var nc = await supaJwtFig('/rest/v1/crm_decisores', { method:'POST', headers:{'Prefer':'return=representation'}, body:JSON.stringify(row) }).catch(function(){ return null; });
+          var newId = Array.isArray(nc) ? (nc[0]&&nc[0].id) : (nc&&nc.id);
+          if (newId) { totalMigrated++; existEmails.push((dec.email||'').toLowerCase()); }
+        }
+      }
+      if (totalMigrated > 0 || totalSkipped > 0) {
+        logToSupabase('info', 'migração localStorage→Supabase: '+totalMigrated+' migrados, '+totalSkipped+' pulados', {totalMigrated, totalSkipped});
+      }
+      console.log('[Migration] LS→Supabase: '+totalMigrated+' migrados, '+totalSkipped+' pulados');
+      localStorage.setItem('gh_migration_ls_v1', '1');
+    })();
+  }, [supaEmpMap]);
+
   const doLushaSearch = async (domain) => {
     setLushaDomain(domain);
     setLushaStep('loading');
@@ -308,13 +398,18 @@ function EmpresasView({
       return;
     }
     console.log('[Lusha] busca decisores — retornou', resp.contacts.length, 'candidatos (total Lusha:', resp.total, ')');
-    if (!resp.contacts.length) {
-      var noMsg = resp.message || 'Nenhum CEO/CMO encontrado para o domínio "'+domain+'" no Lusha.';
+    // Ordenar por prioridade de cargo: marketing > CEO/founder > outros; excluir CFO/legal/RH/ops
+    var ranked = resp.contacts.map(function(c){ return Object.assign({}, c, {_pri: lushaCargoPriority(c.title)}); });
+    ranked = ranked.filter(function(c){ return c._pri >= 0; });
+    ranked.sort(function(a,b){ return b._pri - a._pri; });
+    console.log('[Lusha] prioridade cargos —', ranked.map(function(c){ return (c.title||'?')+':'+c._pri; }).join(', '));
+    if (!ranked.length) {
+      var noMsg = resp.message || 'Nenhum CEO/CMO/Marketing encontrado para o domínio "'+domain+'" no Lusha.';
       setLushaError(noMsg);
       setLushaStep('idle');
       return;
     }
-    setLushaCandidates(resp.contacts);
+    setLushaCandidates(ranked);
     setLushaCredits(resp.credits || null);
     setLushaStep('select');
   };
@@ -533,17 +628,18 @@ function EmpresasView({
       body: JSON.stringify({enriquecido_em: now, atualizado_em: now})
     }).catch(function(){});
 
-    // Recarregar decisores do Supabase → atualiza accs state (sem refresh de página)
+    // Recarregar decisores do Supabase → atualiza supaDecisores + accs cache
     var decRows = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&select=id,nome,cargo,email,wa,wa2,wa3,wa4,linkedin_url,criado_em&status=eq.ativo&order=criado_em.desc').catch(function(){ return []; });
     if (Array.isArray(decRows)) {
+      setSupaDecisores(decRows);
       var k = curGrupo.id+'_'+selEmpresa.rank;
-      var ex = (accs||{})[k] || {decisors:[],sugeridos:[],activities:[]};
-      var novoAcc = Object.assign({}, ex, {
-        decisors: decRows.map(function(r){ return {nome:r.nome||'',cargo:r.cargo||'',email:r.email||'',wa:r.wa||'',wa2:r.wa2||'',wa3:r.wa3||'',wa4:r.wa4||'',linkedin:r.linkedin_url||'',addedAt:(r.criado_em||'').slice(0,10)}; })
+      setAccs(function(prev) {
+        var ex = (prev||{})[k] || {decisors:[],sugeridos:[],activities:[]};
+        var novoAcc = Object.assign({}, ex, { decisors: decRows.map(function(r){ return {nome:r.nome||'',cargo:r.cargo||'',email:r.email||'',wa:r.wa||'',wa2:r.wa2||'',wa3:r.wa3||'',wa4:r.wa4||'',linkedin:r.linkedin_url||'',addedAt:(r.criado_em||'').slice(0,10)}; }) });
+        var newAccs = Object.assign({}, prev||{}, {[k]: novoAcc});
+        lsSet('gh_decisores_v3', newAccs);
+        return newAccs;
       });
-      var newAccs = Object.assign({}, accs||{}, {[k]: novoAcc});
-      setAccs(newAccs);
-      lsSet('gh_decisores_v3', newAccs);
     }
 
     var criados = saveResults.filter(function(r){ return r.saveStatus==='criado'; }).length;
@@ -572,7 +668,7 @@ function EmpresasView({
     var limit = (Array.isArray(limitRow) && limitRow[0] && Number(limitRow[0].valor)) || 60;
     var revealsUsed = cfg.count || 0;
 
-    for (var idx = 0; idx < empList.length; idx++) {
+    for (let idx = 0; idx < empList.length; idx++) {
       var emp = empList[idx];
       if (revealsUsed >= limit) {
         setBatchProgress(function(prev){
@@ -599,11 +695,14 @@ function EmpresasView({
           setBatchProgress(function(prev){ var a=prev.slice(); a[idx]=Object.assign({},a[idx],{status:'sem_dominio'}); return a; });
           continue;
         }
-        // Busca de decisores (marketing: CMO, dir/ger marketing, growth, etc.)
-        var search = await fetch('/api/enrich?provider=lusha-search&domain='+encodeURIComponent(domain)+'&depts=marketing&max=2', {
+        // Busca de decisores — ordena por prioridade marketing, exclui CFO/legal/RH/ops
+        var search = await fetch('/api/enrich?provider=lusha-search&domain='+encodeURIComponent(domain)+'&depts=marketing&max=5', {
           headers:{'Authorization':'Bearer '+jwt}
         }).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
-        var contacts = (search.contacts||[]).slice(0,2);
+        var rawContacts = (search.contacts||[]).map(function(c){ return Object.assign({},c,{_pri:lushaCargoPriority(c.title)}); }).filter(function(c){ return c._pri>=0; });
+        rawContacts.sort(function(a,b){ return b._pri-a._pri; });
+        console.log('[Lusha batch] '+emp.nome+' — prioridade cargos:', rawContacts.map(function(c){ return (c.title||'?')+':'+c._pri; }).join(', ')||'nenhum');
+        var contacts = rawContacts.slice(0,2);
         if (!contacts.length) {
           setBatchProgress(function(prev){ var a=prev.slice(); a[idx]=Object.assign({},a[idx],{status:'sem_contatos',domain:domain}); return a; });
           continue;
@@ -632,6 +731,11 @@ function EmpresasView({
             var r = results[ri];
             var nome2 = ((r.firstName||'')+' '+(r.lastName||'')).trim();
             var waE164b = normE164(r.wa)||null;
+            // Dedup por email (e por nome como fallback)
+            var existDec = [];
+            if (r.email) existDec = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&email=eq.'+encodeURIComponent(r.email)+'&select=id&limit=1').catch(function(){ return []; });
+            if (!existDec || !existDec.length) existDec = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&nome=ilike.'+encodeURIComponent(nome2)+'&select=id&limit=1').catch(function(){ return []; });
+            if (existDec && existDec.length) { console.log('[Lusha batch] '+nome2+' já existe — pulado'); continue; }
             var row2 = { empresa_id:empId, nome:nome2, cargo:r.title||'', email:r.email||null, wa:waE164b, linkedin_url:r.linkedin_url||null, fonte:'lusha', status:'ativo', temperatura:0, wa_verificado:false, criado_em:now, atualizado_em:now };
             var nc = await supaJwtFig('/rest/v1/crm_decisores', { method:'POST', headers:{'Prefer':'return=representation'}, body:JSON.stringify(row2) }).catch(function(){ return null; });
             var newId = (Array.isArray(nc)&&nc[0]&&nc[0].id)||null;
@@ -760,33 +864,46 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
     setAccs(newAccs);
     lsSet("gh_decisores_v3", newAccs);
   };
-  const remover = (empresa, dec, tipo) => {
+  const remover = async (empresa, dec, tipo) => {
     const k = curGrupo.id + "_" + empresa.rank;
-    const ex = (accs || {})[k] || {
-      decisors: [],
-      sugeridos: [],
-      activities: []
-    };
-    const novoAcc = tipo === "verificado" ? {
-      ...ex,
-      decisors: (ex.decisors || []).filter(d => normalizarNome(d.nome) !== normalizarNome(dec.nome))
-    } : {
-      ...ex,
-      sugeridos: (ex.sugeridos || []).filter(d => normalizarNome(d.nome) !== normalizarNome(dec.nome))
-    };
-    const newAccs = {
-      ...(accs || {}),
-      [k]: novoAcc
-    };
-    setAccs(newAccs);
-    lsSet("gh_decisores_v3", newAccs);
+    if (tipo === "verificado") {
+      // Marcar inativo no Supabase (nunca delete)
+      if (dec.id) {
+        await supaJwtFig('/rest/v1/crm_decisores?id=eq.'+dec.id, {
+          method:'PATCH', headers:{'Prefer':'return=minimal'},
+          body: JSON.stringify({status:'inativo', atualizado_em: new Date().toISOString()})
+        }).catch(function(e){ console.warn('[remover] erro ao inativar:', e.message); });
+      }
+      // Recarrega supaDecisores e sincroniza cache
+      var empId = (selEmpresa && selEmpresa.empresa_id) || (supaEmpMap && supaEmpMap[(empresa.nome||'').toLowerCase().trim()] && supaEmpMap[(empresa.nome||'').toLowerCase().trim()].id) || null;
+      if (empId) {
+        var decRows = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&status=eq.ativo&select=id,nome,cargo,email,wa,wa2,wa3,wa4,linkedin_url,criado_em&order=criado_em.desc').catch(function(){ return []; });
+        if (Array.isArray(decRows)) {
+          setSupaDecisores(decRows);
+          setAccs(function(prev) {
+            var ex = (prev||{})[k] || {decisors:[],sugeridos:[],activities:[]};
+            var novoAcc = Object.assign({}, ex, { decisors: decRows.map(function(r){ return {nome:r.nome||'',cargo:r.cargo||'',email:r.email||'',wa:r.wa||'',linkedin:r.linkedin_url||'',addedAt:(r.criado_em||'').slice(0,10)}; }) });
+            var newAccs = Object.assign({}, prev||{}, {[k]: novoAcc});
+            lsSet('gh_decisores_v3', newAccs);
+            return newAccs;
+          });
+        }
+      }
+    } else {
+      // Remove sugestão do localStorage
+      const ex = (accs || {})[k] || { decisors:[], sugeridos:[], activities:[] };
+      const novoAcc = { ...ex, sugeridos: (ex.sugeridos||[]).filter(d => normalizarNome(d.nome) !== normalizarNome(dec.nome)) };
+      const newAccs = { ...(accs||{}), [k]: novoAcc };
+      setAccs(newAccs);
+      lsSet("gh_decisores_v3", newAccs);
+    }
   };
 
   // ── painel direito: álbum de figurinhas ────────────────────────────────────
   const renderAlbum = () => {
     if (!selEmpresa) return null;
     const acc = getAcc(selEmpresa.rank);
-    const verificados = acc.decisors || [];
+    const verificados = supaDecisores; // fonte única: Supabase
     const sugeridos = acc.sugeridos || [];
     // Indicador de cobertura
     const cobEmail = verificados.filter(function(d){ return d.email; }).length;
@@ -892,38 +1009,45 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
     }, "Cancelar"), /*#__PURE__*/React.createElement("button", {
       onClick: () => {
         if (!fNome.trim()) return;
-        const k = curGrupo.id + "_" + selEmpresa.rank;
-        const ex = (accs || {})[k] || {
-          decisors: [],
-          sugeridos: [],
-          activities: []
-        };
-        const novo = {
-          nome: fNome.trim(),
-          cargo: fCargo.trim(),
-          email: fEmail.trim(),
-          wa: fWa.trim(),
-          wa2: (fWa2 || "").trim(),
-          li: fLi.trim(),
-          ig: (fIg || "").trim(),
-          fb: (fFb || "").trim(),
-          addedAt: new Date().toLocaleDateString("pt-BR")
-        };
-        const newAccs = {
-          ...(accs || {}),
-          [k]: {
-            ...ex,
-            decisors: [...(ex.decisors || []), novo]
+        (async function() {
+          var empId = (selEmpresa && selEmpresa.empresa_id) || null;
+          if (!empId && supaEmpMap) {
+            var sr = supaEmpMap[(selEmpresa.nome||'').toLowerCase().trim()];
+            if (sr) empId = sr.id;
           }
-        };
-        setAccs(newAccs);
-        lsSet("gh_decisores_v3", newAccs);
-        setShowAdd(false);
-        setFNome("");
-        setFCargo("");
-        setFEmail("");
-        setFWa("");
-        setFLi("");
+          if (!empId) { alert('Empresa não encontrada no banco. Verifique a conexão e tente novamente.'); return; }
+          var emailVal = fEmail.trim();
+          var liVal = fLi.trim();
+          // Dedup por email
+          if (emailVal) {
+            var exEmail = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&email=eq.'+encodeURIComponent(emailVal)+'&status=eq.ativo&select=id&limit=1').catch(function(){ return []; });
+            if (Array.isArray(exEmail) && exEmail.length) { alert('Já existe um decisor com esse e-mail nesta empresa.'); return; }
+          }
+          // Dedup por LinkedIn
+          if (liVal) {
+            var exLi = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&linkedin_url=eq.'+encodeURIComponent(liVal)+'&status=eq.ativo&select=id&limit=1').catch(function(){ return []; });
+            if (Array.isArray(exLi) && exLi.length) { alert('Já existe um decisor com esse LinkedIn nesta empresa.'); return; }
+          }
+          var now = new Date().toISOString();
+          var row = { empresa_id:empId, nome:fNome.trim(), cargo:fCargo.trim()||null, email:emailVal||null, wa:normE164(fWa.trim())||null, wa2:normE164((fWa2||'').trim())||null, wa3:normE164((fWa3||'').trim())||null, linkedin_url:liVal||null, fonte:'manual', status:'ativo', temperatura:0, wa_verificado:false, criado_em:now, atualizado_em:now };
+          var nc = await supaJwtFig('/rest/v1/crm_decisores', { method:'POST', headers:{'Prefer':'return=representation'}, body:JSON.stringify(row) }).catch(function(e){ alert('Erro ao salvar: '+e.message); return null; });
+          if (!nc) return;
+          // Recarrega supaDecisores e sincroniza cache
+          var k = curGrupo.id + '_' + selEmpresa.rank;
+          var decRows = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&status=eq.ativo&select=id,nome,cargo,email,wa,wa2,wa3,wa4,linkedin_url,criado_em&order=criado_em.desc').catch(function(){ return []; });
+          if (Array.isArray(decRows)) {
+            setSupaDecisores(decRows);
+            setAccs(function(prev) {
+              var ex = (prev||{})[k] || {decisors:[],sugeridos:[],activities:[]};
+              var novoAcc = Object.assign({}, ex, { decisors: decRows.map(function(r){ return {nome:r.nome||'',cargo:r.cargo||'',email:r.email||'',wa:r.wa||'',linkedin:r.linkedin_url||'',addedAt:(r.criado_em||'').slice(0,10)}; }) });
+              var newAccs = Object.assign({}, prev||{}, {[k]: novoAcc});
+              lsSet('gh_decisores_v3', newAccs);
+              return newAccs;
+            });
+          }
+          setShowAdd(false);
+          setFNome(""); setFCargo(""); setFEmail(""); setFWa(""); setFWa2(""); setFWa3(""); setFLi(""); setFIg(""); setFFb("");
+        })();
       },
       style: {
         padding: "9px 22px",
@@ -1229,7 +1353,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:5,flexWrap:"wrap",justifyContent:"center",paddingInline:8,marginBottom:8}},
         d.email&&/*#__PURE__*/React.createElement("a",{href:"https://mail.google.com/mail/?view=cm&to="+encodeURIComponent(d.email),target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:`rgba(${acRgb},.18)`,border:`1px solid rgba(${acRgb},.28)`,color:acBase,fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"✉ Email"),
         phones.map((p,pi)=>{var n=(p||"").replace(/[^0-9]/g,"");var num=n.startsWith("55")&&n.length>=12?n:"55"+n;return /*#__PURE__*/React.createElement("a",{key:pi,href:"https://wa.me/"+num,target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:"rgba(37,211,102,.12)",border:"1px solid rgba(37,211,102,.22)",color:"#25D366",fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"💬 WA"+(phones.length>1?" "+(pi+1):""));}),
-        d.linkedin&&/*#__PURE__*/React.createElement("a",{href:d.linkedin.startsWith("http")?d.linkedin:"https://"+d.linkedin,target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:"rgba(10,102,194,.12)",border:"1px solid rgba(10,102,194,.22)",color:"#0A66C2",fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"💼 LI")
+        (d.linkedin_url||d.linkedin)&&/*#__PURE__*/React.createElement("a",{href:(d.linkedin_url||d.linkedin).startsWith("http")?(d.linkedin_url||d.linkedin):"https://"+(d.linkedin_url||d.linkedin),target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:"rgba(10,102,194,.12)",border:"1px solid rgba(10,102,194,.22)",color:"#0A66C2",fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"💼 LI")
       ),
       /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:5,paddingInline:8,borderTop:"1px solid rgba(255,255,255,.04)",paddingTop:8,width:"100%",boxSizing:"border-box",justifyContent:"center"}},
         /*#__PURE__*/React.createElement("button",{onClick:()=>setAbordagemDec(d),style:{flex:2,padding:"5px 0",borderRadius:7,border:".5px solid rgba(255,107,43,.4)",background:"rgba(255,107,43,.1)",color:"#FF6B2B",cursor:"pointer",fontSize:9,fontWeight:700}},"📨 Abordar"),
@@ -1456,10 +1580,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         );
       })
     ),
-    !batchRunning && React.createElement("button", {
-      onClick: function(){ setBatchOpen(false); setBatchProgress([]); },
-      style: { marginTop:16, padding:"8px 24px", borderRadius:7, border:"none", background:"#818CF8", color:"#fff", fontSize:12, cursor:"pointer", fontWeight:700, width:"100%" }
-    }, "Fechar")
+    (function(){ var allDone = !batchRunning && batchProgress.length > 0 && batchProgress.every(function(row){ return row.status !== 'rodando' && row.status !== 'aguardando'; }); return allDone && React.createElement("button", { onClick: function(){ setBatchOpen(false); setBatchProgress([]); }, style: { marginTop:16, padding:"8px 24px", borderRadius:7, border:"none", background:"#818CF8", color:"#fff", fontSize:12, cursor:"pointer", fontWeight:700, width:"100%" } }, "Fechar"); })()
   )),
   showAddEmp && /*#__PURE__*/React.createElement("div", {
     style: {
