@@ -213,12 +213,24 @@ function EmpresasView({
   const [empresaSupa,       setEmpresaSupa]       = useState(null);
   const [lushaFoundDomain,  setLushaFoundDomain]  = useState('');
   const [lushaManualDomain, setLushaManualDomain] = useState('');
+  const [supaEmpMap,        setSupaEmpMap]        = useState({});
 
   function supaJwtFig(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
     var h = Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+jwt,'apikey':'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r'}, opts&&opts.headers);
     return fetch('https://uetltlnjmobeiunxfsqi.supabase.co'+path, Object.assign({},opts,{headers:h})).then(function(r){return r.json();});
   }
+
+  // Carrega crm_empresas uma vez no mount para ter empresa_id disponível ao clicar
+  useEffect(function() {
+    supaJwtFig('/rest/v1/crm_empresas?select=id,nome,website,dominios&limit=2000')
+      .then(function(rows) {
+        if (!Array.isArray(rows)) return;
+        var m = {};
+        rows.forEach(function(r) { if (r.nome) m[r.nome.toLowerCase().trim()] = r; });
+        setSupaEmpMap(m);
+      }).catch(function(){});
+  }, []);
 
   const doLushaSearch = async (domain) => {
     setLushaStep('loading');
@@ -257,13 +269,21 @@ function EmpresasView({
     setLushaFoundDomain('');
     setLushaManualDomain('');
 
-    // 1) exact match
-    var empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=eq.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominios&limit=1');
-    var emp = (Array.isArray(empRows) && empRows[0]) || null;
-    // 2) ilike fallback (handles case/accent differences)
-    if (!emp) {
-      empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=ilike.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominios&limit=1');
+    var emp = null;
+    if (selEmpresa.empresa_id) {
+      // Fast path: id já conhecido via supaEmpMap — sem roundtrip extra
+      emp = { id: selEmpresa.empresa_id, nome: selEmpresa.nome, website: selEmpresa.website || null, dominios: selEmpresa.dominios || null };
+      console.log('[Lusha startLusha] empresa_id direto:', emp.id);
+    } else {
+      // Fallback 1: exact match por nome
+      var empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=eq.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominios&limit=1');
       emp = (Array.isArray(empRows) && empRows[0]) || null;
+      // Fallback 2: ilike (diferença de caixa/acento)
+      if (!emp) {
+        empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=ilike.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominios&limit=1');
+        emp = (Array.isArray(empRows) && empRows[0]) || null;
+      }
+      console.log('[Lusha startLusha] fallback nome, found:', emp ? 'id='+emp.id : 'null — query: nome=ilike.'+selEmpresa.nome);
     }
     setEmpresaSupa(emp);
 
@@ -290,8 +310,9 @@ function EmpresasView({
       // 3) se não achou empresa pelo nome, tenta pelo domínio descoberto
       if (!emp) {
         var domEnc = encodeURIComponent('%'+domain+'%');
-        empRows = await supaJwtFig('/rest/v1/crm_empresas?website=ilike.'+domEnc+'&select=id,nome,website,dominios&limit=1');
-        emp = (Array.isArray(empRows) && empRows[0]) || null;
+        var dRows = await supaJwtFig('/rest/v1/crm_empresas?website=ilike.'+domEnc+'&select=id,nome,website,dominios&limit=1');
+        emp = (Array.isArray(dRows) && dRows[0]) || null;
+        console.log('[Lusha startLusha] fallback domínio website=ilike.%'+domain+'%, found:', emp ? 'id='+emp.id : 'null');
         if (emp) setEmpresaSupa(emp);
       }
     } else if (emp && emp.website) {
@@ -343,16 +364,26 @@ function EmpresasView({
     if (result.email) qParts.push('email.eq.'+encodeURIComponent(result.email));
     if (result.linkedin_url) qParts.push('linkedin_url.eq.'+encodeURIComponent(result.linkedin_url));
     var existRows = [];
-    if (qParts.length) existRows = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+emp.id+'&or=('+qParts.join(',')+')'+'&select=id&limit=1');
-    if (!existRows || !existRows.length) existRows = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+emp.id+'&nome=ilike.'+encodeURIComponent(nome)+'&select=id&limit=1');
+    var deupQuery = '';
+    if (qParts.length) {
+      deupQuery = 'empresa_id=eq.'+emp.id+'&or=('+qParts.join(',')+')'
+      existRows = await supaJwtFig('/rest/v1/crm_decisores?'+deupQuery+'&select=id&limit=1');
+    }
+    if (!existRows || !existRows.length) {
+      deupQuery = 'empresa_id=eq.'+emp.id+'&nome=ilike.'+encodeURIComponent(nome);
+      existRows = await supaJwtFig('/rest/v1/crm_decisores?'+deupQuery+'&select=id&limit=1');
+    }
+    console.log('[Lusha saveToSupa] dedup query:', deupQuery, '→ found:', (existRows && existRows.length) ? existRows[0].id : 'none');
     var now = new Date().toISOString();
     var row = { empresa_id:emp.id, nome, cargo:result.title||'', email:result.email||null, wa:result.wa||null, linkedin_url:result.linkedin_url||null, fonte:'lusha', status:'ativo', temperatura:0, wa_verificado:false, criado_em:now, atualizado_em:now };
     var saved;
     if (existRows && existRows.length && existRows[0].id) {
       var patch = { cargo:row.cargo, email:row.email, wa:row.wa, linkedin_url:row.linkedin_url, atualizado_em:now };
+      console.log('[Lusha saveToSupa] PATCH decisor id='+existRows[0].id);
       saved = await supaJwtFig('/rest/v1/crm_decisores?id=eq.'+existRows[0].id, { method:'PATCH', headers:{'Prefer':'return=representation'}, body:JSON.stringify(patch) });
       saved = Array.isArray(saved) ? saved[0] : saved;
     } else {
+      console.log('[Lusha saveToSupa] POST novo decisor — empresa_id='+emp.id);
       saved = await supaJwtFig('/rest/v1/crm_decisores', { method:'POST', headers:{'Prefer':'return=representation'}, body:JSON.stringify(row) });
       saved = Array.isArray(saved) ? saved[0] : saved;
     }
@@ -1401,7 +1432,10 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
     const borderC = nVer >= 5 ? "#1D9E75" : nVer > 0 ? "#EF9F27" : "#2D2D44";
     return /*#__PURE__*/React.createElement("div", {
       key: e.rank,
-      onClick: () => setSelEmpresa(e),
+      onClick: () => {
+        var supaRow = supaEmpMap[e.nome.toLowerCase().trim()] || null;
+        setSelEmpresa(Object.assign({}, e, supaRow ? {empresa_id: supaRow.id, website: supaRow.website, dominios: supaRow.dominios} : {}));
+      },
       style: {
         display: "flex",
         alignItems: "center",
