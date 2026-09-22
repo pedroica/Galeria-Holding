@@ -242,6 +242,10 @@ function EmpresasView({
     setLushaStep('select');
   };
 
+  const normDomain = function(d) {
+    return (d||'').toLowerCase().replace(/^https?:\/\//,'').replace(/\/.*/,'').replace(/^www\./,'');
+  };
+
   const startLusha = async () => {
     if (!selEmpresa) return;
     setLushaOpen(true);
@@ -253,14 +257,21 @@ function EmpresasView({
     setLushaFoundDomain('');
     setLushaManualDomain('');
 
+    // 1) exact match
     var empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=eq.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominios&limit=1');
     var emp = (Array.isArray(empRows) && empRows[0]) || null;
+    // 2) ilike fallback (handles case/accent differences)
+    if (!emp) {
+      empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=ilike.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominios&limit=1');
+      emp = (Array.isArray(empRows) && empRows[0]) || null;
+    }
     setEmpresaSupa(emp);
 
     var domain = '';
-    if (emp && emp.website) domain = emp.website.replace(/^https?:\/\//,'').replace(/\/.*/,'').replace(/^www\./,'');
-    else if (emp && emp.dominios && emp.dominios.length) domain = emp.dominios[0];
+    if (emp && emp.website) domain = normDomain(emp.website);
+    else if (emp && emp.dominios && emp.dominios.length) domain = normDomain(emp.dominios[0]);
 
+    var lushaDiscoveredDomain = '';
     if (!domain) {
       setLushaStep('discovering');
       var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
@@ -272,8 +283,31 @@ function EmpresasView({
 
       if (dr.error) { setLushaError(dr.error); setLushaStep('idle'); return; }
       if (!dr.domain) { setLushaStep('ask-domain'); return; }
-      domain = dr.domain;
+      domain = normDomain(dr.domain);
+      lushaDiscoveredDomain = domain;
       setLushaFoundDomain(domain + ' (via ' + dr.source + ')');
+
+      // 3) se não achou empresa pelo nome, tenta pelo domínio descoberto
+      if (!emp) {
+        var domEnc = encodeURIComponent('%'+domain+'%');
+        empRows = await supaJwtFig('/rest/v1/crm_empresas?website=ilike.'+domEnc+'&select=id,nome,website,dominios&limit=1');
+        emp = (Array.isArray(empRows) && empRows[0]) || null;
+        if (emp) setEmpresaSupa(emp);
+      }
+    } else if (emp && emp.website) {
+      // domínio já conhecido — compara com o que o Lusha encontraria via variação (só se descoberta ocorreu)
+      lushaDiscoveredDomain = '';
+    }
+
+    // 4) se domínio vindo do Lusha difere do gravado, atualiza crm_empresas (não cria empresa nova)
+    if (emp && emp.id && lushaDiscoveredDomain) {
+      var storedDomain = emp.website ? normDomain(emp.website) : '';
+      if (storedDomain !== lushaDiscoveredDomain) {
+        await supaJwtFig('/rest/v1/crm_empresas?id=eq.'+emp.id, {
+          method:'PATCH', headers:{'Prefer':'return=minimal'},
+          body: JSON.stringify({website: 'https://'+lushaDiscoveredDomain})
+        });
+      }
     }
 
     await doLushaSearch(domain);
@@ -298,7 +332,12 @@ function EmpresasView({
   const saveToSupa = async (result) => {
     if (!result || result.saved) return;
     var emp = empresaSupa;
-    if (!emp || !emp.id) { alert('Empresa não encontrada no banco. Cadastre primeiro via Radar.'); return; }
+    if (!emp || !emp.id) {
+      var msg = 'Empresa não encontrada no banco (buscou por nome "'+selEmpresa.nome+'"). Cadastre primeiro via Radar.';
+      console.log('[Lusha saveToSupa] falha —', msg);
+      setLushaError(msg);
+      return;
+    }
     var nome = (result.firstName+' '+result.lastName).trim();
     var qParts = [];
     if (result.email) qParts.push('email.eq.'+encodeURIComponent(result.email));
