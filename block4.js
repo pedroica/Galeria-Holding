@@ -676,16 +676,18 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       lushaError && React.createElement("div", {style:{background:"#2D1414",border:"1px solid #7f2020",borderRadius:8,padding:"10px 14px",marginBottom:16,color:"#FF6B6B",fontSize:12}}, lushaError),
       lushaStep==="loading" && React.createElement("div", {style:{textAlign:"center",padding:"40px 0",color:"#818CF8",fontSize:13}}, "Buscando decisores no Lusha…"),
       lushaStep==="select" && React.createElement("div", null,
-        React.createElement("div", {style:{fontSize:12,color:"#9B9BB4",marginBottom:12}},
-          "Selecione até 5 candidatos para revelar (sem gastar crédito ainda):",
-          lushaCredits != null && React.createElement("span", {style:{marginLeft:8,color:lushaCredits<20?'#FF6B6B':'#34D399'}}, "Créditos: "+lushaCredits)
+        React.createElement("div", {style:{fontSize:12,color:"#9B9BB4",marginBottom:4}},
+          "Selecione até 5 candidatos. Cargo, e-mail e telefone são revelados ao confirmar."
+        ),
+        React.createElement("div", {style:{fontSize:10,color:"#555",marginBottom:12,fontFamily:"IBM Plex Mono,monospace"}},
+          lushaCandidates.length+" encontrado"+(lushaCandidates.length===1?"":"s")+" — "+lushaSelected.length+"/5 selecionado"+(lushaSelected.length===1?"":"s")
         ),
         lushaCandidates.map(function(c,i){
-          var sel = lushaSelected.some(function(s){return s.lushaId===c.lushaId;});
+          var sel = lushaSelected.some(function(s){return s.id===c.id;});
           return React.createElement("div", {
-            key:c.lushaId||i,
+            key:c.id||i,
             onClick:function(){
-              if(sel){ setLushaSelected(lushaSelected.filter(function(s){return s.lushaId!==c.lushaId;})); }
+              if(sel){ setLushaSelected(lushaSelected.filter(function(s){return s.id!==c.id;})); }
               else if(lushaSelected.length<5){ setLushaSelected(lushaSelected.concat([c])); }
             },
             style:{border:"1px solid "+(sel?"#818CF8":"#2D2D44"),background:sel?"#1a1a3a":"#111120",borderRadius:8,padding:"10px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"center",gap:12}
@@ -693,12 +695,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
             React.createElement("div", {style:{width:18,height:18,borderRadius:4,border:"2px solid "+(sel?"#818CF8":"#444"),background:sel?"#818CF8":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff"}}, sel?"✓":""),
             React.createElement("div", {style:{flex:1}},
               React.createElement("div", {style:{fontWeight:600,fontSize:13,color:"#F5F5F5"}}, c.firstName+" "+c.lastName),
-              React.createElement("div", {style:{fontSize:11,color:"#818CF8",marginTop:2}}, c.title),
-              React.createElement("div", {style:{fontSize:10,color:"#555",marginTop:2,display:"flex",gap:10}},
-                c.hasEmail && React.createElement("span", null, "✉ e-mail"),
-                c.hasPhone && React.createElement("span", null, "📱 tel"),
-                c.hasLinkedin && React.createElement("span", null, "🔗 linkedin")
-              )
+              React.createElement("div", {style:{fontSize:10,color:"#555",marginTop:3,fontFamily:"IBM Plex Mono,monospace"}}, "ID Lusha: "+c.id)
             )
           );
         }),

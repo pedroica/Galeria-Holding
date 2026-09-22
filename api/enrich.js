@@ -272,129 +272,145 @@ export default async function handler(req, res) {
     }
   }
 
-  // ── Lusha Search: busca candidatos por empresa/domínio sem gastar créditos ─
+  // ─── Lusha V3 — helper de mensagem de erro ─────────────────────────────────
+  function lushaErrMsg(status, code) {
+    if (status === 401 || code === 'UNAUTHORIZED') return 'Chave LUSHA_KEY inválida ou expirada. Verifique em app.lusha.com → Settings → API.';
+    if (status === 402 || code === 'PAYMENT_REQUIRED') return 'Créditos insuficientes no Lusha.';
+    if (status === 403 || code === 'FORBIDDEN') return 'Conta Lusha inativa. Contate support@lusha.com';
+    if (status === 404) return 'Rota Lusha não encontrada (404). Contate suporte.';
+    if (status === 429 || code === 'TOO_MANY_REQUESTS') return 'Limite de requisições Lusha atingido. Aguarde alguns minutos e tente novamente.';
+    if (code === 'COMPLIANCE_RESTRICTED') return 'Contato bloqueado por restrição legal (GDPR).';
+    if (code === 'ENRICH_FAILED') return 'Falha ao enriquecer este contato no Lusha.';
+    if (status >= 500) return 'Erro interno do Lusha. Tente novamente em alguns instantes.';
+    return null;
+  }
+
+  // ── Lusha Search V3: POST /v3/contacts/prospecting ──────────────────────────
+  // Busca candidatos CEO/CMO por domínio da empresa — não revela e-mail/telefone.
+  // Billing: api_search por resultado (NÃO revealEmail/revealPhone).
   if (provider === 'lusha-search') {
     if (!LUSHA_KEY) return res.status(500).json({ error: 'LUSHA_KEY não configurada. Variável: LUSHA_KEY. Obtenha em app.lusha.com → Settings → API.' });
-    const { domain = '', company = '' } = req.query;
-    if (!domain && !company) return res.status(400).json({ error: 'Informe domain ou company.' });
+    const { domain = '' } = req.query;
+    if (!domain) return res.status(400).json({ error: 'Domínio da empresa obrigatório. Cadastre o site da empresa na aba Base para habilitar a busca Lusha.' });
 
-    // Cargos-alvo: C-suite (CEO/equivalente) + Marketing (CMO/equivalente)
-    const targetTitles = [
-      'CEO','Chief Executive Officer','Presidente','Diretor Geral','Director General',
-      'Country Manager','Managing Director','Sócio Fundador','Fundador e CEO',
-      'CMO','Chief Marketing Officer','VP Marketing','VP de Marketing',
-      'VP of Marketing','Diretor de Marketing','Diretora de Marketing',
-      'Director of Marketing','Head de Marketing','Head of Marketing',
-      'Head de Growth','Head of Growth','VP Growth','Diretor de Comunicação',
-      'VP Comunicação','Head de Comunicação'
-    ];
-
-    // Lusha Contacts API (prospecting) — busca sem revelar contatos
-    const params = new URLSearchParams();
-    if (domain) params.set('companyDomain', domain);
-    if (company) params.set('companyName', company);
-    params.set('country', 'Brazil');
-    params.set('size', '30');
-    params.set('page', '0');
-    targetTitles.forEach(t => params.append('jobTitle', t));
+    const prospBody = {
+      filters: {
+        contacts: {
+          include: {
+            seniority: ['C-Suite', 'Vice President', 'Director', 'Founder', 'Partner'],
+            departments: ['General Management', 'Marketing', 'Business Development'],
+            locations: [{ country: 'Brazil' }]
+          }
+        },
+        companies: {
+          include: { domains: [domain] }
+        }
+      },
+      pagination: { page: 0, size: 25 },
+      options: { excludeDnc: true }
+    };
 
     try {
-      const r = await fetch(`https://api.lusha.com/v2/contacts?${params}`, {
-        headers: { api_key: LUSHA_KEY }
+      const r = await fetch('https://api.lusha.com/v3/contacts/prospecting', {
+        method: 'POST',
+        headers: { 'api_key': LUSHA_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify(prospBody)
       });
       const raw = await r.json();
 
       if (!r.ok) {
-        // Lusha não tem prospecting no plano; tenta via company name search
-        return res.status(r.status).json({ error: raw.error || raw.message || JSON.stringify(raw), raw });
+        const msg = lushaErrMsg(r.status, raw.message || raw.statusCode) || (raw.message || JSON.stringify(raw));
+        return res.status(r.status).json({ error: msg });
       }
 
-      // Normaliza resultado: retorna só preview (sem e-mail/telefone)
-      const contacts = (raw.data || raw.contacts || []).map(c => ({
-        firstName:  c.firstName  || c.first_name  || '',
-        lastName:   c.lastName   || c.last_name   || '',
-        title:      c.jobTitle   || c.title       || '',
-        company:    c.companyName|| c.company     || company || domain,
-        hasEmail:   !!(c.emails  || c.email),
-        hasPhone:   !!(c.phones  || c.phone || c.phoneNumbers),
-        hasLinkedin:!!(c.linkedinUrl || c.linkedin_url || c.linkedin),
-        lushaId:    c.id || null
-      }));
+      // V3 prospecting retorna apenas {id, firstName, lastName} — sem PII
+      const contacts = (raw.results || [])
+        .filter(c => c.firstName && c.lastName)
+        .map(c => ({ id: c.id, firstName: c.firstName, lastName: c.lastName }));
 
-      // Filtra só pessoas atuais no Brasil (a maioria já veio filtrada via país)
-      const filtered = contacts.filter(c => c.firstName && c.lastName);
+      if (!contacts.length) {
+        return res.status(200).json({ contacts: [], total: 0, message: 'Nenhum CEO/CMO encontrado para este domínio no Lusha. Tente com outro domínio ou adicione decisores manualmente.' });
+      }
 
-      return res.status(200).json({
-        contacts: filtered,
-        total: raw.total || raw.totalContacts || filtered.length,
-        credits: raw.accountInfo || raw.credits || null
-      });
+      return res.status(200).json({ contacts, total: raw.pagination?.total || contacts.length });
     } catch (e) {
-      return res.status(502).json({ error: String(e) });
+      return res.status(502).json({ error: 'Erro ao conectar com Lusha: ' + String(e) });
     }
   }
 
-  // ── Lusha Reveal: revela contatos selecionados (gasta créditos) ───────────
+  // ── Lusha Reveal V3: POST /v3/contacts/enrich ───────────────────────────────
+  // Revela e-mail, telefone e LinkedIn para os IDs selecionados. Gasta créditos.
   if (provider === 'lusha-reveal') {
-    if (!LUSHA_KEY) return res.status(500).json({ error: 'LUSHA_KEY não configurada' });
+    if (!LUSHA_KEY) return res.status(500).json({ error: 'LUSHA_KEY não configurada.' });
     const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
     const contacts = Array.isArray(body.contacts) ? body.contacts : [];
     if (!contacts.length) return res.status(400).json({ error: 'Nenhum contato informado.' });
     if (contacts.length > 5) return res.status(400).json({ error: 'Máximo 5 contatos por vez.' });
 
-    const results = [];
-    let lastCredits = null;
+    const ids = contacts.map(c => c.id).filter(Boolean);
+    if (!ids.length) return res.status(400).json({ error: 'IDs dos contatos ausentes.' });
 
-    for (const c of contacts) {
-      const params = new URLSearchParams({
-        firstName: c.firstName || '',
-        lastName:  c.lastName  || '',
-        company:   c.company   || ''
+    // Mapa id → dados de entrada para fallback de nome
+    const inputById = {};
+    contacts.forEach(c => { if (c.id) inputById[c.id] = c; });
+
+    try {
+      const r = await fetch('https://api.lusha.com/v3/contacts/enrich', {
+        method: 'POST',
+        headers: { 'api_key': LUSHA_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids, reveal: ['emails', 'phones'] })
       });
-      try {
-        const r = await fetch(`https://api.lusha.com/v2/person?${params}`, {
-          headers: { api_key: LUSHA_KEY }
-        });
-        const data = await r.json();
+      const data = await r.json();
 
-        const phones   = (data.data && data.data.phoneNumbers) || [];
-        const emails   = (data.data && data.data.emails)       || [];
-        const linkedin = (data.data && (data.data.linkedInUrl || data.data.linkedInURL || data.data.linkedin_url)) || '';
-        const currentPos = (data.data && data.data.currentPositions && data.data.currentPositions[0]) || {};
-
-        // Créditos (Lusha retorna em data.accountInfo ou similar)
-        if (data.accountInfo) lastCredits = data.accountInfo;
-        else if (data.credits)  lastCredits = data.credits;
-
-        // Filtra só celular brasileiro: dígitos, 11 dígitos (DDD + 9XXXXXXXX)
-        const mobileWa = phones
-          .map(p => (p.internationalNumber || p.localNumber || '').replace(/\D/g, ''))
-          .filter(n => {
-            // Remove prefixo 55 se tiver
-            const local = n.startsWith('55') ? n.slice(2) : n;
-            return local.length === 11 && local[2] === '9'; // celular BR
-          })
-          .map(n => n.startsWith('55') ? n : '55' + n)[0] || '';
-
-        const email = emails.find(e => e.type !== 'risky' && e.emailAddress) || emails[0];
-
-        results.push({
-          firstName:   c.firstName,
-          lastName:    c.lastName,
-          title:       c.title || currentPos.title || '',
-          company:     c.company,
-          email:       email ? email.emailAddress : '',
-          emailType:   email ? email.type : '',
-          wa:          mobileWa,
-          linkedin_url:linkedin,
-          error:       data.error || (!emails.length && !phones.length ? 'sem_dados' : null)
-        });
-      } catch (e) {
-        results.push({ firstName: c.firstName, lastName: c.lastName, error: String(e) });
+      if (!r.ok) {
+        const msg = lushaErrMsg(r.status, data.message || data.statusCode) || (data.message || JSON.stringify(data));
+        return res.status(r.status).json({ error: msg });
       }
-    }
 
-    return res.status(200).json({ results, credits: lastCredits });
+      const results = (data.results || []).map(c => {
+        const inp = inputById[c.id] || {};
+        // Melhor e-mail: prioriza work, evita blocked/doNotContact
+        const bestEmail = (c.emails || []).find(e => e.type === 'work') || (c.emails || [])[0];
+        // Celular brasileiro: E.164 → strip +55 → 11 dígitos → 3.º dígito = '9'
+        const mobilePhone = (c.phones || []).find(p => {
+          if (p.type !== 'mobile') return false;
+          const n = (p.number || '').replace(/\D/g, '');
+          const local = n.startsWith('55') ? n.slice(2) : n;
+          return local.length === 11 && local[2] === '9';
+        });
+        const waRaw = mobilePhone ? (mobilePhone.number || '').replace(/\D/g, '') : null;
+        const wa = waRaw ? (waRaw.startsWith('55') ? waRaw : '55' + waRaw) : null;
+        // Traduz erro por-contato
+        const errCode = c.errorCode || null;
+        const errMsg = errCode ? (lushaErrMsg(null, errCode) || errCode) : null;
+        return {
+          id:           c.id,
+          firstName:    c.firstName    || inp.firstName || '',
+          lastName:     c.lastName     || inp.lastName  || '',
+          title:        c.jobTitle?.title || '',
+          company:      c.company?.name  || '',
+          email:        bestEmail?.email || null,
+          emailType:    bestEmail?.type  || null,
+          wa,
+          linkedin_url: c.socialLinks?.linkedin || null,
+          error:        errMsg
+        };
+      });
+
+      // Saldo de créditos via /v3/account/usage
+      let credits = null;
+      try {
+        const cu = await fetch('https://api.lusha.com/v3/account/usage', { headers: { 'api_key': LUSHA_KEY } });
+        if (cu.ok) {
+          const cd = await cu.json();
+          credits = cd.credits?.balance ?? cd.creditsBalance ?? null;
+        }
+      } catch (_) { /* não bloqueia resultado */ }
+
+      return res.status(200).json({ results, credits });
+    } catch (e) {
+      return res.status(502).json({ error: 'Erro ao conectar com Lusha: ' + String(e) });
+    }
   }
 
   // ── Microsoft Graph ───────────────────────────────────────────────────────
