@@ -221,15 +221,24 @@ function EmpresasView({
     return fetch('https://uetltlnjmobeiunxfsqi.supabase.co'+path, Object.assign({},opts,{headers:h})).then(function(r){return r.json();});
   }
 
-  // Carrega crm_empresas uma vez no mount para ter empresa_id disponível ao clicar
+  // Carrega crm_empresas paginado (1000/página) até esgotamento — sem limite fixo
   useEffect(function() {
-    supaJwtFig('/rest/v1/crm_empresas?select=id,nome,website,dominios&limit=2000')
-      .then(function(rows) {
-        if (!Array.isArray(rows)) return;
-        var m = {};
+    var PAGE = 1000;
+    (async function() {
+      var m = {};
+      var offset = 0;
+      while (true) {
+        var rows = await supaJwtFig(
+          '/rest/v1/crm_empresas?select=id,nome,website,dominios&limit='+PAGE+'&offset='+offset
+        ).catch(function(){ return []; });
+        if (!Array.isArray(rows) || rows.length === 0) break;
         rows.forEach(function(r) { if (r.nome) m[r.nome.toLowerCase().trim()] = r; });
-        setSupaEmpMap(m);
-      }).catch(function(){});
+        if (rows.length < PAGE) break;
+        offset += PAGE;
+      }
+      console.log('[supaEmpMap] carregadas', Object.keys(m).length, 'empresas');
+      setSupaEmpMap(m);
+    })();
   }, []);
 
   const doLushaSearch = async (domain) => {
