@@ -293,21 +293,21 @@ export default async function handler(req, res) {
     const { domain = '' } = req.query;
     if (!domain) return res.status(400).json({ error: 'Domínio da empresa obrigatório. Cadastre o site da empresa na aba Base para habilitar a busca Lusha.' });
 
+    // Seniority V3: valores numéricos (9=C-Suite, 10=Founder, 7=Partner, 8=VP, 6=Director)
+    // Departments: filtra General Management + Marketing (IDs da API Lusha V3)
+    // Referência: docs.lusha.com/apis/openapi/prospecting-search-and-enrich
     const prospBody = {
       filters: {
         contacts: {
           include: {
-            seniority: ['C-Suite', 'Vice President', 'Director', 'Founder', 'Partner'],
-            departments: ['General Management', 'Marketing', 'Business Development'],
-            locations: [{ country: 'Brazil' }]
+            seniority: [9, 10, 7, 8, 6]
           }
         },
         companies: {
           include: { domains: [domain] }
         }
       },
-      pagination: { page: 0, size: 25 },
-      options: { excludeDnc: true }
+      pagination: { page: 0, size: 25 }
     };
 
     try {
