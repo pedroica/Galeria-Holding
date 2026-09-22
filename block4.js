@@ -213,6 +213,8 @@ function EmpresasView({
   const [empresaSupa,       setEmpresaSupa]       = useState(null);
   const [lushaFoundDomain,  setLushaFoundDomain]  = useState('');
   const [lushaManualDomain, setLushaManualDomain] = useState('');
+  const [lushaDomain,       setLushaDomain]       = useState('');
+  const [lushaChecked,      setLushaChecked]      = useState([]);
   const [supaEmpMap,        setSupaEmpMap]        = useState({});
 
   function supaJwtFig(path, opts) {
@@ -229,7 +231,7 @@ function EmpresasView({
       var offset = 0;
       while (true) {
         var rows = await supaJwtFig(
-          '/rest/v1/crm_empresas?select=id,nome,website,dominios&limit='+PAGE+'&offset='+offset
+          '/rest/v1/crm_empresas?select=id,nome,website,dominio&limit='+PAGE+'&offset='+offset
         ).catch(function(){ return []; });
         if (!Array.isArray(rows) || rows.length === 0) break;
         rows.forEach(function(r) { if (r.nome) m[r.nome.toLowerCase().trim()] = r; });
@@ -242,6 +244,7 @@ function EmpresasView({
   }, []);
 
   const doLushaSearch = async (domain) => {
+    setLushaDomain(domain);
     setLushaStep('loading');
     var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
     var resp = await fetch('/api/enrich?provider=lusha-search&domain='+encodeURIComponent(domain), {
@@ -277,19 +280,21 @@ function EmpresasView({
     setLushaResults([]);
     setLushaFoundDomain('');
     setLushaManualDomain('');
+    setLushaDomain('');
+    setLushaChecked([]);
 
     var emp = null;
     if (selEmpresa.empresa_id) {
       // Fast path: id já conhecido via supaEmpMap — sem roundtrip extra
-      emp = { id: selEmpresa.empresa_id, nome: selEmpresa.nome, website: selEmpresa.website || null, dominios: selEmpresa.dominios || null };
+      emp = { id: selEmpresa.empresa_id, nome: selEmpresa.nome, website: selEmpresa.website || null, dominio: selEmpresa.dominio || null };
       console.log('[Lusha startLusha] empresa_id direto:', emp.id);
     } else {
       // Fallback 1: exact match por nome
-      var empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=eq.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominios&limit=1');
+      var empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=eq.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominio&limit=1');
       emp = (Array.isArray(empRows) && empRows[0]) || null;
       // Fallback 2: ilike (diferença de caixa/acento)
       if (!emp) {
-        empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=ilike.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominios&limit=1');
+        empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=ilike.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominio&limit=1');
         emp = (Array.isArray(empRows) && empRows[0]) || null;
       }
       console.log('[Lusha startLusha] fallback nome, found:', emp ? 'id='+emp.id : 'null — query: nome=ilike.'+selEmpresa.nome);
@@ -298,7 +303,7 @@ function EmpresasView({
 
     var domain = '';
     if (emp && emp.website) domain = normDomain(emp.website);
-    else if (emp && emp.dominios && emp.dominios.length) domain = normDomain(emp.dominios[0]);
+    else if (emp && emp.dominio) domain = normDomain(emp.dominio);
 
     var lushaDiscoveredDomain = '';
     if (!domain) {
@@ -319,7 +324,7 @@ function EmpresasView({
       // 3) se não achou empresa pelo nome, tenta pelo domínio descoberto
       if (!emp) {
         var domEnc = encodeURIComponent('%'+domain+'%');
-        var dRows = await supaJwtFig('/rest/v1/crm_empresas?website=ilike.'+domEnc+'&select=id,nome,website,dominios&limit=1');
+        var dRows = await supaJwtFig('/rest/v1/crm_empresas?website=ilike.'+domEnc+'&select=id,nome,website,dominio&limit=1');
         emp = (Array.isArray(dRows) && dRows[0]) || null;
         console.log('[Lusha startLusha] fallback domínio website=ilike.%'+domain+'%, found:', emp ? 'id='+emp.id : 'null');
         if (emp) setEmpresaSupa(emp);
@@ -355,54 +360,104 @@ function EmpresasView({
 
     if (resp.error) { setLushaError(resp.error); setLushaStep('select'); return; }
     if (resp.credits != null) setLushaCredits(resp.credits);
-    setLushaResults(resp.results || []);
+    var results = resp.results || [];
+    setLushaResults(results);
+    setLushaChecked(results.map(function(){ return true; })); // todos marcados por padrão
     setLushaStep('done');
   };
 
-  const saveToSupa = async (result) => {
-    if (!result || result.saved) return;
+  const batchSaveToSupa = async () => {
     var emp = empresaSupa;
-    if (!emp || !emp.id) {
-      var msg = 'Empresa não encontrada no banco (buscou por nome "'+selEmpresa.nome+'"). Cadastre primeiro via Radar.';
-      console.log('[Lusha saveToSupa] falha —', msg);
-      setLushaError(msg);
-      return;
-    }
-    var nome = (result.firstName+' '+result.lastName).trim();
-    var qParts = [];
-    if (result.email) qParts.push('email.eq.'+encodeURIComponent(result.email));
-    if (result.linkedin_url) qParts.push('linkedin_url.eq.'+encodeURIComponent(result.linkedin_url));
-    var existRows = [];
-    var deupQuery = '';
-    if (qParts.length) {
-      deupQuery = 'empresa_id=eq.'+emp.id+'&or=('+qParts.join(',')+')'
-      existRows = await supaJwtFig('/rest/v1/crm_decisores?'+deupQuery+'&select=id&limit=1');
-    }
-    if (!existRows || !existRows.length) {
-      deupQuery = 'empresa_id=eq.'+emp.id+'&nome=ilike.'+encodeURIComponent(nome);
-      existRows = await supaJwtFig('/rest/v1/crm_decisores?'+deupQuery+'&select=id&limit=1');
-    }
-    console.log('[Lusha saveToSupa] dedup query:', deupQuery, '→ found:', (existRows && existRows.length) ? existRows[0].id : 'none');
+    var empId = emp && emp.id;
     var now = new Date().toISOString();
-    var row = { empresa_id:emp.id, nome, cargo:result.title||'', email:result.email||null, wa:result.wa||null, linkedin_url:result.linkedin_url||null, fonte:'lusha', status:'ativo', temperatura:0, wa_verificado:false, criado_em:now, atualizado_em:now };
-    var saved;
-    if (existRows && existRows.length && existRows[0].id) {
-      var patch = { cargo:row.cargo, email:row.email, wa:row.wa, linkedin_url:row.linkedin_url, atualizado_em:now };
-      console.log('[Lusha saveToSupa] PATCH decisor id='+existRows[0].id);
-      saved = await supaJwtFig('/rest/v1/crm_decisores?id=eq.'+existRows[0].id, { method:'PATCH', headers:{'Prefer':'return=representation'}, body:JSON.stringify(patch) });
-      saved = Array.isArray(saved) ? saved[0] : saved;
-    } else {
-      console.log('[Lusha saveToSupa] POST novo decisor — empresa_id='+emp.id);
-      saved = await supaJwtFig('/rest/v1/crm_decisores', { method:'POST', headers:{'Prefer':'return=representation'}, body:JSON.stringify(row) });
-      saved = Array.isArray(saved) ? saved[0] : saved;
+
+    // Se empresa ainda não existe no banco, criar agora
+    if (!empId) {
+      var domain = lushaDomain || '';
+      var newEmpRow = {
+        nome: selEmpresa.nome,
+        setor: selEmpresa.setor || null,
+        website: domain ? 'https://'+domain : null,
+        dominio: domain || null,
+        fonte: 'lusha',
+        criado_em: now,
+        atualizado_em: now
+      };
+      console.log('[Lusha batchSave] criando empresa no banco:', newEmpRow);
+      var created = await supaJwtFig('/rest/v1/crm_empresas', {
+        method:'POST', headers:{'Prefer':'return=representation'},
+        body: JSON.stringify(newEmpRow)
+      }).catch(function(){ return null; });
+      created = Array.isArray(created) ? created[0] : created;
+      if (!created || !created.id) {
+        setLushaError('Não foi possível criar empresa no banco. Verifique conexão e tente novamente.');
+        return;
+      }
+      empId = created.id;
+      setEmpresaSupa(created);
+      setSupaEmpMap(function(prev){ var m=Object.assign({},prev); m[selEmpresa.nome.toLowerCase().trim()]=created; return m; });
+      console.log('[Lusha batchSave] empresa criada, id='+empId);
     }
-    setLushaResults(function(prev){ return prev.map(function(r2){ return (r2.firstName===result.firstName&&r2.lastName===result.lastName)?Object.assign({},r2,{saved:true}):r2; }); });
-    // Atualiza estado local também
-    var k = curGrupo.id+'_'+selEmpresa.rank;
-    var ex = (accs||{})[k] || {decisors:[],sugeridos:[],activities:[]};
-    var novoAcc = Object.assign({}, ex, { decisors: (ex.decisors||[]).concat([{nome, cargo:result.title||'', email:result.email||'', wa:result.wa||'', linkedin:result.linkedin_url||'', addedAt:new Date().toLocaleDateString('pt-BR')}]) });
-    var newAccs = Object.assign({}, accs||{}, {[k]: novoAcc});
-    setAccs(newAccs); lsSet('gh_decisores_v3', newAccs);
+
+    setLushaStep('saving');
+
+    var toSave = lushaResults.filter(function(_, i){ return lushaChecked[i]; });
+    var saveResults = [];
+
+    for (var i = 0; i < toSave.length; i++) {
+      var result = toSave[i];
+      var nome = (result.firstName+' '+result.lastName).trim();
+      var qParts = [];
+      if (result.email) qParts.push('email.eq.'+encodeURIComponent(result.email));
+      if (result.linkedin_url) qParts.push('linkedin_url.eq.'+encodeURIComponent(result.linkedin_url));
+      var existRows = [];
+      var deupQuery = '';
+      try {
+        if (qParts.length) {
+          deupQuery = 'empresa_id=eq.'+empId+'&or=('+qParts.join(',')+')'
+          existRows = await supaJwtFig('/rest/v1/crm_decisores?'+deupQuery+'&select=id&limit=1');
+        }
+        if (!existRows || !existRows.length) {
+          deupQuery = 'empresa_id=eq.'+empId+'&nome=ilike.'+encodeURIComponent(nome);
+          existRows = await supaJwtFig('/rest/v1/crm_decisores?'+deupQuery+'&select=id&limit=1');
+        }
+        console.log('[Lusha batchSave] dedup:', deupQuery, '→', existRows&&existRows.length ? existRows[0].id : 'none');
+
+        if (existRows && existRows.length && existRows[0].id) {
+          var patch = { cargo:result.title||'', email:result.email||null, wa:result.wa||null, linkedin_url:result.linkedin_url||null, atualizado_em:now };
+          await supaJwtFig('/rest/v1/crm_decisores?id=eq.'+existRows[0].id, { method:'PATCH', headers:{'Prefer':'return=minimal'}, body:JSON.stringify(patch) });
+          saveResults.push(Object.assign({}, result, {saveStatus:'atualizado'}));
+        } else {
+          var row = { empresa_id:empId, nome, cargo:result.title||'', email:result.email||null, wa:result.wa||null, linkedin_url:result.linkedin_url||null, fonte:'lusha', status:'ativo', temperatura:0, wa_verificado:false, criado_em:now, atualizado_em:now };
+          await supaJwtFig('/rest/v1/crm_decisores', { method:'POST', headers:{'Prefer':'return=minimal'}, body:JSON.stringify(row) });
+          saveResults.push(Object.assign({}, result, {saveStatus:'criado'}));
+        }
+      } catch(err) {
+        saveResults.push(Object.assign({}, result, {saveStatus:'erro', saveMsg:String(err)}));
+      }
+    }
+
+    // Atualizar enriquecido_em na empresa
+    await supaJwtFig('/rest/v1/crm_empresas?id=eq.'+empId, {
+      method:'PATCH', headers:{'Prefer':'return=minimal'},
+      body: JSON.stringify({enriquecido_em: now, atualizado_em: now})
+    }).catch(function(){});
+
+    // Recarregar decisores do Supabase → atualiza accs state (sem refresh de página)
+    var decRows = await supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&select=id,nome,cargo,email,wa,wa2,wa3,wa4,linkedin_url,criado_em&status=eq.ativo&order=criado_em.desc').catch(function(){ return []; });
+    if (Array.isArray(decRows)) {
+      var k = curGrupo.id+'_'+selEmpresa.rank;
+      var ex = (accs||{})[k] || {decisors:[],sugeridos:[],activities:[]};
+      var novoAcc = Object.assign({}, ex, {
+        decisors: decRows.map(function(r){ return {nome:r.nome||'',cargo:r.cargo||'',email:r.email||'',wa:r.wa||'',wa2:r.wa2||'',wa3:r.wa3||'',wa4:r.wa4||'',linkedin:r.linkedin_url||'',addedAt:(r.criado_em||'').slice(0,10)}; })
+      });
+      var newAccs = Object.assign({}, accs||{}, {[k]: novoAcc});
+      setAccs(newAccs);
+      lsSet('gh_decisores_v3', newAccs);
+    }
+
+    setLushaResults(saveResults);
+    setLushaStep('saved');
   };
 
   // ── dados ──────────────────────────────────────────────────────────────────
@@ -836,33 +891,70 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       ),
       lushaStep==="revealing" && React.createElement("div", {style:{textAlign:"center",padding:"40px 0",color:"#818CF8",fontSize:13}}, "Revelando e salvando…"),
       lushaStep==="done" && React.createElement("div", null,
-        React.createElement("div", {style:{fontSize:13,color:"#34D399",marginBottom:14,fontWeight:600}},
-          "✓ "+lushaResults.length+" decisor"+(lushaResults.length===1?"":"es")+" processado"+(lushaResults.length===1?"":"s"),
-          lushaCredits != null && React.createElement("span", {style:{marginLeft:10,fontSize:11,color:lushaCredits<20?'#FF6B6B':'#9B9BB4'}},
-            " — Créditos restantes: "+lushaCredits+(lushaCredits<20?" ⚠ Abaixo de 20%!":"")
-          )
+        React.createElement("div", {style:{fontSize:12,color:"#9B9BB4",marginBottom:4}},
+          lushaResults.length+" decisor"+(lushaResults.length===1?"":"es")+" revelado"+(lushaResults.length===1?"":"s")+" — marque os que deseja cadastrar."
+        ),
+        lushaCredits != null && React.createElement("div", {style:{fontSize:10,color:lushaCredits<20?'#FF6B6B':'#555',marginBottom:12,fontFamily:"IBM Plex Mono,monospace"}},
+          "Créditos restantes: "+lushaCredits+(lushaCredits<20?" ⚠":"")
         ),
         lushaResults.map(function(r,i){
+          var checked = !!lushaChecked[i];
           return React.createElement("div", {
             key:i,
-            style:{border:"1px solid "+(r.error?"#7f2020":"#1a3a1a"),background:r.error?"#1a0f0f":"#0f1a0f",borderRadius:8,padding:"10px 14px",marginBottom:8}
+            onClick:function(){ setLushaChecked(function(prev){ var a=prev.slice(); a[i]=!a[i]; return a; }); },
+            style:{border:"1px solid "+(checked?"#818CF8":"#2D2D44"),background:checked?"#1a1a3a":"#111120",borderRadius:8,padding:"10px 14px",marginBottom:8,cursor:"pointer",display:"flex",alignItems:"flex-start",gap:12}
           },
-            React.createElement("div", {style:{fontWeight:600,fontSize:13,color:"#F5F5F5",display:"flex",justifyContent:"space-between"}},
-              React.createElement("span", null, r.firstName+" "+r.lastName),
-              r.saved && React.createElement("span", {style:{fontSize:11,color:"#34D399"}}, "✓ salvo"),
-              r.error && React.createElement("span", {style:{fontSize:11,color:"#FF6B6B"}}, "erro")
-            ),
-            !r.error && React.createElement("div", {style:{fontSize:11,color:"#818CF8",marginTop:2}}, r.title),
-            !r.error && React.createElement("div", {style:{fontSize:10,color:"#555",marginTop:4,display:"flex",flexDirection:"column",gap:2}},
-              r.email && React.createElement("span", null, "✉ "+r.email+" "+(r.emailType?'('+r.emailType+')':'')),
-              r.wa && React.createElement("span", null, "📱 "+r.wa),
-              r.linkedin_url && React.createElement("span", null, "🔗 "+r.linkedin_url)
-            ),
-            !r.error && !r.saved && React.createElement("button", {onClick:function(){saveToSupa(r);},style:{marginTop:8,padding:"5px 12px",borderRadius:5,border:"none",background:"#818CF8",color:"#fff",fontSize:11,cursor:"pointer"}}, "Salvar em decisores"),
-            r.error && React.createElement("div", {style:{fontSize:11,color:"#FF6B6B",marginTop:4}}, r.error)
+            React.createElement("div", {style:{width:18,height:18,borderRadius:4,border:"2px solid "+(checked?"#818CF8":"#444"),background:checked?"#818CF8":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff",marginTop:2}}, checked?"✓":""),
+            React.createElement("div", {style:{flex:1}},
+              React.createElement("div", {style:{fontWeight:600,fontSize:13,color:"#F5F5F5"}}, r.firstName+" "+r.lastName),
+              r.title && React.createElement("div", {style:{fontSize:11,color:"#818CF8",marginTop:2}}, r.title),
+              React.createElement("div", {style:{fontSize:10,color:"#555",marginTop:4,display:"flex",flexDirection:"column",gap:2}},
+                r.email && React.createElement("span", null, "✉ "+r.email+(r.emailType?' ('+r.emailType+')':'')),
+                r.wa && React.createElement("span", null, "📱 "+r.wa),
+                r.linkedin_url && React.createElement("span", null, "🔗 "+r.linkedin_url)
+              ),
+              r.error && React.createElement("div", {style:{fontSize:11,color:"#FF6B6B",marginTop:4}}, r.error)
+            )
           );
         }),
-        React.createElement("button", {onClick:function(){setLushaOpen(false);setLushaStep('idle');},style:{marginTop:16,padding:"9px 24px",borderRadius:7,border:"none",background:"#2D2D44",color:"#F5F5F5",fontSize:12,cursor:"pointer"}}, "Fechar")
+        React.createElement("div", {style:{display:"flex",gap:10,marginTop:18}},
+          React.createElement("button", {onClick:function(){setLushaOpen(false);setLushaStep('idle');},style:{padding:"9px 20px",borderRadius:7,border:"1px solid #2D2D44",background:"transparent",color:"#9B9BB4",fontSize:12,cursor:"pointer"}}, "Cancelar"),
+          (function(){
+            var n = lushaChecked.filter(Boolean).length;
+            return React.createElement("button", {
+              onClick: batchSaveToSupa,
+              disabled: !n,
+              style:{padding:"9px 20px",borderRadius:7,border:"none",background:n?"#818CF8":"#333",color:"#fff",fontSize:12,cursor:n?"pointer":"default",fontWeight:700}
+            }, "Cadastrar selecionados ("+n+") →");
+          })()
+        )
+      ),
+      lushaStep==="saving" && React.createElement("div", {style:{textAlign:"center",padding:"40px 0",color:"#818CF8",fontSize:13}}, "Cadastrando decisores…"),
+      lushaStep==="saved" && React.createElement("div", null,
+        React.createElement("div", {style:{fontSize:13,color:"#34D399",marginBottom:14,fontWeight:600}},
+          "✓ "+lushaResults.length+" decisor"+(lushaResults.length===1?"":"es")+" processado"+(lushaResults.length===1?"":"s")
+        ),
+        lushaResults.map(function(r,i){
+          var statusColor = r.saveStatus==='criado'?"#34D399":r.saveStatus==='atualizado'?"#60A5FA":"#FF6B6B";
+          var statusLabel = r.saveStatus==='criado'?"✓ criado":r.saveStatus==='atualizado'?"↻ atualizado":"✗ erro";
+          return React.createElement("div", {
+            key:i,
+            style:{border:"1px solid #1a2a1a",background:"#0d150d",borderRadius:8,padding:"10px 14px",marginBottom:8,display:"flex",alignItems:"center",gap:12}
+          },
+            React.createElement("div", {style:{flex:1}},
+              React.createElement("div", {style:{fontWeight:600,fontSize:13,color:"#F5F5F5",display:"flex",justifyContent:"space-between",alignItems:"center"}},
+                React.createElement("span", null, r.firstName+" "+r.lastName),
+                React.createElement("span", {style:{fontSize:11,color:statusColor,fontFamily:"IBM Plex Mono,monospace"}}, statusLabel)
+              ),
+              r.title && React.createElement("div", {style:{fontSize:11,color:"#818CF8",marginTop:2}}, r.title),
+              r.saveMsg && React.createElement("div", {style:{fontSize:10,color:"#FF6B6B",marginTop:3}}, r.saveMsg)
+            )
+          );
+        }),
+        React.createElement("button", {
+          onClick:function(){ setLushaOpen(false); setLushaStep('idle'); },
+          style:{marginTop:16,padding:"9px 24px",borderRadius:7,border:"none",background:"#818CF8",color:"#fff",fontSize:12,cursor:"pointer",fontWeight:700}
+        }, "Concluir")
       )
     )),
     /*#__PURE__*/React.createElement("div", {
@@ -1443,7 +1535,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       key: e.rank,
       onClick: () => {
         var supaRow = supaEmpMap[e.nome.toLowerCase().trim()] || null;
-        setSelEmpresa(Object.assign({}, e, supaRow ? {empresa_id: supaRow.id, website: supaRow.website, dominios: supaRow.dominios} : {}));
+        setSelEmpresa(Object.assign({}, e, supaRow ? {empresa_id: supaRow.id, website: supaRow.website, dominio: supaRow.dominio} : {}));
       },
       style: {
         display: "flex",
