@@ -11,11 +11,15 @@
     "build": "echo 'Build OK'",
     "test": "cd agent && npm test",
     "test:crm": "node tests/crm-integration.test.mjs",
+    "test:e2e": "npx playwright test tests/lusha-e2e.playwright.mjs --reporter=list",
     "typecheck": "cd agent && npm run typecheck"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",
     "@types/node": "^26.3.0",
     "typescript": "^7.0.2"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.63.0"
   }
 }

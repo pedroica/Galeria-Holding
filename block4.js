@@ -1162,43 +1162,6 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         }, "Concluir")
       )
     )),
-    batchOpen && React.createElement("div", {
-      style: { position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.8)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center" }
-    }, React.createElement("div", {
-      style: { background:"#0d0d1a", border:"1px solid #2D2D44", borderRadius:12, padding:24, minWidth:360, maxWidth:520, width:"90%", maxHeight:"75vh", overflowY:"auto" }
-    },
-      React.createElement("div", {style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}},
-        React.createElement("div", {style:{fontWeight:700,fontSize:14,color:"#818CF8"}}, "⚡ Enriquecimento em lote"),
-        !batchRunning && React.createElement("button", {
-          onClick: function(){ setBatchOpen(false); setBatchProgress([]); },
-          style: { background:"none", border:"none", color:"#9B9BB4", fontSize:20, cursor:"pointer" }
-        }, "×")
-      ),
-      batchRunning && React.createElement("div", {style:{fontSize:10,color:"#9B9BB4",fontFamily:"IBM Plex Mono,monospace",marginBottom:12}},
-        "Processando... Não feche esta janela."
-      ),
-      React.createElement("div", {style:{display:"flex",flexDirection:"column",gap:6}},
-        batchProgress.map(function(row, idx){
-          var icon = row.status==='ok' ? "✅" : row.status==='erro' ? "❌" : row.status==='limite' ? "⛔" : row.status==='sem_dominio' ? "🔍" : row.status==='sem_contatos' ? "💤" : row.status==='rodando' ? "⏳" : "⬜";
-          var label = row.status==='ok' ? (row.criados+" criados, domínio: "+(row.domain||'?'))
-            : row.status==='erro' ? (row.msg||'erro')
-            : row.status==='limite' ? "limite diário atingido"
-            : row.status==='sem_dominio' ? "domínio não encontrado"
-            : row.status==='sem_contatos' ? "sem contatos (domínio: "+(row.domain||'?')+")"
-            : row.status==='rodando' ? "processando..."
-            : "aguardando";
-          return React.createElement("div", {key:idx, style:{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:"#111827",borderRadius:7,fontSize:11}},
-            React.createElement("span", {style:{fontSize:13}}, icon),
-            React.createElement("span", {style:{flex:1,fontWeight:500,color:"#F5F5F5",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}, row.nome),
-            React.createElement("span", {style:{fontSize:9,color:"#555",fontFamily:"IBM Plex Mono,monospace",whiteSpace:"nowrap"}}, label)
-          );
-        })
-      ),
-      !batchRunning && React.createElement("button", {
-        onClick: function(){ setBatchOpen(false); setBatchProgress([]); },
-        style: { marginTop:16, padding:"8px 24px", borderRadius:7, border:"none", background:"#818CF8", color:"#fff", fontSize:12, cursor:"pointer", fontWeight:700, width:"100%" }
-      }, "Fechar")
-    )),
     /*#__PURE__*/React.createElement("div", {
       style: {
         flex: 1,
@@ -1460,7 +1423,45 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       overflow: "hidden",
       background: "#0D0D0D"
     }
-  }, emailPopover && React.createElement(EmailPopover, { empresa: emailPopover, accs: accs, setAccs: setAccs, curGrupoId: curGrupo.id, onClose: function(){ setEmailPopover(null); } }), showAddEmp && /*#__PURE__*/React.createElement("div", {
+  }, emailPopover && React.createElement(EmailPopover, { empresa: emailPopover, accs: accs, setAccs: setAccs, curGrupoId: curGrupo.id, onClose: function(){ setEmailPopover(null); } }),
+  batchOpen && React.createElement("div", {
+    style: { position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.8)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center" }
+  }, React.createElement("div", {
+    style: { background:"#0d0d1a", border:"1px solid #2D2D44", borderRadius:12, padding:24, minWidth:360, maxWidth:520, width:"90%", maxHeight:"75vh", overflowY:"auto" }
+  },
+    React.createElement("div", {style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}},
+      React.createElement("div", {style:{fontWeight:700,fontSize:14,color:"#818CF8"}}, "⚡ Enriquecimento em lote"),
+      !batchRunning && React.createElement("button", {
+        onClick: function(){ setBatchOpen(false); setBatchProgress([]); },
+        style: { background:"none", border:"none", color:"#9B9BB4", fontSize:20, cursor:"pointer" }
+      }, "×")
+    ),
+    batchRunning && React.createElement("div", {style:{fontSize:10,color:"#9B9BB4",fontFamily:"IBM Plex Mono,monospace",marginBottom:12}},
+      "Processando... Não feche esta janela."
+    ),
+    React.createElement("div", {style:{display:"flex",flexDirection:"column",gap:6}},
+      batchProgress.map(function(row, idx){
+        var icon = row.status==='ok' ? "✅" : row.status==='erro' ? "❌" : row.status==='limite' ? "⛔" : row.status==='sem_dominio' ? "🔍" : row.status==='sem_contatos' ? "💤" : row.status==='rodando' ? "⏳" : "⬜";
+        var label = row.status==='ok' ? (row.criados+" criados, domínio: "+(row.domain||'?'))
+          : row.status==='erro' ? (row.msg||'erro')
+          : row.status==='limite' ? "limite diário atingido"
+          : row.status==='sem_dominio' ? "domínio não encontrado"
+          : row.status==='sem_contatos' ? "sem contatos (domínio: "+(row.domain||'?')+")"
+          : row.status==='rodando' ? "processando..."
+          : "aguardando";
+        return React.createElement("div", {key:idx, style:{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:"#111827",borderRadius:7,fontSize:11}},
+          React.createElement("span", {style:{fontSize:13}}, icon),
+          React.createElement("span", {style:{flex:1,fontWeight:500,color:"#F5F5F5",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}, row.nome),
+          React.createElement("span", {style:{fontSize:9,color:"#555",fontFamily:"IBM Plex Mono,monospace",whiteSpace:"nowrap"}}, label)
+        );
+      })
+    ),
+    !batchRunning && React.createElement("button", {
+      onClick: function(){ setBatchOpen(false); setBatchProgress([]); },
+      style: { marginTop:16, padding:"8px 24px", borderRadius:7, border:"none", background:"#818CF8", color:"#fff", fontSize:12, cursor:"pointer", fontWeight:700, width:"100%" }
+    }, "Fechar")
+  )),
+  showAddEmp && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
