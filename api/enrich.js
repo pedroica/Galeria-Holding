@@ -338,7 +338,7 @@ export default async function handler(req, res) {
               headers: { 'api_key': LUSHA_KEY, 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 filters: { companies: { include: { domains: [v] } } },
-                pagination: { page: 0, size: 1 }
+                pagination: { page: 0, size: 10 }
               })
             });
             if (r.ok) {
