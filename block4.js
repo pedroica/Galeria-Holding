@@ -220,7 +220,10 @@ function EmpresasView({
   function supaJwtFig(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
     var h = Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+jwt,'apikey':'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r'}, opts&&opts.headers);
-    return fetch('https://uetltlnjmobeiunxfsqi.supabase.co'+path, Object.assign({},opts,{headers:h})).then(function(r){return r.json();});
+    return fetch('https://uetltlnjmobeiunxfsqi.supabase.co'+path, Object.assign({},opts,{headers:h})).then(function(r){
+      if (r.status === 204 || r.headers.get('content-length') === '0') return null;
+      return r.json();
+    });
   }
 
   // Carrega crm_empresas paginado (1000/página) até esgotamento — sem limite fixo
@@ -246,18 +249,23 @@ function EmpresasView({
   const doLushaSearch = async (domain) => {
     setLushaDomain(domain);
     setLushaStep('loading');
+    console.log('[Lusha] busca decisores — domínio:', domain);
     var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
     var resp = await fetch('/api/enrich?provider=lusha-search&domain='+encodeURIComponent(domain), {
       headers: {'Authorization':'Bearer '+jwt}
     }).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
 
     if (resp.error || !Array.isArray(resp.contacts)) {
-      setLushaError(resp.error || 'Erro inesperado na busca Lusha.');
+      var msg = resp.error || 'Erro inesperado na busca Lusha.';
+      console.log('[Lusha] busca decisores — erro:', msg);
+      setLushaError(msg);
       setLushaStep('idle');
       return;
     }
+    console.log('[Lusha] busca decisores — retornou', resp.contacts.length, 'candidatos (total Lusha:', resp.total, ')');
     if (!resp.contacts.length) {
-      setLushaError(resp.message || 'Nenhum CEO/CMO encontrado para este domínio no Lusha.');
+      var noMsg = resp.message || 'Nenhum CEO/CMO encontrado para o domínio "'+domain+'" no Lusha.';
+      setLushaError(noMsg);
       setLushaStep('idle');
       return;
     }
@@ -305,9 +313,11 @@ function EmpresasView({
     if (emp && emp.website) domain = normDomain(emp.website);
     else if (emp && emp.dominio) domain = normDomain(emp.dominio);
 
+    // ── Bloco 1: descoberta de domínio (independente do bloco 2 e 3) ───────────
     var lushaDiscoveredDomain = '';
     if (!domain) {
       setLushaStep('discovering');
+      console.log('[Lusha] domínio — iniciando descoberta para:', selEmpresa.nome);
       var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
       var dr = await fetch('/api/enrich?provider=lusha-domain', {
         method:'POST',
@@ -315,36 +325,50 @@ function EmpresasView({
         body: JSON.stringify({company: selEmpresa.nome, empresaId: (emp && emp.id) || ''})
       }).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
 
-      if (dr.error) { setLushaError(dr.error); setLushaStep('idle'); return; }
-      if (!dr.domain) { setLushaStep('ask-domain'); return; }
+      if (dr.error) {
+        console.log('[Lusha] domínio — erro na descoberta:', dr.error);
+        setLushaError(dr.error);
+        setLushaStep('idle');
+        return;
+      }
+      if (!dr.domain) {
+        console.log('[Lusha] domínio — não encontrado, pedindo entrada manual');
+        setLushaStep('ask-domain');
+        return;
+      }
       domain = normDomain(dr.domain);
       lushaDiscoveredDomain = domain;
       setLushaFoundDomain(domain + ' (via ' + dr.source + ')');
+      console.log('[Lusha] domínio — encontrado:', domain, '(fonte:', dr.source+')');
 
-      // 3) se não achou empresa pelo nome, tenta pelo domínio descoberto
+      // Fallback: se empresa ainda não achada pelo nome, tenta pelo domínio descoberto
       if (!emp) {
         var domEnc = encodeURIComponent('%'+domain+'%');
-        var dRows = await supaJwtFig('/rest/v1/crm_empresas?website=ilike.'+domEnc+'&select=id,nome,website,dominio&limit=1');
+        var dRows = await supaJwtFig('/rest/v1/crm_empresas?website=ilike.'+domEnc+'&select=id,nome,website,dominio&limit=1')
+          .catch(function(){ return []; });
         emp = (Array.isArray(dRows) && dRows[0]) || null;
-        console.log('[Lusha startLusha] fallback domínio website=ilike.%'+domain+'%, found:', emp ? 'id='+emp.id : 'null');
+        console.log('[Lusha] domínio — fallback website=ilike.%'+domain+'%:', emp ? 'id='+emp.id : 'não encontrado');
         if (emp) setEmpresaSupa(emp);
       }
-    } else if (emp && emp.website) {
-      // domínio já conhecido — compara com o que o Lusha encontraria via variação (só se descoberta ocorreu)
-      lushaDiscoveredDomain = '';
     }
 
-    // 4) se domínio vindo do Lusha difere do gravado, atualiza crm_empresas (não cria empresa nova)
+    // ── Bloco 2: atualizar domínio no banco (falha aqui NUNCA bloqueia busca) ─
     if (emp && emp.id && lushaDiscoveredDomain) {
       var storedDomain = emp.website ? normDomain(emp.website) : '';
       if (storedDomain !== lushaDiscoveredDomain) {
-        await supaJwtFig('/rest/v1/crm_empresas?id=eq.'+emp.id, {
+        supaJwtFig('/rest/v1/crm_empresas?id=eq.'+emp.id, {
           method:'PATCH', headers:{'Prefer':'return=minimal'},
           body: JSON.stringify({website: 'https://'+lushaDiscoveredDomain})
+        }).then(function(){
+          console.log('[Lusha] domínio — website atualizado no banco:', lushaDiscoveredDomain);
+        }).catch(function(e){
+          console.log('[Lusha] domínio — falha ao atualizar website (ignorado):', e.message);
         });
+        // fire-and-forget: não await, não bloqueia bloco 3
       }
     }
 
+    // ── Bloco 3: busca de decisores ────────────────────────────────────────────
     await doLushaSearch(domain);
   };
 
@@ -370,6 +394,8 @@ function EmpresasView({
     var emp = empresaSupa;
     var empId = emp && emp.id;
     var now = new Date().toISOString();
+    var toSaveCount = lushaResults.filter(function(_, i){ return lushaChecked[i]; }).length;
+    console.log('[Lusha] cadastro — iniciando, empresa_id:', empId||'(não encontrado)', '| decisores selecionados:', toSaveCount);
 
     // Se empresa ainda não existe no banco, criar agora
     if (!empId) {
@@ -456,6 +482,10 @@ function EmpresasView({
       lsSet('gh_decisores_v3', newAccs);
     }
 
+    var criados = saveResults.filter(function(r){ return r.saveStatus==='criado'; }).length;
+    var atualizados = saveResults.filter(function(r){ return r.saveStatus==='atualizado'; }).length;
+    var erros = saveResults.filter(function(r){ return r.saveStatus==='erro'; }).length;
+    console.log('[Lusha] cadastro — concluído: criados='+criados+' atualizados='+atualizados+' erros='+erros);
     setLushaResults(saveResults);
     setLushaStep('saved');
   };
