@@ -111,6 +111,62 @@ Server-side secrets ficam **somente** em variáveis de ambiente Vercel.
 
 ---
 
+## Lusha API V3 — Enriquecimento de Decisores
+
+**Base URL:** `https://api.lusha.com/v3/` · Auth: header `api_key: LUSHA_KEY`
+
+| Provider (enrich.js) | Rota Lusha | Método | Billing |
+|---|---|---|---|
+| `lusha-search` | `/v3/contacts/prospecting` | POST | api_search por resultado |
+| `lusha-reveal` | `/v3/contacts/enrich` | POST | revealEmail + revealPhone por contato |
+
+### lusha-domain — body da requisição (POST)
+```json
+{ "company": "Avon", "empresaId": "uuid-da-empresa" }
+```
+Fluxo: (a) companies/prospecting por nome → (b) variações .com.br/.com → (c) DuckDuckGo  
+Grava `website` em `crm_empresas` via service key. Retorna `{domain, source}` ou `{found: false}`.
+
+### lusha-search — body da requisição
+```json
+{
+  "filters": {
+    "contacts": {
+      "include": {
+        "seniority": [9,10,8,6],
+        "departments": ["Marketing","General Management"]
+      }
+    },
+    "companies": { "include": { "domains": ["ambev.com.br"] } }
+  },
+  "pagination": { "page": 0, "size": 10 }
+}
+```
+Seniority numérico: 9=c-suite · 10=founder · 8=vice-president · 6=director  
+Departments: strings, descobertos via `GET /v3/contacts/prospecting/filters/departments`  
+Retorna até 10 contatos COM cargo (enrich base sem reveal = grátis), ordenados por senioridade.  
+Resposta: `{ contacts: [{id, firstName, lastName, title, linkedin_url}], total }`
+
+### lusha-reveal — body da requisição (POST)
+```json
+{ "contacts": [{"id":"v1.xxx","firstName":"Jean","lastName":"De Melo","title":"CEO"}] }
+```
+Internamente chama `POST /v3/contacts/enrich` com `reveal: ["emails","phones"]`  
+Resposta: `results[].email`, `wa` (celular BR), `linkedin_url`, `title`  
+Billing: `revealEmail` + `revealPhone` por contato · máx 5 por chamada  
+Créditos após reveal: `GET /v3/account/usage` → `credits.balance`
+
+### Billing por chamada
+| Chamada | Crédito gasto |
+|---------|--------------|
+| lusha-domain step (a) | api_search (0 se sem resultado) |
+| lusha-domain step (b) | api_search por contato retornado (size=1, geralmente 0 se domínio errado) |
+| lusha-search prospecting | api_search × N contatos (máx 10) |
+| lusha-search enrich base | 0 (jobTitle/socialLinks não são per-datapoint) |
+| lusha-reveal | revealEmail + revealPhone × N contatos (máx 5) |
+
+---
+
 ## Limite Vercel Hobby
 
 Máximo **12 serverless functions**. Arquivo atual com exatamente 12:

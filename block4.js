@@ -203,20 +203,44 @@ function EmpresasView({
   const [fIg, setFIg] = useState("");
   const [fFb, setFFb] = useState("");
   // ── Lusha enrichment ─────────────────────────────────────────────────────
-  const [lushaOpen,       setLushaOpen]       = useState(false);
-  const [lushaStep,       setLushaStep]       = useState('idle');
-  const [lushaCandidates, setLushaCandidates] = useState([]);
-  const [lushaSelected,   setLushaSelected]   = useState([]);
-  const [lushaResults,    setLushaResults]    = useState([]);
-  const [lushaCredits,    setLushaCredits]    = useState(null);
-  const [lushaError,      setLushaError]      = useState('');
-  const [empresaSupa,     setEmpresaSupa]     = useState(null);
+  const [lushaOpen,         setLushaOpen]         = useState(false);
+  const [lushaStep,         setLushaStep]         = useState('idle');
+  const [lushaCandidates,   setLushaCandidates]   = useState([]);
+  const [lushaSelected,     setLushaSelected]     = useState([]);
+  const [lushaResults,      setLushaResults]      = useState([]);
+  const [lushaCredits,      setLushaCredits]      = useState(null);
+  const [lushaError,        setLushaError]        = useState('');
+  const [empresaSupa,       setEmpresaSupa]       = useState(null);
+  const [lushaFoundDomain,  setLushaFoundDomain]  = useState('');
+  const [lushaManualDomain, setLushaManualDomain] = useState('');
 
   function supaJwtFig(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
     var h = Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+jwt,'apikey':'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r'}, opts&&opts.headers);
     return fetch('https://uetltlnjmobeiunxfsqi.supabase.co'+path, Object.assign({},opts,{headers:h})).then(function(r){return r.json();});
   }
+
+  const doLushaSearch = async (domain) => {
+    setLushaStep('loading');
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
+    var resp = await fetch('/api/enrich?provider=lusha-search&domain='+encodeURIComponent(domain), {
+      headers: {'Authorization':'Bearer '+jwt}
+    }).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
+
+    if (resp.error || !Array.isArray(resp.contacts)) {
+      setLushaError(resp.error || 'Erro inesperado na busca Lusha.');
+      setLushaStep('idle');
+      return;
+    }
+    if (!resp.contacts.length) {
+      setLushaError(resp.message || 'Nenhum CEO/CMO encontrado para este domínio no Lusha.');
+      setLushaStep('idle');
+      return;
+    }
+    setLushaCandidates(resp.contacts);
+    setLushaCredits(resp.credits || null);
+    setLushaStep('select');
+  };
 
   const startLusha = async () => {
     if (!selEmpresa) return;
@@ -226,6 +250,8 @@ function EmpresasView({
     setLushaCandidates([]);
     setLushaSelected([]);
     setLushaResults([]);
+    setLushaFoundDomain('');
+    setLushaManualDomain('');
 
     var empRows = await supaJwtFig('/rest/v1/crm_empresas?nome=eq.'+encodeURIComponent(selEmpresa.nome)+'&select=id,nome,website,dominios&limit=1');
     var emp = (Array.isArray(empRows) && empRows[0]) || null;
@@ -235,24 +261,22 @@ function EmpresasView({
     if (emp && emp.website) domain = emp.website.replace(/^https?:\/\//,'').replace(/\/.*/,'').replace(/^www\./,'');
     else if (emp && emp.dominios && emp.dominios.length) domain = emp.dominios[0];
 
-    var params = new URLSearchParams({provider:'lusha-search', company: selEmpresa.nome});
-    if (domain) params.set('domain', domain);
-    var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
-    var resp = await fetch('/api/enrich?'+params, {headers:{'Authorization':'Bearer '+jwt}}).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
+    if (!domain) {
+      setLushaStep('discovering');
+      var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
+      var dr = await fetch('/api/enrich?provider=lusha-domain', {
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+jwt},
+        body: JSON.stringify({company: selEmpresa.nome, empresaId: (emp && emp.id) || ''})
+      }).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
 
-    if (resp.error || !Array.isArray(resp.contacts)) {
-      setLushaError(resp.error || 'Sem candidatos. Verifique se LUSHA_KEY está configurada na Vercel.');
-      setLushaStep('idle');
-      return;
+      if (dr.error) { setLushaError(dr.error); setLushaStep('idle'); return; }
+      if (!dr.domain) { setLushaStep('ask-domain'); return; }
+      domain = dr.domain;
+      setLushaFoundDomain(domain + ' (via ' + dr.source + ')');
     }
-    if (!resp.contacts.length) {
-      setLushaError('Nenhum CEO/CMO encontrado para esta empresa no Lusha.');
-      setLushaStep('idle');
-      return;
-    }
-    setLushaCandidates(resp.contacts);
-    setLushaCredits(resp.credits);
-    setLushaStep('select');
+
+    await doLushaSearch(domain);
   };
 
   const revealLusha = async () => {
@@ -674,10 +698,34 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         React.createElement("button", {onClick:function(){setLushaOpen(false);setLushaStep('idle');},style:{background:"none",border:"none",color:"#9B9BB4",fontSize:22,cursor:"pointer",lineHeight:1}}, "×")
       ),
       lushaError && React.createElement("div", {style:{background:"#2D1414",border:"1px solid #7f2020",borderRadius:8,padding:"10px 14px",marginBottom:16,color:"#FF6B6B",fontSize:12}}, lushaError),
+      lushaFoundDomain && React.createElement("div", {style:{background:"#0f1a10",border:"1px solid #1a3a1a",borderRadius:8,padding:"8px 12px",marginBottom:12,color:"#34D399",fontSize:11,fontFamily:"IBM Plex Mono,monospace"}},
+        "🌐 Domínio encontrado: "+lushaFoundDomain
+      ),
+      lushaStep==="discovering" && React.createElement("div", {style:{textAlign:"center",padding:"40px 0",color:"#818CF8",fontSize:13}}, "🔍 Descobrindo domínio de "+selEmpresa.nome+"…"),
+      lushaStep==="ask-domain" && React.createElement("div", null,
+        React.createElement("div", {style:{fontSize:12,color:"#9B9BB4",marginBottom:12}},
+          "Não consegui descobrir o domínio de "+selEmpresa.nome+" automaticamente. Digite abaixo:"
+        ),
+        React.createElement("input", {
+          type:"text", placeholder:"ex: ambev.com.br",
+          value: lushaManualDomain,
+          onChange: function(e){ setLushaManualDomain(e.target.value); },
+          onKeyDown: function(e){ if(e.key==='Enter' && lushaManualDomain.trim()) doLushaSearch(lushaManualDomain.trim()); },
+          style:{width:"100%",padding:"8px 12px",borderRadius:6,border:"1px solid #2D2D44",background:"#060606",color:"#F5F5F5",fontSize:12,fontFamily:"IBM Plex Mono,monospace",boxSizing:"border-box",marginBottom:12}
+        }),
+        React.createElement("div", {style:{display:"flex",gap:10}},
+          React.createElement("button", {onClick:function(){setLushaOpen(false);setLushaStep('idle');},style:{padding:"9px 20px",borderRadius:7,border:"1px solid #2D2D44",background:"transparent",color:"#9B9BB4",fontSize:12,cursor:"pointer"}}, "Cancelar"),
+          React.createElement("button", {
+            onClick: function(){ if(lushaManualDomain.trim()) doLushaSearch(lushaManualDomain.trim()); },
+            disabled: !lushaManualDomain.trim(),
+            style:{padding:"9px 20px",borderRadius:7,border:"none",background:lushaManualDomain.trim()?"#818CF8":"#333",color:"#fff",fontSize:12,cursor:lushaManualDomain.trim()?"pointer":"default",fontWeight:700}
+          }, "Buscar →")
+        )
+      ),
       lushaStep==="loading" && React.createElement("div", {style:{textAlign:"center",padding:"40px 0",color:"#818CF8",fontSize:13}}, "Buscando decisores no Lusha…"),
       lushaStep==="select" && React.createElement("div", null,
         React.createElement("div", {style:{fontSize:12,color:"#9B9BB4",marginBottom:4}},
-          "Selecione até 5 candidatos. Cargo, e-mail e telefone são revelados ao confirmar."
+          "Selecione até 5 para revelar e-mail e telefone (gasta créditos)."
         ),
         React.createElement("div", {style:{fontSize:10,color:"#555",marginBottom:12,fontFamily:"IBM Plex Mono,monospace"}},
           lushaCandidates.length+" encontrado"+(lushaCandidates.length===1?"":"s")+" — "+lushaSelected.length+"/5 selecionado"+(lushaSelected.length===1?"":"s")
@@ -695,7 +743,8 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
             React.createElement("div", {style:{width:18,height:18,borderRadius:4,border:"2px solid "+(sel?"#818CF8":"#444"),background:sel?"#818CF8":"transparent",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#fff"}}, sel?"✓":""),
             React.createElement("div", {style:{flex:1}},
               React.createElement("div", {style:{fontWeight:600,fontSize:13,color:"#F5F5F5"}}, c.firstName+" "+c.lastName),
-              React.createElement("div", {style:{fontSize:10,color:"#555",marginTop:3,fontFamily:"IBM Plex Mono,monospace"}}, "ID Lusha: "+c.id)
+              c.title && React.createElement("div", {style:{fontSize:11,color:"#818CF8",marginTop:2}}, c.title),
+              !c.title && React.createElement("div", {style:{fontSize:10,color:"#555",marginTop:3,fontFamily:"IBM Plex Mono,monospace"}}, "ID Lusha: "+c.id)
             )
           );
         }),

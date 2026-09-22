@@ -285,29 +285,132 @@ export default async function handler(req, res) {
     return null;
   }
 
-  // ── Lusha Search V3: POST /v3/contacts/prospecting ──────────────────────────
-  // Busca candidatos CEO/CMO por domínio da empresa — não revela e-mail/telefone.
-  // Billing: api_search por resultado (NÃO revealEmail/revealPhone).
-  if (provider === 'lusha-search') {
-    if (!LUSHA_KEY) return res.status(500).json({ error: 'LUSHA_KEY não configurada. Variável: LUSHA_KEY. Obtenha em app.lusha.com → Settings → API.' });
-    const { domain = '' } = req.query;
-    if (!domain) return res.status(400).json({ error: 'Domínio da empresa obrigatório. Cadastre o site da empresa na aba Base para habilitar a busca Lusha.' });
+  // ── Lusha Domain Discovery V3 ──────────────────────────────────────────────
+  // Descobre o domínio de uma empresa sem site cadastrado, nesta ordem:
+  // (a) companies/prospecting por nome → (b) variações .com.br/.com → (c) DuckDuckGo
+  // Grava em crm_empresas (via service key) se encontrado. Não revela PII.
+  if (provider === 'lusha-domain') {
+    if (!LUSHA_KEY) return res.status(500).json({ error: 'LUSHA_KEY não configurada.' });
+    const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+    const { company = '', empresaId = '' } = body;
+    if (!company) return res.status(400).json({ error: 'Nome da empresa obrigatório.' });
 
-    // Seniority V3: valores numéricos (9=C-Suite, 10=Founder, 7=Partner, 8=VP, 6=Director)
-    // Departments: filtra General Management + Marketing (IDs da API Lusha V3)
-    // Referência: docs.lusha.com/apis/openapi/prospecting-search-and-enrich
+    let domain = null;
+    let source = null;
+
+    // (a) Lusha companies/prospecting por nome
+    try {
+      const r = await fetch('https://api.lusha.com/v3/companies/prospecting', {
+        method: 'POST',
+        headers: { 'api_key': LUSHA_KEY, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          filters: { companies: { include: { names: [company] } } },
+          pagination: { page: 0, size: 1 }
+        })
+      });
+      if (r.ok) {
+        const data = await r.json();
+        const co = (data.results || [])[0];
+        if (co) {
+          const d = co.domain || co.website || (Array.isArray(co.domains) && co.domains[0]) || '';
+          if (d) {
+            domain = d.replace(/^https?:\/\//,'').replace(/\/.*/,'').replace(/^www\./,'');
+            source = 'lusha';
+          }
+        }
+      }
+    } catch (_) {}
+
+    // (b) Variações de domínio: normaliza nome e testa .com.br / .com
+    if (!domain) {
+      const normalized = company
+        .toLowerCase()
+        .normalize('NFD').replace(/[̀-ͯ]/g, '')
+        .replace(/\b(s\.?\s?a\.?|sa|brasil|brazil|ltda|eireli|me|epp|inc|corp|group|grupo)\b/g, '')
+        .replace(/[^a-z0-9]/g, '');
+      if (normalized.length >= 3) {
+        const variations = [normalized + '.com.br', normalized + '.com'];
+        let bestDomain = null, bestTotal = 0;
+        for (const v of variations) {
+          try {
+            const r = await fetch('https://api.lusha.com/v3/contacts/prospecting', {
+              method: 'POST',
+              headers: { 'api_key': LUSHA_KEY, 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                filters: { companies: { include: { domains: [v] } } },
+                pagination: { page: 0, size: 1 }
+              })
+            });
+            if (r.ok) {
+              const d = await r.json();
+              const total = d.pagination?.total || 0;
+              if (total > bestTotal) { bestTotal = total; bestDomain = v; }
+            }
+          } catch (_) {}
+        }
+        if (bestDomain && bestTotal > 0) { domain = bestDomain; source = 'variação'; }
+      }
+    }
+
+    // (c) DuckDuckGo fallback
+    if (!domain) {
+      try {
+        const q = encodeURIComponent(company + ' site oficial');
+        const r = await fetch(`https://api.duckduckgo.com/?q=${q}&format=json&no_html=1&skip_disambig=1`, {
+          headers: { 'User-Agent': 'GaleiraHoldingCRM/1.0' }
+        });
+        if (r.ok) {
+          const data = await r.json();
+          const url = data.AbstractURL || '';
+          if (url) {
+            const m = url.match(/^https?:\/\/(?:www\.)?([^\/\s]+)/);
+            if (m && m[1] && m[1].includes('.') && !/wikipedia|duckduckgo|google/.test(m[1])) {
+              domain = m[1];
+              source = 'web';
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (!domain) return res.status(200).json({ found: false });
+
+    // Grava em crm_empresas via service key
+    if (empresaId && SUPA_SVC) {
+      try {
+        await fetch(`${SUPA_URL}/rest/v1/crm_empresas?id=eq.${empresaId}`, {
+          method: 'PATCH',
+          headers: { 'apikey': SUPA_SVC, 'Authorization': 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json', 'Prefer': 'return=minimal' },
+          body: JSON.stringify({ website: 'https://' + domain })
+        });
+      } catch (_) {}
+    }
+
+    return res.status(200).json({ domain, source });
+  }
+
+  // ── Lusha Search V3: POST /v3/contacts/prospecting + enrich base ───────────
+  // 1) Prospecting filtrado: seniority [9,10,8,6] + dept Marketing/General Mgmt
+  //    Departments: strings (descoberto via GET /v3/contacts/prospecting/filters/departments)
+  //    Seniority: IDs numéricos (9=c-suite, 10=founder, 8=vp, 6=director)
+  // 2) Enrich sem reveal → jobTitle + linkedin grátis (billing só revealEmail/revealPhone)
+  // Retorna até 10 candidatos com cargo, ordenados por senioridade.
+  if (provider === 'lusha-search') {
+    if (!LUSHA_KEY) return res.status(500).json({ error: 'LUSHA_KEY não configurada. Obtenha em app.lusha.com → Settings → API.' });
+    const { domain = '' } = req.query;
+    if (!domain) return res.status(400).json({ error: 'Domínio não informado.' });
+
     const prospBody = {
       filters: {
         contacts: {
           include: {
-            seniority: [9, 10, 7, 8, 6]
+            seniority: [9, 10, 8, 6],
+            departments: ['Marketing', 'General Management']
           }
         },
-        companies: {
-          include: { domains: [domain] }
-        }
+        companies: { include: { domains: [domain] } }
       },
-      pagination: { page: 0, size: 25 }
+      pagination: { page: 0, size: 10 }
     };
 
     try {
@@ -323,14 +426,45 @@ export default async function handler(req, res) {
         return res.status(r.status).json({ error: msg });
       }
 
-      // V3 prospecting retorna apenas {id, firstName, lastName} — sem PII
-      const contacts = (raw.results || [])
+      let contacts = (raw.results || [])
         .filter(c => c.firstName && c.lastName)
         .map(c => ({ id: c.id, firstName: c.firstName, lastName: c.lastName }));
 
       if (!contacts.length) {
-        return res.status(200).json({ contacts: [], total: 0, message: 'Nenhum CEO/CMO encontrado para este domínio no Lusha. Tente com outro domínio ou adicione decisores manualmente.' });
+        return res.status(200).json({ contacts: [], total: 0, message: 'Nenhum CEO/CMO encontrado para este domínio no Lusha. Adicione manualmente ou tente outro domínio.' });
       }
+
+      // Enrich base: cargo e LinkedIn sem revelar email/telefone — sem custo extra
+      // Billing do enrich: apenas revealEmail e revealPhone. jobTitle e socialLinks são grátis.
+      try {
+        const ids = contacts.map(c => c.id);
+        const er = await fetch('https://api.lusha.com/v3/contacts/enrich', {
+          method: 'POST',
+          headers: { 'api_key': LUSHA_KEY, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids })
+        });
+        if (er.ok) {
+          const ed = await er.json();
+          const byId = {};
+          (ed.results || []).forEach(c => {
+            byId[c.id] = { title: c.jobTitle?.title || '', linkedin_url: c.socialLinks?.linkedin || '' };
+          });
+          contacts = contacts.map(c => Object.assign({}, c, byId[c.id] || { title: '', linkedin_url: '' }));
+        }
+      } catch (_) {}
+
+      // Ordena: CEO/CMO → C-Suite → Founder → VP → Director
+      const senRank = t => {
+        const tl = (t || '').toLowerCase();
+        if (/\bceo\b|chief\s+executive/.test(tl)) return 0;
+        if (/\bcmo\b|chief\s+marketing/.test(tl)) return 1;
+        if (/\bchief\b/.test(tl)) return 2;
+        if (/\bfounder\b|co.?founder/.test(tl)) return 3;
+        if (/\bvp\b|vice.?president/.test(tl)) return 4;
+        if (/\bdirector/.test(tl)) return 5;
+        return 6;
+      };
+      contacts.sort((a, b) => senRank(a.title) - senRank(b.title));
 
       return res.status(200).json({ contacts, total: raw.pagination?.total || contacts.length });
     } catch (e) {
