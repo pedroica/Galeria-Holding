@@ -4832,7 +4832,7 @@ function App() {
       fontSize: 12
     }
   }, "Carregando...");
-  if (!curUser) return /*#__PURE__*/React.createElement(MagicLinkScreen, null);
+  if (!curUser) { return /*#__PURE__*/React.createElement(MagicLinkScreen, null); }
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
