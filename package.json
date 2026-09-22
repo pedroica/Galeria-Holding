@@ -10,6 +10,7 @@
   "scripts": {
     "build": "echo 'Build OK'",
     "test": "cd agent && npm test",
+    "test:crm": "node tests/crm-integration.test.mjs",
     "typecheck": "cd agent && npm run typecheck"
   },
   "dependencies": {

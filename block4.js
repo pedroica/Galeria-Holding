@@ -216,14 +216,59 @@ function EmpresasView({
   const [lushaDomain,       setLushaDomain]       = useState('');
   const [lushaChecked,      setLushaChecked]      = useState([]);
   const [supaEmpMap,        setSupaEmpMap]        = useState({});
+  // ── Batch enrichment queue ────────────────────────────────────────────────
+  const [selEmpresas,       setSelEmpresas]       = useState(new Set());
+  const [batchOpen,         setBatchOpen]         = useState(false);
+  const [batchProgress,     setBatchProgress]     = useState([]);
+  const [batchRunning,      setBatchRunning]      = useState(false);
 
+  // ── supaJwtFig: wrapper Supabase com timeout, 4xx log e 204 seguro ────────
   function supaJwtFig(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
     var h = Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+jwt,'apikey':'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r'}, opts&&opts.headers);
-    return fetch('https://uetltlnjmobeiunxfsqi.supabase.co'+path, Object.assign({},opts,{headers:h})).then(function(r){
-      if (r.status === 204 || r.headers.get('content-length') === '0') return null;
-      return r.json();
-    });
+    var ctrl = new AbortController();
+    var tid = setTimeout(function(){ ctrl.abort(); }, 30000);
+    return fetch('https://uetltlnjmobeiunxfsqi.supabase.co'+path, Object.assign({},opts,{headers:h,signal:ctrl.signal}))
+      .then(function(r){
+        clearTimeout(tid);
+        if (r.status === 204 || r.headers.get('content-length') === '0') return null;
+        if (r.status === 401) {
+          console.warn('[supaJwtFig] JWT expirado (401):', path);
+          return Promise.reject(new Error('Sessão expirada. Recarregue a página.'));
+        }
+        return r.json().then(function(data){
+          if (r.status >= 400) {
+            var msg = (data && data.message) || (data && data.error) || ('Erro '+r.status);
+            console.warn('[supaJwtFig] Erro PostgREST', r.status, '—', msg, '— path:', path);
+          }
+          return data;
+        });
+      })
+      .catch(function(e){
+        clearTimeout(tid);
+        if (e.name === 'AbortError') {
+          console.warn('[supaJwtFig] Timeout 30s:', path);
+          return Promise.reject(new Error('Timeout na requisição ao banco. Verifique sua conexão.'));
+        }
+        throw e;
+      });
+  }
+
+  // ── logToSupabase: grava evento em crm_logs (fire-and-forget) ─────────────
+  function logToSupabase(nivel, mensagem, contexto, empresa_id, decisor_id) {
+    var row = { origem:'lusha', nivel:nivel, mensagem:mensagem, contexto:contexto||null, empresa_id:empresa_id||null, decisor_id:decisor_id||null };
+    supaJwtFig('/rest/v1/crm_logs', { method:'POST', headers:{'Prefer':'return=minimal'}, body:JSON.stringify(row) })
+      .catch(function(e){ console.warn('[crm_logs] falha ao gravar log:', e.message); });
+  }
+
+  // ── normE164: normaliza número para E.164 Brasil (+55XXXXXXXXXXX) ─────────
+  function normE164(raw) {
+    if (!raw) return null;
+    var digits = String(raw).replace(/\D/g,'');
+    if (digits.startsWith('55') && (digits.length === 12 || digits.length === 13)) return '+'+digits;
+    if (digits.length === 10 || digits.length === 11) return '+55'+digits;
+    if (digits.length > 7) return '+55'+digits;
+    return raw; // não conseguiu normalizar, mantém original
   }
 
   // Carrega crm_empresas paginado (1000/página) até esgotamento — sem limite fixo
@@ -234,7 +279,7 @@ function EmpresasView({
       var offset = 0;
       while (true) {
         var rows = await supaJwtFig(
-          '/rest/v1/crm_empresas?select=id,nome,website,dominio&limit='+PAGE+'&offset='+offset
+          '/rest/v1/crm_empresas?select=id,nome,website,dominio,enriquecido_em&limit='+PAGE+'&offset='+offset
         ).catch(function(){ return []; });
         if (!Array.isArray(rows) || rows.length === 0) break;
         rows.forEach(function(r) { if (r.nome) m[r.nome.toLowerCase().trim()] = r; });
@@ -450,16 +495,35 @@ function EmpresasView({
         console.log('[Lusha batchSave] dedup:', deupQuery, '→', existRows&&existRows.length ? existRows[0].id : 'none');
 
         if (existRows && existRows.length && existRows[0].id) {
-          var patch = { cargo:result.title||'', email:result.email||null, wa:result.wa||null, linkedin_url:result.linkedin_url||null, atualizado_em:now };
-          await supaJwtFig('/rest/v1/crm_decisores?id=eq.'+existRows[0].id, { method:'PATCH', headers:{'Prefer':'return=minimal'}, body:JSON.stringify(patch) });
-          saveResults.push(Object.assign({}, result, {saveStatus:'atualizado'}));
+          var decId = existRows[0].id;
+          var patch = { cargo:result.title||'', email:result.email||null, wa:normE164(result.wa)||null, linkedin_url:result.linkedin_url||null, atualizado_em:now };
+          await supaJwtFig('/rest/v1/crm_decisores?id=eq.'+decId, { method:'PATCH', headers:{'Prefer':'return=minimal'}, body:JSON.stringify(patch) });
+          saveResults.push(Object.assign({}, result, {saveStatus:'atualizado', decisorId:decId}));
+          logToSupabase('info', 'decisor atualizado: '+nome, {cargo:result.title,email:result.email}, empId, decId);
         } else {
-          var row = { empresa_id:empId, nome, cargo:result.title||'', email:result.email||null, wa:result.wa||null, linkedin_url:result.linkedin_url||null, fonte:'lusha', status:'ativo', temperatura:0, wa_verificado:false, criado_em:now, atualizado_em:now };
-          await supaJwtFig('/rest/v1/crm_decisores', { method:'POST', headers:{'Prefer':'return=minimal'}, body:JSON.stringify(row) });
-          saveResults.push(Object.assign({}, result, {saveStatus:'criado'}));
+          var waE164 = normE164(result.wa) || null;
+          var row = { empresa_id:empId, nome, cargo:result.title||'', email:result.email||null, wa:waE164, linkedin_url:result.linkedin_url||null, fonte:'lusha', status:'ativo', temperatura:0, wa_verificado:false, criado_em:now, atualizado_em:now };
+          var created = await supaJwtFig('/rest/v1/crm_decisores', { method:'POST', headers:{'Prefer':'return=representation'}, body:JSON.stringify(row) });
+          var newDecId = (Array.isArray(created) && created[0] && created[0].id) || null;
+          saveResults.push(Object.assign({}, result, {saveStatus:'criado', decisorId:newDecId, waE164}));
+          logToSupabase('info', 'decisor criado: '+nome, {cargo:result.title,email:result.email,wa:waE164}, empId, newDecId);
+          // Auto-elegível na Fila do dia
+          if (newDecId && result.email) {
+            supaJwtFig('/rest/v1/crm_fila', {
+              method:'POST', headers:{'Prefer':'return=minimal'},
+              body: JSON.stringify({ empresa_id:empId, decisor_id:newDecId, canal:'email', etapa_cadencia:1, etapa:'etapa1', status:'rascunho', gerado_em:now })
+            }).catch(function(e){ console.warn('[crm_fila] erro ao inserir rascunho email:', e.message); });
+          }
+          if (newDecId && waE164) {
+            supaJwtFig('/rest/v1/crm_fila', {
+              method:'POST', headers:{'Prefer':'return=minimal'},
+              body: JSON.stringify({ empresa_id:empId, decisor_id:newDecId, canal:'whatsapp', etapa_cadencia:1, etapa:'etapa1', status:'rascunho', gerado_em:now })
+            }).catch(function(e){ console.warn('[crm_fila] erro ao inserir rascunho whatsapp:', e.message); });
+          }
         }
       } catch(err) {
         saveResults.push(Object.assign({}, result, {saveStatus:'erro', saveMsg:String(err)}));
+        logToSupabase('erro', 'erro ao salvar decisor: '+nome+' — '+String(err), {result}, empId);
       }
     }
 
@@ -486,8 +550,110 @@ function EmpresasView({
     var atualizados = saveResults.filter(function(r){ return r.saveStatus==='atualizado'; }).length;
     var erros = saveResults.filter(function(r){ return r.saveStatus==='erro'; }).length;
     console.log('[Lusha] cadastro — concluído: criados='+criados+' atualizados='+atualizados+' erros='+erros);
+    logToSupabase('info', 'enriquecimento concluído: criados='+criados+' atualizados='+atualizados+' erros='+erros, {empresa:selEmpresa.nome,criados,atualizados,erros}, empId);
     setLushaResults(saveResults);
     setLushaStep('saved');
+  };
+
+  // ── Enriquecimento em lote (fila, uma empresa por vez) ─────────────────────
+  const startBatchLusha = async () => {
+    if (selEmpresas.size === 0) return;
+    var empList = filtradas.filter(function(e){ return selEmpresas.has(e.rank); });
+    setBatchOpen(true);
+    setBatchRunning(true);
+    setBatchProgress(empList.map(function(e){ return {rank:e.rank, nome:e.nome, status:'aguardando'}; }));
+
+    // Limite diário de revelações
+    var cfgRow = await supaJwtFig('/rest/v1/crm_configuracoes?chave=eq.lusha_reveals_today&select=valor').catch(function(){ return []; });
+    var cfg = (Array.isArray(cfgRow) && cfgRow[0] && cfgRow[0].valor) || {count:0,date:'1970-01-01'};
+    var hoje = new Date().toISOString().slice(0,10);
+    if (cfg.date !== hoje) cfg = {count:0, date:hoje};
+    var limitRow = await supaJwtFig('/rest/v1/crm_configuracoes?chave=eq.lusha_daily_reveal_limit&select=valor').catch(function(){ return []; });
+    var limit = (Array.isArray(limitRow) && limitRow[0] && Number(limitRow[0].valor)) || 60;
+    var revealsUsed = cfg.count || 0;
+
+    for (var idx = 0; idx < empList.length; idx++) {
+      var emp = empList[idx];
+      if (revealsUsed >= limit) {
+        setBatchProgress(function(prev){
+          var a = prev.slice(); a[idx] = Object.assign({}, a[idx], {status:'limite', msg:'Limite diário ('+limit+') atingido'});
+          return a;
+        });
+        continue;
+      }
+      setBatchProgress(function(prev){ var a=prev.slice(); a[idx]=Object.assign({},a[idx],{status:'rodando'}); return a; });
+      try {
+        var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
+        var supaRow = supaEmpMap[emp.nome.toLowerCase().trim()] || null;
+        var domain = '';
+        if (supaRow && supaRow.website) domain = normDomain(supaRow.website);
+        else if (supaRow && supaRow.dominio) domain = normDomain(supaRow.dominio);
+        if (!domain) {
+          var dr = await fetch('/api/enrich?provider=lusha-domain', {
+            method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+jwt},
+            body: JSON.stringify({company:emp.nome, empresaId:(supaRow&&supaRow.id)||''})
+          }).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
+          if (dr.domain) domain = normDomain(dr.domain);
+        }
+        if (!domain) {
+          setBatchProgress(function(prev){ var a=prev.slice(); a[idx]=Object.assign({},a[idx],{status:'sem_dominio'}); return a; });
+          continue;
+        }
+        // Busca de decisores (marketing: CMO, dir/ger marketing, growth, etc.)
+        var search = await fetch('/api/enrich?provider=lusha-search&domain='+encodeURIComponent(domain)+'&depts=marketing&max=2', {
+          headers:{'Authorization':'Bearer '+jwt}
+        }).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
+        var contacts = (search.contacts||[]).slice(0,2);
+        if (!contacts.length) {
+          setBatchProgress(function(prev){ var a=prev.slice(); a[idx]=Object.assign({},a[idx],{status:'sem_contatos',domain:domain}); return a; });
+          continue;
+        }
+        // Reveal (gasta créditos) — max 2
+        var reveal = await fetch('/api/enrich?provider=lusha-reveal', {
+          method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+jwt},
+          body: JSON.stringify({contacts:contacts})
+        }).then(function(r){return r.json();}).catch(function(e){return {error:String(e)};});
+        var results = reveal.results || [];
+        revealsUsed += results.length;
+        // Salvar no banco
+        var empId = supaRow && supaRow.id;
+        var now = new Date().toISOString();
+        if (!empId) {
+          var created = await supaJwtFig('/rest/v1/crm_empresas', {
+            method:'POST', headers:{'Prefer':'return=representation'},
+            body: JSON.stringify({nome:emp.nome, setor:emp.setor||null, website:'https://'+domain, dominio:domain, fonte:'lusha', criado_em:now, atualizado_em:now})
+          }).catch(function(){ return null; });
+          created = Array.isArray(created) ? created[0] : created;
+          if (created && created.id) { empId = created.id; setSupaEmpMap(function(prev){ var m=Object.assign({},prev); m[emp.nome.toLowerCase().trim()]=created; return m; }); }
+        }
+        var criados = 0;
+        if (empId) {
+          for (var ri = 0; ri < results.length; ri++) {
+            var r = results[ri];
+            var nome2 = ((r.firstName||'')+' '+(r.lastName||'')).trim();
+            var waE164b = normE164(r.wa)||null;
+            var row2 = { empresa_id:empId, nome:nome2, cargo:r.title||'', email:r.email||null, wa:waE164b, linkedin_url:r.linkedin_url||null, fonte:'lusha', status:'ativo', temperatura:0, wa_verificado:false, criado_em:now, atualizado_em:now };
+            var nc = await supaJwtFig('/rest/v1/crm_decisores', { method:'POST', headers:{'Prefer':'return=representation'}, body:JSON.stringify(row2) }).catch(function(){ return null; });
+            var newId = (Array.isArray(nc)&&nc[0]&&nc[0].id)||null;
+            if (newId) {
+              criados++;
+              if (r.email) supaJwtFig('/rest/v1/crm_fila',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({empresa_id:empId,decisor_id:newId,canal:'email',etapa_cadencia:1,etapa:'etapa1',status:'rascunho',gerado_em:now})}).catch(function(){});
+              if (waE164b) supaJwtFig('/rest/v1/crm_fila',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({empresa_id:empId,decisor_id:newId,canal:'whatsapp',etapa_cadencia:1,etapa:'etapa1',status:'rascunho',gerado_em:now})}).catch(function(){});
+            }
+          }
+          await supaJwtFig('/rest/v1/crm_empresas?id=eq.'+empId,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({enriquecido_em:now,atualizado_em:now})}).catch(function(){});
+          logToSupabase('info','batch: '+criados+' decisores criados para '+emp.nome,{domain,criados},empId);
+        }
+        setBatchProgress(function(prev){ var a=prev.slice(); a[idx]=Object.assign({},a[idx],{status:'ok',criados:criados,domain:domain}); return a; });
+        // Atualiza crm_configuracoes com contagem do dia
+        supaJwtFig('/rest/v1/crm_configuracoes?chave=eq.lusha_reveals_today',{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({valor:JSON.stringify({count:revealsUsed,date:hoje}),atualizado_em:now})}).catch(function(){});
+      } catch(err) {
+        setBatchProgress(function(prev){ var a=prev.slice(); a[idx]=Object.assign({},a[idx],{status:'erro',msg:String(err)}); return a; });
+        logToSupabase('erro','batch erro para '+emp.nome+': '+String(err),{empNome:emp.nome});
+      }
+    }
+    setBatchRunning(false);
+    setSelEmpresas(new Set());
   };
 
   // ── dados ──────────────────────────────────────────────────────────────────
@@ -622,6 +788,10 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
     const acc = getAcc(selEmpresa.rank);
     const verificados = acc.decisors || [];
     const sugeridos = acc.sugeridos || [];
+    // Indicador de cobertura
+    const cobEmail = verificados.filter(function(d){ return d.email; }).length;
+    const cobCelular = verificados.filter(function(d){ return d.wa; }).length;
+    const enriqEm = selEmpresa.enriquecido_em ? new Date(selEmpresa.enriquecido_em).toLocaleDateString('pt-BR') : null;
     return /*#__PURE__*/React.createElement("div", {
       style: {
         display: "flex",
@@ -826,7 +996,12 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         color: "#555",
         fontFamily: "IBM Plex Mono,monospace"
       }
-    }, verificados.length > 0 ? `✓ ${verificados.length} verificado${verificados.length > 1 ? "s" : ""}` : "Sem verificados", sugeridos.length > 0 ? ` · ⟳ ${sugeridos.length} sugerido${sugeridos.length > 1 ? "s" : ""}` : ""))), /*#__PURE__*/React.createElement("button", {
+    }, verificados.length > 0 ? `✓ ${verificados.length} verificado${verificados.length > 1 ? "s" : ""}` : "Sem verificados", sugeridos.length > 0 ? ` · ⟳ ${sugeridos.length} sugerido${sugeridos.length > 1 ? "s" : ""}` : ""),
+    React.createElement("span", {style:{fontSize:9,color:"#555",fontFamily:"IBM Plex Mono,monospace",marginLeft:4}},
+      cobEmail > 0 ? "✉ "+cobEmail : "",
+      cobCelular > 0 ? "  📱 "+cobCelular : "",
+      enriqEm ? "  · "+enriqEm : ""
+    ))), /*#__PURE__*/React.createElement("button", {
       onClick: () => setShowAdd(true),
       style: {
         padding: "8px 18px",
@@ -986,6 +1161,43 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
           style:{marginTop:16,padding:"9px 24px",borderRadius:7,border:"none",background:"#818CF8",color:"#fff",fontSize:12,cursor:"pointer",fontWeight:700}
         }, "Concluir")
       )
+    )),
+    batchOpen && React.createElement("div", {
+      style: { position:"fixed", top:0, left:0, right:0, bottom:0, background:"rgba(0,0,0,0.8)", zIndex:9999, display:"flex", alignItems:"center", justifyContent:"center" }
+    }, React.createElement("div", {
+      style: { background:"#0d0d1a", border:"1px solid #2D2D44", borderRadius:12, padding:24, minWidth:360, maxWidth:520, width:"90%", maxHeight:"75vh", overflowY:"auto" }
+    },
+      React.createElement("div", {style:{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}},
+        React.createElement("div", {style:{fontWeight:700,fontSize:14,color:"#818CF8"}}, "⚡ Enriquecimento em lote"),
+        !batchRunning && React.createElement("button", {
+          onClick: function(){ setBatchOpen(false); setBatchProgress([]); },
+          style: { background:"none", border:"none", color:"#9B9BB4", fontSize:20, cursor:"pointer" }
+        }, "×")
+      ),
+      batchRunning && React.createElement("div", {style:{fontSize:10,color:"#9B9BB4",fontFamily:"IBM Plex Mono,monospace",marginBottom:12}},
+        "Processando... Não feche esta janela."
+      ),
+      React.createElement("div", {style:{display:"flex",flexDirection:"column",gap:6}},
+        batchProgress.map(function(row, idx){
+          var icon = row.status==='ok' ? "✅" : row.status==='erro' ? "❌" : row.status==='limite' ? "⛔" : row.status==='sem_dominio' ? "🔍" : row.status==='sem_contatos' ? "💤" : row.status==='rodando' ? "⏳" : "⬜";
+          var label = row.status==='ok' ? (row.criados+" criados, domínio: "+(row.domain||'?'))
+            : row.status==='erro' ? (row.msg||'erro')
+            : row.status==='limite' ? "limite diário atingido"
+            : row.status==='sem_dominio' ? "domínio não encontrado"
+            : row.status==='sem_contatos' ? "sem contatos (domínio: "+(row.domain||'?')+")"
+            : row.status==='rodando' ? "processando..."
+            : "aguardando";
+          return React.createElement("div", {key:idx, style:{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:"#111827",borderRadius:7,fontSize:11}},
+            React.createElement("span", {style:{fontSize:13}}, icon),
+            React.createElement("span", {style:{flex:1,fontWeight:500,color:"#F5F5F5",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}, row.nome),
+            React.createElement("span", {style:{fontSize:9,color:"#555",fontFamily:"IBM Plex Mono,monospace",whiteSpace:"nowrap"}}, label)
+          );
+        })
+      ),
+      !batchRunning && React.createElement("button", {
+        onClick: function(){ setBatchOpen(false); setBatchProgress([]); },
+        style: { marginTop:16, padding:"8px 24px", borderRadius:7, border:"none", background:"#818CF8", color:"#fff", fontSize:12, cursor:"pointer", fontWeight:700, width:"100%" }
+      }, "Fechar")
     )),
     /*#__PURE__*/React.createElement("div", {
       style: {
@@ -1529,7 +1741,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
     }
   }, [["todos", "Todos"], ["sem", "Sem decisores"], ["parcial", "1-4 ver."], ["completo", "5+ ver."]].map(([v, l]) => /*#__PURE__*/React.createElement("button", {
     key: v,
-    onClick: () => setFiltroStatus(v),
+    onClick: () => { setFiltroStatus(v); setSelEmpresas(new Set()); },
     style: {
       padding: "5px 10px",
       borderRadius: 100,
@@ -1541,7 +1753,13 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       background: filtroStatus === v ? "rgba(255,107,43,.1)" : "transparent",
       color: filtroStatus === v ? "#FF6B2B" : "#9B9BB4"
     }
-  }, l))))), /*#__PURE__*/React.createElement("div", {
+  }, l))), filtroStatus === 'sem' && React.createElement("button", {
+      onClick: function(){ setSelEmpresas(function(prev){ return prev.size === filtradas.length ? new Set() : new Set(filtradas.map(function(x){ return x.rank; })); }); },
+      style: { padding:"4px 10px", borderRadius:6, border:".5px solid #818CF8", background:"transparent", color:"#818CF8", fontSize:9, fontFamily:"IBM Plex Mono,monospace", cursor:"pointer", flexShrink:0 }
+    }, selEmpresas.size === filtradas.length ? "✕ Limpar" : "☐ Todas"), filtroStatus === 'sem' && selEmpresas.size > 0 && React.createElement("button", {
+      onClick: function(){ startBatchLusha(); },
+      style: { padding:"5px 12px", borderRadius:6, border:"none", background:"#818CF8", color:"#fff", fontSize:10, fontFamily:"IBM Plex Mono,monospace", fontWeight:700, cursor:"pointer", flexShrink:0, whiteSpace:"nowrap" }
+    }, "⚡ Enriquecer "+selEmpresas.size+" selecionadas"))), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
       overflowY: "auto",
@@ -1565,7 +1783,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       key: e.rank,
       onClick: () => {
         var supaRow = supaEmpMap[e.nome.toLowerCase().trim()] || null;
-        setSelEmpresa(Object.assign({}, e, supaRow ? {empresa_id: supaRow.id, website: supaRow.website, dominio: supaRow.dominio} : {}));
+        setSelEmpresa(Object.assign({}, e, supaRow ? {empresa_id: supaRow.id, website: supaRow.website, dominio: supaRow.dominio, enriquecido_em: supaRow.enriquecido_em} : {}));
       },
       style: {
         display: "flex",
@@ -1580,7 +1798,13 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       },
       onMouseOver: e => e.currentTarget.style.borderColor = "#FF6B2B",
       onMouseOut: ev => ev.currentTarget.style.borderColor = borderC
-    }, /*#__PURE__*/React.createElement("div", {
+    }, filtroStatus === 'sem' && React.createElement("input", {
+      type: "checkbox",
+      checked: selEmpresas.has(e.rank),
+      onChange: function(ev){ ev.stopPropagation(); setSelEmpresas(function(prev){ var s=new Set(prev); s.has(e.rank)?s.delete(e.rank):s.add(e.rank); return s; }); },
+      onClick: function(ev){ ev.stopPropagation(); },
+      style: { width:14, height:14, accentColor:"#818CF8", cursor:"pointer", flexShrink:0 }
+    }), /*#__PURE__*/React.createElement("div", {
       style: {
         width: 36,
         height: 36,
