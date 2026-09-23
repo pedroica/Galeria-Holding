@@ -160,7 +160,7 @@ async function jobNoticias(req, res) {
   }
 
   // Prioridade 1: empresas na fila desta semana
-  const filaRows = await sg(`crm_fila?criado_em=gte.${inicioSemanaISO()}&select=empresa_id&limit=500`);
+  const filaRows = await sg(`crm_fila?gerado_em=gte.${inicioSemanaISO()}&select=empresa_id&limit=500`);
   const filaSet = new Set((Array.isArray(filaRows)?filaRows:[]).map(r=>r.empresa_id).filter(Boolean));
 
   // Já processadas nos últimos 7 dias → excluir da rotação
