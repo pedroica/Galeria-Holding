@@ -1,0 +1,373 @@
+{
+  "_meta": {
+    "source": "reconstruído do CRM (crm_agencias + crm_cases + crm_configuracoes) em 2026-09-23",
+    "project": "Galeria Holding CRM",
+    "supabase": "uetltlnjmobeiunxfsqi"
+  },
+  "holding": {
+    "nome": "Galeria Holding",
+    "descricao": "O maior grupo de comunicação independente do Brasil",
+    "posicionamento": "Pedro Ica, sócio da Galeria Holding, o maior grupo de comunicação independente do Brasil. O grupo tem agências especializadas que se ajustam a qualquer demanda de comunicação e faz planejamento estratégico de comunicação inclusive para B2B.",
+    "pitch_curto": "20 minutos para entender como está o marketing da empresa. Não é pitch — é pergunta.",
+    "meta_semanal_reunioes": 40,
+    "agencias_ativas": 13,
+    "sede": "Brasil",
+    "email_remetente": "pedro.ica@galeriaholding.co",
+    "responsavel_prospeccao": "Pedro Ica",
+    "cargo_responsavel": "Sócio e Head de Growth"
+  },
+  "produtos_proprietarios": [
+    {
+      "nome": "CR.IA",
+      "agencia": "gaia",
+      "descricao": "Plataforma de criação em escala com IA generativa. Até 90% menos custo e 200 mil conteúdos por mês.",
+      "resultado_chave": "até 90% menos custo, go to market 500% mais rápido, 200 mil conteúdos/mês"
+    },
+    {
+      "nome": "BrandSync",
+      "agencia": "gaia",
+      "descricao": "Ferramenta de governança de marca em escala com IA. Usada para DCO e franquias.",
+      "resultado_chave": "governança de marca em escala para franquias e distribuidores"
+    },
+    {
+      "nome": "GEO — Generative Engine Optimization",
+      "agencia": "holding",
+      "descricao": "Torna a marca mais vista e citada pelas LLMs (ChatGPT, Gemini, Perplexity). Posicionamento de marca na era da busca por IA.",
+      "resultado_chave": "marca mais referenciada pelas LLMs"
+    },
+    {
+      "nome": "Hiper Presence",
+      "agencia": "404",
+      "descricao": "Produto de inovação e tech para presença digital ampliada.",
+      "resultado_chave": "presença digital acelerada com tecnologia"
+    },
+    {
+      "nome": "NOS — Natura Operating System",
+      "agencia": "404",
+      "descricao": "Modelo operacional de estúdio criativo com IA. Curva de custo por asset digital de R$ 428 para R$ 25 e depois R$ 4.",
+      "resultado_chave": "custo por asset de R$ 428 → R$ 25 → R$ 4"
+    }
+  ],
+  "agencias": [
+    {
+      "id": "3409ab82-f0cd-4d95-b6e2-398995425411",
+      "nome": "Galeria Holding",
+      "slug": "holding",
+      "cor": null,
+      "descricao": "Holding do grupo. Prospecção outbound centralizada. Agência proponente padrão para novos negócios cross-agência.",
+      "especialidade": "Planejamento estratégico de comunicação integrada, novos negócios",
+      "tipo": "holding"
+    },
+    {
+      "id": "960142b5-a688-41f8-8719-d516eeb843c6",
+      "nome": "Galeria",
+      "slug": "galeria",
+      "cor": "#E8C97A",
+      "descricao": "Agência integrada de performance e criatividade. Maior agência do grupo.",
+      "especialidade": "Campanhas integradas, brand building, performance, mídia, criação, plataformas de marca de longo prazo",
+      "clientes_referencia": ["McDonald's (Méqui)", "Itaú", "Natura", "Havaianas", "Vivo", "Gallo", "Kavak", "Betnacional"],
+      "tipo": "agencia_principal"
+    },
+    {
+      "id": "14a057af-31c6-4606-8236-4c97d8067335",
+      "nome": "404",
+      "slug": "404",
+      "cor": "#7EB8D4",
+      "descricao": "Agência de inovação, tech e novos modelos. Cases premiados em Cannes e Clio.",
+      "especialidade": "Inovação, IA generativa, tech, novos modelos de comunicação, estúdio criativo escalável",
+      "clientes_referencia": ["Netflix", "Google", "Natura"],
+      "tipo": "agencia"
+    },
+    {
+      "id": "910f125d-82f7-4fbc-889d-2eb9b33d8198",
+      "nome": "A.gente",
+      "slug": "agente",
+      "cor": "#FB923C",
+      "descricao": "Agência de influência estratégica.",
+      "especialidade": "Influenciadores, creators, conteúdo estratégico, relações com creators",
+      "tipo": "agencia"
+    },
+    {
+      "id": "32e8bd8a-d698-4781-b9f4-7b9855132942",
+      "nome": "Ateliê",
+      "slug": "atelie",
+      "cor": "#94A3B8",
+      "descricao": "Ateliê Galeria.",
+      "especialidade": "Produção criativa, design, craft",
+      "tipo": "agencia"
+    },
+    {
+      "id": "74886b76-2650-41e1-8d46-3c742681fadd",
+      "nome": "Catalyst",
+      "slug": "catalyst",
+      "cor": "#34D399",
+      "descricao": "Mobile growth — compra e otimização de mídia mobile.",
+      "especialidade": "Mobile growth, performance mobile, compra de mídia mobile, otimização",
+      "tipo": "agencia"
+    },
+    {
+      "id": "e8d734ba-b3e9-425b-942e-b8b56c98f56b",
+      "nome": "cccaramelo",
+      "slug": "cccaramelo",
+      "cor": "#E8916A",
+      "descricao": "Agência de cultura, entretenimento e música.",
+      "especialidade": "Cultura, entretenimento, música, branded content cultural",
+      "tipo": "agencia"
+    },
+    {
+      "id": "e26e3106-33e8-43de-95c5-546477573186",
+      "nome": "Frame",
+      "slug": "frame",
+      "cor": "#94A3B8",
+      "descricao": "Produtora de conteúdo e filmes do grupo.",
+      "especialidade": "Produção audiovisual, filmes publicitários, branded content",
+      "tipo": "produtora"
+    },
+    {
+      "id": "a8aecdac-1001-4643-bcd4-e818307b6d92",
+      "nome": "GAIA",
+      "slug": "gaia",
+      "cor": "#A78BFA",
+      "descricao": "Martech do grupo — CR.IA e BrandSync.",
+      "especialidade": "Martech, IA generativa, DCO, governança de marca em escala, redução de custo de produção criativa",
+      "clientes_referencia": ["Vários (via CR.IA e BrandSync)"],
+      "tipo": "martech"
+    },
+    {
+      "id": "ac8b92de-ab48-4153-bf18-c23b5ea19bfe",
+      "nome": "GUX",
+      "slug": "gux",
+      "cor": "#00FF94",
+      "descricao": "UX estratégico que gera resultado real de negócio.",
+      "especialidade": "UX estratégico, design de produto, pesquisa de usuário, resultado de negócio via design",
+      "tipo": "agencia"
+    },
+    {
+      "id": "1a67ab05-e42e-4975-be11-b6bf7f23ce03",
+      "nome": "Mantiqueira",
+      "slug": "mantiqueira",
+      "cor": "#F472B6",
+      "descricao": "Empresa de conteúdo e entretenimento.",
+      "especialidade": "Conteúdo, entretenimento, branded content de longa duração",
+      "tipo": "conteudo"
+    },
+    {
+      "id": "b0473d79-afd9-404e-8784-04b4556a5a2c",
+      "nome": "Milà",
+      "slug": "mila",
+      "cor": "#C9A87C",
+      "descricao": "Agência de cases e storytelling de marca.",
+      "especialidade": "Storytelling de marca, B2B, apresentações de caso, narrativas de valor",
+      "clientes_referencia": ["Suzano"],
+      "tipo": "agencia"
+    },
+    {
+      "id": "d1d6bc56-ee70-4b5c-bb2e-3a7e428ea70f",
+      "nome": "Studio GA",
+      "slug": "studioga",
+      "cor": "#94A3B8",
+      "descricao": "Studio GA.",
+      "especialidade": "Estúdio criativo, produção de conteúdo",
+      "tipo": "studio"
+    },
+    {
+      "id": "2bb87ce9-b175-43d0-9213-1e1021661e54",
+      "nome": "Vitrine",
+      "slug": "vitrine",
+      "cor": "#60A5FA",
+      "descricao": "Maior comprador de OOH e DOOH do Brasil.",
+      "especialidade": "OOH, DOOH, mídia exterior, planejamento e compra de out-of-home",
+      "tipo": "midia"
+    }
+  ],
+  "cases_destaque": [
+    {
+      "titulo": "The Cruise Heist",
+      "marca": "Netflix",
+      "agencia_slug": "404",
+      "ano": 2024,
+      "resultado": "Grand Clio Entertainment 2024, Leões de Prata e Bronze em Cannes 2024, múltiplos Effies. Virou assunto no réveillon brasileiro e fora do país.",
+      "tags": ["lançamento de série", "entretenimento", "stunt", "earned media", "ruptura"],
+      "destaque": true
+    },
+    {
+      "titulo": "Méqui, a marca de fast food favorita do Brasil",
+      "marca": "McDonald's",
+      "agencia_slug": "galeria",
+      "ano": 2025,
+      "resultado": "Liderança em 23 de 23 atributos de imagem no Q2 2025 e ganho de 13 pontos de top of mind em cinco anos.",
+      "tags": ["love brand", "rebranding", "plataforma de longo prazo"],
+      "destaque": true
+    },
+    {
+      "titulo": "McFish, a volta",
+      "marca": "McDonald's",
+      "agencia_slug": "galeria",
+      "ano": 2024,
+      "resultado": "Buscas 26x acima da expectativa em SP e 85 mil sanduíches vendidos com demanda maior que o estoque.",
+      "tags": ["relançamento", "edição limitada", "escassez"],
+      "destaque": true
+    },
+    {
+      "titulo": "Esquadrões Imaginários",
+      "marca": "Itaú",
+      "agencia_slug": "galeria",
+      "ano": 2023,
+      "resultado": "Leão de Bronze em Cannes 2024 (Entertainment Lions for Sport). Mais de 40 espaços na imprensa, 15 internacionais.",
+      "tags": ["patrocínio esportivo", "futebol feminino", "ia generativa", "causa"],
+      "destaque": true
+    },
+    {
+      "titulo": "Méqui Friday com Veveta",
+      "marca": "McDonald's",
+      "agencia_slug": "galeria",
+      "ano": 2024,
+      "resultado": "Receita a 138% da meta, delivery a 154%, app a 149%. CR.IA 68% mais eficiente. Receita 9% acima de 2023.",
+      "tags": ["black friday", "delivery", "app", "fidelidade", "celebridade", "orquestração"],
+      "destaque": false
+    },
+    {
+      "titulo": "Itaú Empresas com Ronaldo",
+      "marca": "Itaú",
+      "agencia_slug": "galeria",
+      "ano": 2024,
+      "resultado": "+516% visitas à página de abertura de conta, +52% novas contas mês a mês, 55 matérias espontâneas.",
+      "tags": ["b2b", "pme", "banco", "aquisição de clientes"],
+      "destaque": false
+    },
+    {
+      "titulo": "Gallo O sabor que nos une",
+      "marca": "Gallo",
+      "agencia_slug": "galeria",
+      "ano": 2024,
+      "resultado": "534 milhões de impactos (17,4% acima do plano), cobertura 67,8%, GMV iFood de R$556k para R$916k (+65%).",
+      "tags": ["alimentos", "mídia de alcance", "delivery", "cpg"],
+      "destaque": false
+    },
+    {
+      "titulo": "Kavak Always On",
+      "marca": "Kavak",
+      "agencia_slug": "galeria",
+      "ano": 2022,
+      "resultado": "13 mil carros vendidos e 85% mais tráfego.",
+      "tags": ["automotivo", "performance", "modelagem", "always on"],
+      "destaque": false
+    },
+    {
+      "titulo": "Feirão iCarros com IA generativa",
+      "marca": "Itaú",
+      "agencia_slug": "galeria",
+      "ano": 2024,
+      "resultado": "Mais de 1.800 assets numa única campanha e o maior brand lift do ano.",
+      "tags": ["ia generativa", "escala de produção", "automotivo", "dco"],
+      "destaque": false
+    },
+    {
+      "titulo": "CR.IA e BrandSync em escala",
+      "marca": "Vários",
+      "agencia_slug": "gaia",
+      "ano": 2025,
+      "resultado": "Até 90% menos custo, go to market 500% mais rápido, 200 mil conteúdos por mês no BrandSync.",
+      "tags": ["ia generativa", "dco", "escala", "franquias", "redução de custo"],
+      "destaque": false
+    },
+    {
+      "titulo": "Only on Android",
+      "marca": "Google",
+      "agencia_slug": "404",
+      "ano": 2024,
+      "resultado": "Melhor brand lift do Android no mundo e custo por conteúdo quase 10x menor.",
+      "tags": ["tecnologia", "ia generativa", "escala", "brand lift"],
+      "destaque": false
+    },
+    {
+      "titulo": "Bonde das Mariahs no Rock in Rio",
+      "marca": "Havaianas",
+      "agencia_slug": "galeria",
+      "ano": 2024,
+      "resultado": "1,1 milhão de engajamentos (recorde da marca) e reportagem no Fantástico para 11 milhões de pessoas.",
+      "tags": ["festival", "social listening", "tempo real", "earned media"],
+      "destaque": false
+    },
+    {
+      "titulo": "Natura no futebol: dobro de share of voice",
+      "marca": "Natura",
+      "agencia_slug": "galeria",
+      "ano": 2025,
+      "resultado": "Share of voice dobrado em menos de dois anos. Forecast 2025: segunda maior em investimento e líder em SOV (Kantar Ibope).",
+      "tags": ["mídia", "share of voice", "eficiência de investimento"],
+      "destaque": false
+    },
+    {
+      "titulo": "Efeito Borboleta",
+      "marca": "Suzano",
+      "agencia_slug": "mila",
+      "ano": 2026,
+      "resultado": "Primeiro trabalho da Milà para a conta, com craft de animação.",
+      "tags": ["b2b2c", "sustentabilidade", "institucional", "indústria"],
+      "destaque": false
+    }
+  ],
+  "templates_prospeccao": {
+    "etapa1": {
+      "assunto_modelo": "{empresa} + Galeria Holding — 20 minutos",
+      "tom": "Pedro Ica, sócio da Galeria Holding, o maior grupo de comunicação independente do Brasil",
+      "max_palavras": 90,
+      "pedido": "20 minutos para entender como está o marketing da empresa",
+      "fecho": "Abraço,",
+      "nao_repetir_nome_no_corpo": true,
+      "regras": [
+        "Primeira linha com fato real, recente e verificável sobre a empresa (sem fato, vai direto à apresentação)",
+        "Clientes grandes só como referência de porte, em uma linha, sem case",
+        "Dizer que o grupo tem agências que se ajustam a qualquer demanda e faz planejamento estratégico inclusive B2B",
+        "Pedido de reunião com duas opções de dia útil (2-3 e 5-6 dias úteis à frente, com dia da semana e data)",
+        "Sem pitch — é pergunta. 'Não quero te vender nada agora. Quero entender como está a área de marketing de vocês e onde falta braço ou ideia.'",
+        "Gerar 3 opções de assunto e escolher o melhor"
+      ]
+    },
+    "etapa2": {
+      "assunto_modelo": "{empresa} — retorno",
+      "max_palavras": 50,
+      "tom": "Resposta na mesma thread, ângulo novo ligado ao setor",
+      "fecho": "Abraço,",
+      "regras": [
+        "Nunca 'só passando para reforçar'",
+        "Ângulo novo ligado ao setor da empresa",
+        "Ofertas possíveis: GEO, CR.IA, Hiper Presence (404), planejamento estratégico"
+      ]
+    },
+    "etapa3_mais": {
+      "regras": [
+        "Convite para comunidade de WhatsApp, newsletter The Brand Subway e blog de cases",
+        "Só gerar se os links existirem em crm_configuracoes chave 'links_etapa3'",
+        "Um tema por decisor por dia com case ou filme do setor"
+      ]
+    },
+    "whatsapp": {
+      "max_palavras": 40,
+      "tom": "Tom de pessoa para pessoa, cita o e-mail se houve",
+      "formato": "Link https://wa.me/55DDDNUMERO?text=TEXTO_CODIFICADO"
+    },
+    "linkedin": {
+      "max_caracteres": 280,
+      "tom": "Sem pitch, com motivo da conexão",
+      "instrucao": "Só entregar a fila com link do perfil e nota pronta; Pedro envia à mão"
+    }
+  },
+  "regras_prospeccao": [
+    "Nunca case de concorrente para concorrente",
+    "Nunca preço nos textos",
+    "Nunca inventar dado, número, cliente, prêmio ou notícia",
+    "Português muito bem escrito em prosa natural, sem travessão como pontuação, sem cara de IA, sem emoji em e-mail",
+    "Pedido de saída vira opt_out imediato e definitivo",
+    "Uma agência por empresa por semana (somando canais)",
+    "Máximo 2 decisores por empresa por semana",
+    "Decisores prioritários: marketing (CMO, VP, Diretor, Head de Marketing, Growth, Digital) e CEO/Founder/Country Manager"
+  ],
+  "volume_diario": {
+    "emails": 25,
+    "whatsapp": 10,
+    "linkedin": 10,
+    "dias": "segunda a sexta"
+  }
+}
