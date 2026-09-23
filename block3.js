@@ -251,7 +251,7 @@ Mínimo 5 pessoas. Retorne SOMENTE o JSON, sem texto adicional.`;
     function supaJwtFig(path, opts) {
       var jwt = (window.__supaSession && window.__supaSession.access_token) || 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
       var h = Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+jwt,'apikey':'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r'}, opts&&opts.headers);
-      return fetch('https://uetltlnjmobeiunxfsqi.supabase.co'+path, Object.assign({},opts,{headers:h})).then(function(r){return r.json();});
+      return fetch('https://uetltlnjmobeiunxfsqi.supabase.co'+path, Object.assign({},opts,{headers:h})).then(function(r){var ct=r.headers.get('content-type')||'';return ct.includes('json')?r.json():null;});
     }
 
     async function startLusha() {
@@ -2582,7 +2582,7 @@ function GerarFilaModal(props) {
   function sj(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
     var hdrs = Object.assign({'apikey':SUPA_ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json'}, opts&&opts.headers);
-    return fetch(SUPA_URL+path, Object.assign({},opts,{headers:hdrs})).then(function(r){return r.json();});
+    return fetch(SUPA_URL+path, Object.assign({},opts,{headers:hdrs})).then(function(r){var ct=r.headers.get('content-type')||'';return ct.includes('json')?r.json():null;});
   }
   var _N = useState(25); var N = _N[0]; var setN = _N[1];
   var _agId = useState(AGENCIAS_GERAR[0].id); var agId = _agId[0]; var setAgId = _agId[1];
@@ -2764,49 +2764,66 @@ function AprovacaoHoje() {
   // Bloco 1: paginação em blocos de 10
   var _bloco = useState(0); var bloco = _bloco[0]; var setBloco = _bloco[1];
   var _contadores = useState({hoje:0,semana:0}); var contadores = _contadores[0]; var setContadores = _contadores[1];
+  var _dbCounts = useState({email:0,whatsapp:0,linkedin:0}); var dbCounts = _dbCounts[0]; var setDbCounts = _dbCounts[1];
   var _showGerarFila = useState(false); var showGerarFila = _showGerarFila[0]; var setShowGerarFila = _showGerarFila[1];
 
   function supaJwt(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
     var hdrs = Object.assign({'apikey':SUPA_ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json'}, opts&&opts.headers);
-    return fetch(SUPA_URL+path, Object.assign({},opts,{headers:hdrs})).then(function(r){return r.json();});
+    return fetch(SUPA_URL+path, Object.assign({},opts,{headers:hdrs})).then(function(r){var ct=r.headers.get('content-type')||'';return ct.includes('json')?r.json():null;});
   }
 
-  function load() {
-    supaJwt('/rest/v1/crm_fila?status=eq.rascunho&order=gerado_em.desc&limit=200' +
-      '&select=*,crm_empresas!empresa_id(id,nome,setor),crm_decisores!decisor_id(id,nome,cargo,email,wa,linkedin_url,temperatura,respondeu),crm_agencias!agencia_id(id,nome)'
+  var BLOCO_SZ = 10;
+  var SEL_FILA = '&select=*,crm_empresas!empresa_id(id,nome,setor),crm_decisores!decisor_id(id,nome,cargo,email,wa,linkedin_url,temperatura,respondeu),crm_agencias!agencia_id(id,nome)';
+
+  function canalQ(c) {
+    return c === 'linkedin'
+      ? 'canal=in.(linkedin,linkedin_convite,linkedin_mensagem)'
+      : 'canal=eq.' + c;
+  }
+  function load(canalArg, blocoArg) {
+    var c = canalArg !== undefined ? canalArg : aba;
+    var b = blocoArg !== undefined ? blocoArg : bloco;
+    var offset = b * BLOCO_SZ;
+    supaJwt('/rest/v1/crm_fila?status=eq.rascunho&' + canalQ(c) +
+      '&order=gerado_em.asc&limit=' + BLOCO_SZ + '&offset=' + offset + SEL_FILA
     ).then(function(d){
       if (Array.isArray(d)) { setFila(d); setErroQuery(null); }
       else { setFila([]); setErroQuery('Erro ao carregar fila: ' + ((d&&d.message)||JSON.stringify(d))); }
     }).catch(function(e){ setFila([]); setErroQuery('Erro de rede: ' + e.message); });
   }
   function loadContadores() {
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
+    var hdrs = {apikey:SUPA_ANON, Authorization:'Bearer '+jwt, Prefer:'count=exact'};
+    function countC(q) {
+      return fetch(SUPA_URL+'/rest/v1/crm_fila?status=eq.rascunho&'+q+'&select=id',
+        {method:'HEAD', headers:hdrs})
+        .then(function(r){var cr=r.headers.get('content-range');return cr?(parseInt(cr.split('/')[1],10)||0):0;})
+        .catch(function(){return 0;});
+    }
     var agora = new Date();
     var hojeStr = agora.toISOString().slice(0,10);
     var semAtras = new Date(agora-7*86400000).toISOString().slice(0,10);
     Promise.all([
+      countC('canal=eq.email'),
+      countC('canal=eq.whatsapp'),
+      countC('canal=in.(linkedin,linkedin_convite,linkedin_mensagem)'),
       supaJwt('/rest/v1/crm_fila?status=eq.enviado&enviado_em=gte.'+hojeStr+'T00%3A00%3A00&select=id&limit=500').catch(function(){return [];}),
       supaJwt('/rest/v1/crm_fila?status=eq.enviado&enviado_em=gte.'+semAtras+'T00%3A00%3A00&select=id&limit=1000').catch(function(){return [];})
     ]).then(function(res){
-      setContadores({hoje:Array.isArray(res[0])?res[0].length:0, semana:Array.isArray(res[1])?res[1].length:0});
+      setDbCounts({email:res[0], whatsapp:res[1], linkedin:res[2]});
+      setContadores({hoje:Array.isArray(res[3])?res[3].length:0, semana:Array.isArray(res[4])?res[4].length:0});
     });
   }
-  useEffect(function(){ load(); loadContadores(); }, [tick]);
-  // reset bloco ao trocar aba
-  useEffect(function(){ setBloco(0); }, [aba]);
+  useEffect(function(){ load(aba, bloco); loadContadores(); }, [tick]);
+  // reset bloco e recarrega itens ao trocar aba
+  useEffect(function(){ setBloco(0); load(aba, 0); }, [aba]);
   // E4-M3: auto-refresh
   useEffect(function() {
     var t = setInterval(function(){ setTick(function(n){return n+1;}); }, 60000);
     return function(){ clearInterval(t); };
   }, []);
 
-  var CANAIS_CONHECIDOS = ['email','whatsapp','linkedin','linkedin_convite','linkedin_mensagem'];
-  var abaItems = {
-    email:    (fila||[]).filter(function(x){return x.canal==='email';}),
-    whatsapp: (fila||[]).filter(function(x){return x.canal==='whatsapp';}),
-    linkedin: (fila||[]).filter(function(x){return x.canal==='linkedin'||x.canal==='linkedin_convite'||x.canal==='linkedin_mensagem';})
-  };
-  var foraDosFiltros = (fila||[]).filter(function(x){ return !CANAIS_CONHECIDOS.includes(x.canal); });
 
   function aprovar(id) {
     var item = (fila||[]).find(function(x){return x.id===id;});
@@ -2849,7 +2866,7 @@ function AprovacaoHoje() {
   useEffect(function() {
     function onKey(e) {
       if (!fila || document.activeElement.tagName === 'INPUT' || document.activeElement.tagName === 'TEXTAREA') return;
-      var items = (fila||[]).filter(function(x){return x.canal===(aba==='linkedin'?x.canal:aba);});
+      var items = fila||[];
       if (e.key === 'j') setFocused(function(f){return Math.min(f+1,items.length-1);});
       if (e.key === 'k') setFocused(function(f){return Math.max(f-1,0);});
       if (e.key === 'Enter' && items[focused]) aprovar(items[focused].id);
@@ -2944,11 +2961,9 @@ function AprovacaoHoje() {
 
   if (fila===null) return React.createElement("div",{style:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",...s,fontSize:10,color:"#2D2D44"}},"Carregando fila...");
 
-  var BLOCO_SZ = 10;
-  var itensAbaAll = abaItems[aba]||[];
-  var itensAba = itensAbaAll.slice(bloco*BLOCO_SZ, (bloco+1)*BLOCO_SZ);
-  var totalFila = (fila||[]).length;
-  var restantes = Math.max(0, itensAbaAll.length - (bloco+1)*BLOCO_SZ);
+  var itensAba = fila||[];
+  var totalFila = (dbCounts.email||0)+(dbCounts.whatsapp||0)+(dbCounts.linkedin||0);
+  var restantes = Math.max(0, (dbCounts[aba]||0) - (bloco+1)*BLOCO_SZ);
   var canalAbas = [{k:'email',label:'Email',cor:'#60A5FA'},{k:'whatsapp',label:'WhatsApp',cor:'#34D399'},{k:'linkedin',label:'LinkedIn',cor:'#818CF8'}];
 
   return React.createElement("div",{style:{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}},
@@ -2960,13 +2975,6 @@ function AprovacaoHoje() {
     // Erro de query visível
     erroQuery && React.createElement("div",{style:{background:"rgba(239,68,68,.08)",borderBottom:".5px solid rgba(239,68,68,.25)",padding:"6px 20px",flexShrink:0}},
       React.createElement("span",{style:{...s,fontSize:9,color:"#F87171"}},"⚠ "+erroQuery)
-    ),
-    // Itens fora dos filtros
-    fila && foraDosFiltros.length > 0 && React.createElement("div",{style:{background:"rgba(251,191,36,.06)",borderBottom:".5px solid rgba(251,191,36,.2)",padding:"5px 20px",flexShrink:0}},
-      React.createElement("span",{style:{...s,fontSize:9,color:"#FBBF24"}},
-        foraDosFiltros.length+" item(s) em crm_fila fora dos filtros — canal(is) desconhecido(s): "+
-        [...new Set(foraDosFiltros.map(function(x){return x.canal||'null';}))].join(', ')
-      )
     ),
     // Gerar nova fila modal
     showGerarFila && React.createElement(GerarFilaModal, {onClose:function(){setShowGerarFila(false);}, onFilaGerada:function(){setShowGerarFila(false);setTick(function(n){return n+1;});}}),
@@ -2994,7 +3002,7 @@ function AprovacaoHoje() {
       ),
       React.createElement("div",{style:{display:"flex",gap:0}},
         canalAbas.map(function(ab){
-          var cnt=abaItems[ab.k]&&abaItems[ab.k].length||0;
+          var cnt=dbCounts[ab.k]||0;
           var ativo=aba===ab.k;
           return React.createElement("button",{key:ab.k,onClick:function(){setAba(ab.k);},style:{...s,fontSize:9,padding:"5px 14px",border:"none",background:"transparent",color:ativo?ab.cor:"#555",borderBottom:ativo?"1.5px solid "+ab.cor:".5px solid transparent",cursor:"pointer",letterSpacing:".3px"}},ab.label+(cnt?" ("+cnt+")":""));
         })
@@ -3072,12 +3080,12 @@ function AprovacaoHoje() {
             );
           }),
       // Navegação de blocos
-      itensAbaAll.length > BLOCO_SZ && React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,padding:"12px 0 4px",borderTop:".5px solid #1A1A2E",marginTop:4}},
-        bloco>0 && React.createElement("button",{onClick:function(){setBloco(function(b){return b-1;});},style:{...s,fontSize:9,padding:"4px 14px",borderRadius:5,border:".5px solid #2D2D44",background:"transparent",color:"#9B9BB4",cursor:"pointer"}},"← Bloco anterior"),
+      (dbCounts[aba]||0) > BLOCO_SZ && React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,padding:"12px 0 4px",borderTop:".5px solid #1A1A2E",marginTop:4}},
+        bloco>0 && React.createElement("button",{onClick:function(){var b=bloco-1;setBloco(b);load(aba,b);},style:{...s,fontSize:9,padding:"4px 14px",borderRadius:5,border:".5px solid #2D2D44",background:"transparent",color:"#9B9BB4",cursor:"pointer"}},"← Bloco anterior"),
         React.createElement("span",{style:{...s,fontSize:9,color:"#555",flex:1,textAlign:"center"}},
-          "Bloco "+(bloco+1)+" / "+Math.ceil(itensAbaAll.length/BLOCO_SZ)+" · "+itensAbaAll.length+" itens no total"
+          "Bloco "+(bloco+1)+" / "+Math.ceil((dbCounts[aba]||0)/BLOCO_SZ)+" · "+(dbCounts[aba]||0)+" itens no total"
         ),
-        restantes>0 && React.createElement("button",{onClick:function(){setBloco(function(b){return b+1;});},style:{...s,fontSize:9,padding:"4px 14px",borderRadius:5,border:".5px solid rgba(129,140,248,.4)",background:"rgba(129,140,248,.08)",color:"#818CF8",cursor:"pointer",fontWeight:700}},"Próximo bloco ("+restantes+" restantes) →")
+        restantes>0 && React.createElement("button",{onClick:function(){var b=bloco+1;setBloco(b);load(aba,b);},style:{...s,fontSize:9,padding:"4px 14px",borderRadius:5,border:".5px solid rgba(129,140,248,.4)",background:"rgba(129,140,248,.08)",color:"#818CF8",cursor:"pointer",fontWeight:700}},"Próximo bloco ("+restantes+" restantes) →")
       )
     )
   );
@@ -3094,7 +3102,7 @@ function FilaDoDia() {
   function sj(path, opts) {
     const jwt = (window.__supaSession && window.__supaSession.access_token) || ANON;
     const h = Object.assign({'apikey':ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json'}, opts&&opts.headers);
-    return fetch(SUPA+path, Object.assign({},opts,{headers:h})).then(function(r){return r.json();});
+    return fetch(SUPA+path, Object.assign({},opts,{headers:h})).then(function(r){var ct=r.headers.get('content-type')||'';return ct.includes('json')?r.json():null;});
   }
 
   const [fila,       setFila]       = useState(null);
@@ -6263,7 +6271,7 @@ var SUPA_ANON = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
 function supaFetch(path, opts) {
   var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
   var hdrs = Object.assign({'apikey': SUPA_ANON, 'Authorization': 'Bearer ' + jwt, 'Content-Type': 'application/json'}, opts && opts.headers);
-  return fetch(SUPA_URL + path, Object.assign({}, opts, {headers: hdrs})).then(function(r){ return r.json(); });
+  return fetch(SUPA_URL + path, Object.assign({}, opts, {headers: hdrs})).then(function(r){var ct=r.headers.get('content-type')||'';return ct.includes('json')?r.json():null;});
 }
 
 // E1 — Tela Hoje: progresso diário, aprovações pendentes, reuniões do dia
