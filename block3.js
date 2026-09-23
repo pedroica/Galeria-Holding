@@ -2541,13 +2541,160 @@ function nowStr() {
 // ── Bloco 1: GerarFilaModal ──────────────────────────────────────────────────
 var AGENCIAS_GERAR = [
   {id:'3409ab82-f0cd-4d95-b6e2-398995425411', nome:'Galeria Holding', slug:'holding'},
+  {id:'960142b5-a688-41f8-8719-d516eeb843c6', nome:'Galeria', slug:'galeria'},
   {id:'14a057af-31c6-4606-8236-4c97d8067335', nome:'404', slug:'404'},
   {id:'e8d734ba-b3e9-425b-942e-b8b56c98f56b', nome:'Caramelo', slug:'cccaramelo'},
   {id:'74886b76-2650-41e1-8d46-3c742681fadd', nome:'Catalyst', slug:'catalyst'},
   {id:'b0473d79-afd9-404e-8784-04b4556a5a2c', nome:'Milà', slug:'mila'},
   {id:'a8aecdac-1001-4643-bcd4-e818307b6d92', nome:'GaIA', slug:'gaia'},
 ];
-// Template fixo até o Bloco 2 (crm_templates) existir
+// ── Bloco 2: TemplatesView ────────────────────────────────────────────────────
+function TemplatesView() {
+  var _templates = useState([]); var templates = _templates[0]; var setTemplates = _templates[1];
+  var _loading = useState(true); var loading = _loading[0]; var setLoading = _loading[1];
+  var _agFiltro = useState(AGENCIAS_GERAR[0].id); var agFiltro = _agFiltro[0]; var setAgFiltro = _agFiltro[1];
+  var _editId = useState(null); var editId = _editId[0]; var setEditId = _editId[1];
+  var _editCorpo = useState(''); var editCorpo = _editCorpo[0]; var setEditCorpo = _editCorpo[1];
+  var _editAssunto = useState(''); var editAssunto = _editAssunto[0]; var setEditAssunto = _editAssunto[1];
+  var _saving = useState(false); var saving = _saving[0]; var setSaving = _saving[1];
+  var _prevEmp = useState(null); var prevEmp = _prevEmp[0]; var setPrevEmp = _prevEmp[1];
+  var _prevDec = useState(null); var prevDec = _prevDec[0]; var setPrevDec = _prevDec[1];
+  var mono = 'IBM Plex Mono,monospace';
+  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:mono};
+
+  useEffect(function() {
+    supaFetch('/rest/v1/crm_templates?tipo=eq.prospeccao&order=agencia_id.asc,canal.asc,etapa.asc').then(function(d) {
+      setTemplates(Array.isArray(d)?d:[]); setLoading(false);
+    }).catch(function(){setLoading(false);});
+    supaFetch('/rest/v1/crm_empresas?select=id,nome,setor&order=nome.asc&limit=1').then(function(d) {
+      if (Array.isArray(d) && d.length > 0) {
+        setPrevEmp(d[0]);
+        supaFetch('/rest/v1/crm_decisores?empresa_id=eq.'+d[0].id+'&status=eq.ativo&limit=1').then(function(ds) {
+          if (Array.isArray(ds) && ds.length > 0) setPrevDec(ds[0]);
+        });
+      }
+    });
+  }, []);
+
+  function wc(txt) { return (txt||'').trim().split(/\s+/).filter(function(w){return w.length>0;}).length; }
+
+  function prevText(corpo) {
+    if (!prevEmp) return corpo;
+    var pn = prevDec ? (prevDec.nome||'').split(' ')[0] : '{primeiro_nome}';
+    var cargo = prevDec ? (prevDec.cargo||'{cargo}') : '{cargo}';
+    var ag = AGENCIAS_GERAR.find(function(a){return a.id===agFiltro;});
+    var setor = setorGerar(prevEmp);
+    return corpo
+      .replace(/{primeiro_nome}/g,pn).replace(/{empresa}/g,prevEmp.nome||'')
+      .replace(/{cargo}/g,cargo).replace(/{setor}/g,setor)
+      .replace(/{agencia}/g,ag?ag.nome:'Galeria Holding');
+  }
+
+  function startEdit(t) { setEditId(t.id); setEditCorpo(t.corpo); setEditAssunto(t.assunto||''); }
+  function cancelEdit() { setEditId(null); }
+  function saveEdit() {
+    setSaving(true);
+    var jwt = (window.__supaSession&&window.__supaSession.access_token)||SUPA_ANON;
+    fetch(SUPA_URL+'/rest/v1/crm_templates?id=eq.'+editId, {
+      method:'PATCH',
+      headers:{'apikey':SUPA_ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({corpo:editCorpo,assunto:editAssunto||null,atualizado_em:new Date().toISOString()})
+    }).then(function() {
+      setTemplates(function(prev){return prev.map(function(t){return t.id===editId?Object.assign({},t,{corpo:editCorpo,assunto:editAssunto||null}):t;});});
+      setSaving(false); setEditId(null);
+    }).catch(function(){setSaving(false);});
+  }
+  function toggleAtivo(t) {
+    var jwt = (window.__supaSession&&window.__supaSession.access_token)||SUPA_ANON;
+    fetch(SUPA_URL+'/rest/v1/crm_templates?id=eq.'+t.id, {
+      method:'PATCH',
+      headers:{'apikey':SUPA_ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({ativo:!t.ativo,atualizado_em:new Date().toISOString()})
+    }).then(function() {
+      setTemplates(function(prev){return prev.map(function(tt){return tt.id===t.id?Object.assign({},tt,{ativo:!tt.ativo}):tt;});});
+    });
+  }
+
+  var tplsFiltrados = templates.filter(function(t){return t.agencia_id===agFiltro;});
+  var canais = ['email','whatsapp','linkedin','ligacao'];
+  var canaisLbl = {email:'Email',whatsapp:'WhatsApp',linkedin:'LinkedIn',ligacao:'Ligação'};
+  var WORD_LIMITS = {'email:1':90,'email:2':50,'whatsapp:1':60,'whatsapp:2':60};
+  var CHAR_LIMITS = {'linkedin:1':280};
+
+  if (loading) return React.createElement("div",{style:{padding:24,color:'#555',fontFamily:mono,fontSize:11}},'Carregando templates…');
+
+  return React.createElement("div",{style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',padding:'16px 20px',gap:10}},
+    React.createElement("div",{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',flexShrink:0}},
+      AGENCIAS_GERAR.map(function(ag) {
+        var active = ag.id===agFiltro;
+        return React.createElement("button",{key:ag.id,onClick:function(){setAgFiltro(ag.id);setEditId(null);},
+          style:{padding:'4px 10px',borderRadius:6,border:'.5px solid '+(active?'#FF6B2B44':'#1A1A2E'),background:active?'#FF6B2B22':'transparent',color:active?'#FF6B2B':'#555',fontSize:10,fontFamily:mono,cursor:'pointer'}
+        },ag.nome);
+      })
+    ),
+    prevEmp && React.createElement("div",{style:{fontSize:9,color:'#555',fontFamily:mono,flexShrink:0}},
+      'Preview: '+prevEmp.nome+(prevDec?' · '+prevDec.nome:'')+(prevEmp.setor?' · '+prevEmp.setor:'')
+    ),
+    React.createElement("div",{style:{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:14}},
+      canais.map(function(canal) {
+        var tplsC = tplsFiltrados.filter(function(t){return t.canal===canal;}).sort(function(a,b){return parseInt(a.etapa,10)-parseInt(b.etapa,10);});
+        if (!tplsC.length) return null;
+        return React.createElement("div",{key:canal},
+          React.createElement("div",{style:{fontFamily:mono,fontSize:9,color:'#818CF8',fontWeight:700,textTransform:'uppercase',letterSpacing:.5,marginBottom:8}},canaisLbl[canal]||canal),
+          tplsC.map(function(t) {
+            var isEdit = editId===t.id;
+            var limW = WORD_LIMITS[canal+':'+t.etapa];
+            var limC = CHAR_LIMITS[canal+':'+t.etapa];
+            var corpo = isEdit ? editCorpo : t.corpo;
+            var overLim = limW ? wc(corpo)>limW : (limC ? corpo.length>limC : false);
+            return React.createElement("div",{key:t.id,style:{background:'#0D0D1A',border:'.5px solid '+(isEdit?'#818CF8':'#1A1A2E'),borderRadius:8,padding:'12px 14px',marginBottom:6,opacity:t.ativo?1:0.5}},
+              React.createElement("div",{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+                React.createElement("div",{style:{display:'flex',alignItems:'center',gap:8}},
+                  React.createElement("span",{style:{fontSize:11,fontWeight:600,color:'#F5F5F5',fontFamily:mono}},'Etapa '+t.etapa),
+                  !t.ativo && React.createElement("span",{style:{fontSize:9,color:'#F87171',fontFamily:mono}},'desativado')
+                ),
+                !isEdit && React.createElement("div",{style:{display:'flex',gap:8}},
+                  React.createElement("button",{onClick:function(){startEdit(t);},style:{fontSize:9,color:'#60A5FA',background:'none',border:'none',cursor:'pointer',fontFamily:mono}},'editar'),
+                  React.createElement("button",{onClick:function(){toggleAtivo(t);},style:{fontSize:9,color:t.ativo?'#F87171':'#34D399',background:'none',border:'none',cursor:'pointer',fontFamily:mono}},t.ativo?'desativar':'ativar')
+                )
+              ),
+              !isEdit && canal==='email' && t.assunto && React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',fontFamily:mono,marginBottom:6,paddingBottom:6,borderBottom:'.5px solid #1A1A2E'}},'Assunto: '+t.assunto),
+              isEdit && React.createElement("div",{style:{display:'flex',flexDirection:'column',gap:8}},
+                canal==='email' && React.createElement("div",null,
+                  React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Assunto'),
+                  React.createElement("input",{style:inp,value:editAssunto,onChange:function(e){var v=e.target.value;setEditAssunto(v);}})
+                ),
+                React.createElement("div",null,
+                  React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Corpo'),
+                  React.createElement("textarea",{style:Object.assign({},inp,{height:120,resize:'vertical',lineHeight:1.5}),value:editCorpo,onChange:function(e){var v=e.target.value;setEditCorpo(v);}})
+                ),
+                React.createElement("div",{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+                  React.createElement("div",{style:{display:'flex',gap:8}},
+                    React.createElement("button",{onClick:saveEdit,disabled:saving||overLim,style:{padding:'4px 12px',borderRadius:5,border:'none',background:overLim?'#444':'#FF6B2B',color:'#fff',fontSize:10,fontFamily:mono,cursor:overLim?'not-allowed':'pointer'}},saving?'…':'Salvar'),
+                    React.createElement("button",{onClick:cancelEdit,style:{padding:'4px 10px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:10,fontFamily:mono,cursor:'pointer'}},'Cancelar')
+                  ),
+                  React.createElement("span",{style:{fontSize:9,fontFamily:mono,color:overLim?'#F87171':'#555'}},
+                    limC ? (editCorpo.length+'/'+limC+' chars') : (limW ? (wc(editCorpo)+'/'+limW+' palavras') : (wc(editCorpo)+' palavras'))
+                  )
+                )
+              ),
+              !isEdit && React.createElement("div",null,
+                React.createElement("pre",{style:{fontSize:10,color:'#9B9BB4',margin:0,whiteSpace:'pre-wrap',fontFamily:mono,lineHeight:1.5,maxHeight:90,overflow:'hidden'}},
+                  prevText(t.corpo).slice(0,280)+(prevText(t.corpo).length>280?'…':'')
+                ),
+                React.createElement("div",{style:{fontSize:9,fontFamily:mono,color:overLim?'#F87171':'#555',marginTop:4}},
+                  limC ? (t.corpo.length+'/'+limC+' chars') : (limW ? (wc(t.corpo)+'/'+limW+' palavras') : (wc(t.corpo)+' palavras'))
+                )
+              )
+            );
+          })
+        );
+      })
+    )
+  );
+}
+
+// Template fixo até o Bloco 2 (crm_templates) existir — agora usado como fallback quando tabela vazia
 var TEMPLATE_GERAR = {
   email: {
     etapa1: { assunto:'{empresa} + Galeria Holding — 20 minutos', corpo:'Oi {primeiro_nome},\n\nVi o trabalho de {empresa} e queria entender como funciona o marketing de vocês.\n\nTeria 20 minutos para uma conversa rápida?\n\nAbraço,' },
@@ -2571,9 +2718,21 @@ function cargoPriGerar(cargo, categoria) {
   if (/\b(ceo|chief executive|president|founder|co-founder|proprietar|owner|managing director|diretor geral|diretor presidente)\b/.test(t)) return 1;
   return 0;
 }
-function substGerar(texto, dec, empNome, agNome) {
+function setorGerar(emp) {
+  var raw = (emp.setor||'').trim();
+  if (!raw) return 'marketing';
+  if (raw === raw.toUpperCase() && raw.length <= 5) return 'marketing';
+  if (raw.length <= 2) return 'marketing';
+  return raw.toLowerCase();
+}
+function substGerar(texto, dec, empNome, agNome, setor) {
   var pn = (dec.nome||'').split(' ')[0];
-  return texto.replace(/{primeiro_nome}/g,pn).replace(/{empresa}/g,empNome||'').replace(/{cargo}/g,dec.cargo||'').replace(/{agencia}/g,agNome||'Galeria Holding');
+  return texto
+    .replace(/{primeiro_nome}/g,pn)
+    .replace(/{empresa}/g,empNome||'')
+    .replace(/{cargo}/g,dec.cargo||'')
+    .replace(/{agencia}/g,agNome||'Galeria Holding')
+    .replace(/{setor}/g,setor||'marketing');
 }
 
 function GerarFilaModal(props) {
@@ -2590,6 +2749,15 @@ function GerarFilaModal(props) {
   var _gerando = useState(false); var gerando = _gerando[0]; var setGerando = _gerando[1];
   var _resultado = useState(null); var resultado = _resultado[0]; var setResultado = _resultado[1];
   var _prog = useState(''); var prog = _prog[0]; var setProg = _prog[1];
+  var _tplMap = useState(null); var tplMap = _tplMap[0]; var setTplMap = _tplMap[1];
+
+  useEffect(function() {
+    sj('/rest/v1/crm_templates?tipo=eq.prospeccao&ativo=eq.true&select=id,agencia_id,canal,etapa,assunto,corpo').then(function(d) {
+      var m = {};
+      if (Array.isArray(d)) d.forEach(function(t) { m[t.agencia_id+':'+t.canal+':'+t.etapa] = t; });
+      setTplMap(m);
+    }).catch(function() { setTplMap({}); });
+  }, []);
 
   async function gerar() {
     setGerando(true); setResultado(null);
@@ -2666,13 +2834,18 @@ function GerarFilaModal(props) {
         cand.decs.forEach(function(dec) {
           var empNome = cand.emp.nome||'';
           var et = cand.etapa;
+          var etNm = et === 'etapa2' ? '2' : '1';
+          var setorV = setorGerar(cand.emp);
+          var tm = tplMap || {};
           // email (sempre)
-          var tpl_email = TEMPLATE_GERAR.email[et]||TEMPLATE_GERAR.email.etapa1;
-          rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'email', etapa:et, assunto:substGerar(tpl_email.assunto,dec,empNome,ag.nome), corpo:substGerar(tpl_email.corpo,dec,empNome,ag.nome), status:'rascunho', gerado_em:now});
+          var tplE = tm[ag.id+':email:'+etNm] || null;
+          var emailBase = tplE || TEMPLATE_GERAR.email[et] || TEMPLATE_GERAR.email.etapa1;
+          rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'email', etapa:et, assunto:substGerar(emailBase.assunto||'',dec,empNome,ag.nome,setorV), corpo:substGerar(emailBase.corpo||'',dec,empNome,ag.nome,setorV), status:'rascunho', gerado_em:now, template_id:tplE?tplE.id:null});
           // whatsapp (se tiver wa)
           if (dec.wa) {
-            var tpl_wa = TEMPLATE_GERAR.whatsapp[et]||TEMPLATE_GERAR.whatsapp.etapa1;
-            rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'whatsapp', etapa:et, assunto:null, corpo:substGerar(tpl_wa.corpo,dec,empNome,ag.nome), status:'rascunho', gerado_em:now});
+            var tplW = tm[ag.id+':whatsapp:'+etNm] || null;
+            var waBase = tplW || TEMPLATE_GERAR.whatsapp[et] || TEMPLATE_GERAR.whatsapp.etapa1;
+            rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'whatsapp', etapa:et, assunto:null, corpo:substGerar(waBase.corpo||'',dec,empNome,ag.nome,setorV), status:'rascunho', gerado_em:now, template_id:tplW?tplW.id:null});
           }
           if (!criados[ag.nome]) criados[ag.nome]={etapa1:0,etapa2:0};
           criados[ag.nome][et]=(criados[ag.nome][et]||0)+1;
@@ -5225,7 +5398,7 @@ function App() {
     }
   }, "GALERIA HOLDING")),
   React.createElement("div", { style:{ display:'flex', alignItems:'stretch', flex:1 } },
-    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['ferramentas','Ferramentas']].map(([s, l]) =>
+    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['templates','Templates'],['ferramentas','Ferramentas']].map(([s, l]) =>
       React.createElement("div", {
         key: s,
         onClick: () => { if (s === 'ferramentas') { setToolsOpen(true); } else { navTo(s, null, null); } },
@@ -5260,7 +5433,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
