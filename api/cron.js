@@ -181,7 +181,9 @@ async function jobFechamento(req, res) {
   let token = null;
   if (upsertRes.ok) { const rows=await upsertRes.json(); token=Array.isArray(rows)&&rows[0]?rows[0].token:null; }
   const linkRelatorio = token ? `${BASE_URL}/api/relatorio/${token}` : null;
-  console.log('[cron:fechamento-sexta]', {reunioes:dados.reunioes_total,enviados:dados.enviados_total,token});
+  const ctx_fech = {reunioes:dados.reunioes_total,enviados:dados.enviados_total,respostas:dados.respostas_total,token,ms:Date.now()-inicio};
+  console.log('[cron:fechamento-sexta]', ctx_fech);
+  await logCron('fechamento-sexta', 'info', 'fim', ctx_fech);
   return res.status(200).json({ok:true,token,link:linkRelatorio,...dados});
 }
 
@@ -197,6 +199,7 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta' });
   } catch(e) {
     console.error('[cron:'+job+']', e.message);
+    try { await logCron(job||'unknown', 'error', 'erro: '+e.message, null); } catch(_) {}
     return res.status(500).json({ error: e.message });
   }
 }
