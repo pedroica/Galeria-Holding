@@ -15,7 +15,7 @@
   ],
   "crons": [
     { "path": "/api/cron?job=gerar-fila-diario",      "schedule": "0 9 * * *"  },
-    { "path": "/api/cron?job=noticias-semanal",        "schedule": "0 10 * * 1" },
+    { "path": "/api/cron?job=noticias-semanal",        "schedule": "30 8 * * 1-5" },
     { "path": "/api/cron?job=enriquecimento-diario",   "schedule": "30 13 * * *" },
     { "path": "/api/cron?job=fechamento-sexta",        "schedule": "0 20 * * 5"  }
   ]

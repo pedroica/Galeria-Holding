@@ -56,7 +56,7 @@ async function jobGerarFila(req, res) {
   const r = await fetch(BASE_URL+'/api/fila', {
     method: 'POST',
     headers: { 'Content-Type':'application/json', Authorization:'Bearer '+(process.env.CRON_SECRET||SUPA_KEY||'') },
-    body: JSON.stringify({ canais:['email','whatsapp','linkedin_convite'], limite:5 })
+    body: JSON.stringify({ canais:['email','whatsapp','linkedin_convite'], limite:40, sem_ia:true })
   });
   const data = await r.json();
   const ctx = {gerados:data.gerados||0, erros:data.erros?.length||0, ms:Date.now()-inicio};
@@ -121,6 +121,14 @@ async function jobEnriquecimento(req, res) {
 }
 
 // ── job: noticias-semanal ────────────────────────────────────────────────────
+function inicioSemanaISO() {
+  const brt = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Sao_Paulo'}));
+  const dia = brt.getDay();
+  const seg = new Date(brt);
+  seg.setDate(brt.getDate() - (dia===0?6:dia-1));
+  seg.setHours(0,0,0,0);
+  return seg.toISOString();
+}
 async function buscarNoticias(empresa) {
   const q = encodeURIComponent('"'+empresa.nome+'"');
   const url = `https://news.google.com/rss/search?q=${q}&hl=pt-BR&gl=BR&ceid=BR:pt-419&num=3`;
@@ -137,19 +145,44 @@ async function buscarNoticias(empresa) {
 async function jobNoticias(req, res) {
   const inicio = Date.now();
   await logCron('noticias-semanal', 'info', 'início', null);
+
+  // Todas as empresas com ≥3 estrelas
   const scoreRows = await sg('crm_empresa_agencia_estrelas?or=(estrelas_manual.gte.3,estrelas_calculadas.gte.3)&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=1000');
   const empMap = {};
   for (const r of (Array.isArray(scoreRows)?scoreRows:[])) {
     const eff=r.estrelas_manual!=null?Number(r.estrelas_manual):Number(r.estrelas_calculadas||0);
     if(eff>=3&&(!empMap[r.empresa_id]||eff>empMap[r.empresa_id]))empMap[r.empresa_id]=eff;
   }
-  const empresaIds = Object.keys(empMap);
-  if (empresaIds.length===0) return res.status(200).json({ok:true,processadas:0,inseridas:0});
-  const empresas = [];
-  for (let i=0; i<Math.min(empresaIds.length,10); i+=10) {
-    const rows = await sg(`crm_empresas?id=in.(${empresaIds.slice(i,i+10).join(',')})&select=id,nome`);
-    if(Array.isArray(rows))empresas.push(...rows);
+  const todosIds = Object.keys(empMap);
+  if (todosIds.length===0) {
+    await logCron('noticias-semanal', 'info', 'fim', {inseridas:0, empresas:0, faltam:0, ms:Date.now()-inicio});
+    return res.status(200).json({ok:true, processadas:0, inseridas:0, faltam:0});
   }
+
+  // Prioridade 1: empresas na fila desta semana
+  const filaRows = await sg(`crm_fila?criado_em=gte.${inicioSemanaISO()}&select=empresa_id&limit=500`);
+  const filaSet = new Set((Array.isArray(filaRows)?filaRows:[]).map(r=>r.empresa_id).filter(Boolean));
+
+  // Já processadas nos últimos 7 dias → excluir da rotação
+  const cutoff7d = new Date(Date.now()-7*86400000).toISOString();
+  const recentRows = await sg(`crm_noticias?criado_em=gte.${cutoff7d}&select=empresa_id&limit=1000`);
+  const recentSet = new Set((Array.isArray(recentRows)?recentRows:[]).map(r=>r.empresa_id).filter(Boolean));
+
+  // Lista priorizada: fila da semana primeiro, depois rotação geral
+  const prio1 = todosIds.filter(id => filaSet.has(id) && !recentSet.has(id));
+  const prio2 = todosIds.filter(id => !filaSet.has(id) && !recentSet.has(id));
+  const candidatos = [...prio1, ...prio2];
+  const selecionados = candidatos.slice(0, 20);
+  const faltam = Math.max(0, candidatos.length - 20);
+
+  if (selecionados.length===0) {
+    await logCron('noticias-semanal', 'info', 'fim', {inseridas:0, empresas:0, faltam:0, ms:Date.now()-inicio});
+    return res.status(200).json({ok:true, processadas:0, inseridas:0, faltam:0});
+  }
+
+  const empresaRows = await sg(`crm_empresas?id=in.(${selecionados.join(',')})&select=id,nome`);
+  const empresas = Array.isArray(empresaRows) ? empresaRows : [];
+
   let inseridas = 0;
   for (const emp of empresas) {
     const noticias = await buscarNoticias(emp);
@@ -158,10 +191,10 @@ async function jobNoticias(req, res) {
       if(ok)inseridas++;
     }
   }
-  const ctx_noticias = {inseridas, empresas:empresas.length, ms:Date.now()-inicio};
-  console.log('[cron:noticias-semanal]', inseridas, 'notícias para', empresas.length, 'empresas');
+  const ctx_noticias = {inseridas, empresas:empresas.length, faltam, ms:Date.now()-inicio};
+  console.log('[cron:noticias-semanal]', inseridas, 'notícias,', empresas.length, 'empresas,', faltam, 'faltam');
   await logCron('noticias-semanal', 'info', 'fim', ctx_noticias);
-  return res.status(200).json({ok:true,empresas:empresas.length,inseridas});
+  return res.status(200).json({ok:true, processadas:empresas.length, inseridas, faltam});
 }
 
 // ── job: fechamento-sexta ────────────────────────────────────────────────────

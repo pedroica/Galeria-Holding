@@ -65,6 +65,16 @@ function canaisDisponiveis(d) {
   if (d.linkedin_url) { cs.push('linkedin_convite'); cs.push('linkedin_mensagem'); }
   return cs;
 }
+function interpolar(txt, vars) {
+  return (txt || '').replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] !== undefined ? String(vars[k]) : '');
+}
+const FALLBACK_TEMPLATES = {
+  email:             { assunto:'Uma oportunidade para {{empresa}}', corpo:'Olá {{nome}},\n\nAcompanho o trabalho da {{empresa}} e acredito que há uma proposta que pode fazer sentido para vocês.\n\nPoderíamos conversar 20 minutos esta semana?' },
+  whatsapp:          { assunto:null, corpo:'Olá {{nome}}, vi o trabalho da {{empresa}} e queria apresentar uma oportunidade da {{agencia}}. Posso mandar mais detalhes?' },
+  linkedin_convite:  { assunto:null, corpo:'Olá {{nome}}, acompanho a {{empresa}} e queria explorar uma parceria com a {{agencia}}.' },
+  linkedin_mensagem: { assunto:null, corpo:'Olá {{nome}}, queria continuar nossa conversa sobre uma parceria entre {{agencia}} e {{empresa}}.' },
+};
+
 async function gerarTexto(anthropic, prompt, canal) {
   const maxWords = canal === 'linkedin_convite' ? 40 : canal === 'whatsapp' ? 60 : 120;
   const r = await anthropic.messages.create({
@@ -158,7 +168,7 @@ export default async function handler(req, res) {
   const isJWT = !isCron && authHeader && await verifyJWT(authHeader);
   if (!isCron && !isJWT) return res.status(401).json({ error: 'Não autenticado' });
 
-  const { agencia_slug, canais = ['email', 'whatsapp'], limite = 30 } = req.body || {};
+  const { agencia_slug, canais = ['email', 'whatsapp'], limite = 30, sem_ia = false } = req.body || {};
   const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
   const semana = inicioSemana();
   const gerados = []; const erros = []; const bloqueados = [];
@@ -207,8 +217,15 @@ export default async function handler(req, res) {
       const estrelas = scoreMap[d.empresa_id] || 0;
       const prompt = `Gere uma mensagem de prospecção.\nAgência: ${ag.nome}\nEmpresa-alvo: ${emp.nome||d.empresa_id}\nSetor: ${emp.setor||emp.segmento_detalhe||'não especificado'}\nDecisores: ${d.nome}, ${d.cargo||'cargo desconhecido'}\nCanal: ${canal}\nEtapa: ${etapa}\nRelevância: ${estrelas}/5 estrelas\n${tpl?'Template base: '+tpl.corpo.slice(0,300):''}\n${caso?'Case: '+caso.titulo+' ('+caso.marca+') — '+caso.resumo:''}`;
       try {
-        const txt = await gerarTexto(anthropic, prompt, canal);
-        const row = await sp('crm_fila', { agencia_id:ag.id, agencia_slug:ag.nome, empresa_id:d.empresa_id, decisor_id:d.id, canal, etapa, status:'rascunho', assunto:txt.assunto||null, corpo:txt.corpo, case_id:caso?.id||null, template_id:tpl?.id||null, tokens_prompt:txt.tokens_prompt, tokens_resposta:txt.tokens_resposta, custo_usd:txt.custo_usd, modelo:'claude-sonnet-4-6', contexto_para_aprovacao:`${emp.nome||''} · ${d.nome} · ${d.cargo||''} · ${estrelas}★` });
+        let txt;
+        if (sem_ia) {
+          const vars = {nome:d.nome||'',cargo:d.cargo||'',empresa:emp.nome||'',setor:emp.setor||emp.segmento_detalhe||'',agencia:ag.nome||'',nome_decisor:d.nome||'',nome_empresa:emp.nome||''};
+          const base = tpl || FALLBACK_TEMPLATES[canal] || FALLBACK_TEMPLATES.email;
+          txt = {assunto:interpolar(base.assunto||'',vars),corpo:interpolar(base.corpo||'',vars),tokens_prompt:0,tokens_resposta:0,custo_usd:0};
+        } else {
+          txt = await gerarTexto(anthropic, prompt, canal);
+        }
+        const row = await sp('crm_fila', { agencia_id:ag.id, agencia_slug:ag.nome, empresa_id:d.empresa_id, decisor_id:d.id, canal, etapa, status:'rascunho', assunto:txt.assunto||null, corpo:txt.corpo, case_id:caso?.id||null, template_id:tpl?.id||null, tokens_prompt:txt.tokens_prompt, tokens_resposta:txt.tokens_resposta, custo_usd:txt.custo_usd, modelo:sem_ia?'template':'claude-sonnet-4-6', contexto_para_aprovacao:`${emp.nome||''} · ${d.nome} · ${d.cargo||''} · ${estrelas}★` });
         if (row) { restante[canal]=(restante[canal]||0)-1; totalGerado++; gerados.push({id:row[0]?.id,empresa:emp.nome,decisor:d.nome,canal,estrelas}); await sp(`crm_decisores?id=eq.${d.id}`, {ultimo_toque_em:new Date().toISOString()}, 'PATCH'); }
       } catch(e) { erros.push({empresa:emp.nome,decisor:d.nome,err:e.message}); }
     }
