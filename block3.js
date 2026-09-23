@@ -2552,6 +2552,7 @@ function AprovacaoHoje() {
   var _edit = useState({}); var editando = _edit[0]; var setEditando = _edit[1];
   var _busy = useState({}); var busy = _busy[0]; var setBusy = _busy[1];
   var _undo = useState(null); var undoItem = _undo[0]; var setUndoItem = _undo[1];
+  var _erroQuery = useState(null); var erroQuery = _erroQuery[0]; var setErroQuery = _erroQuery[1];
   // E4-M3: auto-refresh a cada 60s
   var _tick = useState(0); var tick = _tick[0]; var setTick = _tick[1];
   // E4-M5: índice focado para keyboard nav
@@ -2566,7 +2567,10 @@ function AprovacaoHoje() {
   function load() {
     supaJwt('/rest/v1/crm_fila?status=eq.rascunho&order=gerado_em.desc&limit=200' +
       '&select=*,crm_empresas!empresa_id(id,nome,setor),crm_decisores!decisor_id(id,nome,cargo,email,wa,linkedin_url,temperatura,respondeu),crm_agencias!agencia_id(id,nome)'
-    ).then(function(d){ setFila(Array.isArray(d)?d:[]); });
+    ).then(function(d){
+      if (Array.isArray(d)) { setFila(d); setErroQuery(null); }
+      else { setFila([]); setErroQuery('Erro ao carregar fila: ' + ((d&&d.message)||JSON.stringify(d))); }
+    }).catch(function(e){ setFila([]); setErroQuery('Erro de rede: ' + e.message); });
   }
   useEffect(function(){ load(); }, [tick]);
   // E4-M3: auto-refresh
@@ -2575,11 +2579,13 @@ function AprovacaoHoje() {
     return function(){ clearInterval(t); };
   }, []);
 
+  var CANAIS_CONHECIDOS = ['email','whatsapp','linkedin','linkedin_convite','linkedin_mensagem'];
   var abaItems = {
     email:    (fila||[]).filter(function(x){return x.canal==='email';}),
     whatsapp: (fila||[]).filter(function(x){return x.canal==='whatsapp';}),
-    linkedin: (fila||[]).filter(function(x){return x.canal==='linkedin_convite'||x.canal==='linkedin_mensagem';})
+    linkedin: (fila||[]).filter(function(x){return x.canal==='linkedin'||x.canal==='linkedin_convite'||x.canal==='linkedin_mensagem';})
   };
+  var foraDosFiltros = (fila||[]).filter(function(x){ return !CANAIS_CONHECIDOS.includes(x.canal); });
 
   function aprovar(id) {
     var item = (fila||[]).find(function(x){return x.id===id;});
@@ -2726,6 +2732,17 @@ function AprovacaoHoje() {
     undoItem && React.createElement("div",{style:{background:"rgba(52,211,153,.1)",borderBottom:".5px solid rgba(52,211,153,.2)",padding:"6px 20px",display:"flex",alignItems:"center",gap:10,flexShrink:0}},
       React.createElement("span",{style:{...s,fontSize:9,color:"#34D399",flex:1}},"WA aberto para "+(undoItem.crm_empresas&&undoItem.crm_empresas.nome||'')+" — marcado como enviado"),
       React.createElement("button",{onClick:desfazerWA,style:{...s,fontSize:9,padding:"2px 10px",borderRadius:4,border:".5px solid rgba(52,211,153,.4)",background:"transparent",color:"#34D399",cursor:"pointer"}},"⟲ Não enviei")
+    ),
+    // Erro de query visível
+    erroQuery && React.createElement("div",{style:{background:"rgba(239,68,68,.08)",borderBottom:".5px solid rgba(239,68,68,.25)",padding:"6px 20px",flexShrink:0}},
+      React.createElement("span",{style:{...s,fontSize:9,color:"#F87171"}},"⚠ "+erroQuery)
+    ),
+    // Itens fora dos filtros
+    fila && foraDosFiltros.length > 0 && React.createElement("div",{style:{background:"rgba(251,191,36,.06)",borderBottom:".5px solid rgba(251,191,36,.2)",padding:"5px 20px",flexShrink:0}},
+      React.createElement("span",{style:{...s,fontSize:9,color:"#FBBF24"}},
+        foraDosFiltros.length+" item(s) em crm_fila fora dos filtros — canal(is) desconhecido(s): "+
+        [...new Set(foraDosFiltros.map(function(x){return x.canal||'null';}))].join(', ')
+      )
     ),
     // Header
     React.createElement("div",{style:{padding:"11px 20px 0",borderBottom:".5px solid #2D2D44",flexShrink:0}},

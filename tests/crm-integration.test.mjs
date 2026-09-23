@@ -131,18 +131,35 @@ console.log('\n[ 6 ] Gravar log em crm_logs');
   assert(row && row.id, 'log inserido em crm_logs com id retornado');
 }
 
-// 7. crm_fila auto-insert
-console.log('\n[ 7 ] Inserir rascunhos em crm_fila (email + whatsapp)');
+// 7. crm_fila — contrato: canais válidos, status, agencia_id FK, join funciona
+console.log('\n[ 7 ] crm_fila: contrato de canais, status e join agencia_id');
+let filaIds = [];
 {
+  // Buscar uma agencia real para testar FK
+  const agencias = await q('/crm_agencias?select=id&limit=1');
+  const agenciaId = agencias && agencias[0] && agencias[0].id;
   const now = new Date().toISOString();
   const data = await q('/crm_fila', {
     method: 'POST',
     body: JSON.stringify([
-      { empresa_id: empresaId, decisor_id: decisorId, canal: 'email',    etapa_cadencia: 1, etapa: 'etapa1', status: 'rascunho', gerado_em: now },
-      { empresa_id: empresaId, decisor_id: decisorId, canal: 'whatsapp', etapa_cadencia: 1, etapa: 'etapa1', status: 'rascunho', gerado_em: now },
+      { empresa_id: empresaId, decisor_id: decisorId, agencia_id: agenciaId, agencia_slug: 'teste', canal: 'email',    etapa: 'etapa1', status: 'rascunho', corpo: 'Teste email',    gerado_em: now },
+      { empresa_id: empresaId, decisor_id: decisorId, agencia_id: agenciaId, agencia_slug: 'teste', canal: 'whatsapp', etapa: 'etapa1', status: 'rascunho', corpo: 'Teste whatsapp', gerado_em: now },
+      { empresa_id: empresaId, decisor_id: decisorId, agencia_id: agenciaId, agencia_slug: 'teste', canal: 'linkedin', etapa: 'etapa1', status: 'rascunho', corpo: 'Teste linkedin', gerado_em: now },
     ])
   });
-  assert(Array.isArray(data) && data.length === 2, 'dois rascunhos criados em crm_fila');
+  assert(Array.isArray(data) && data.length === 3, 'três rascunhos criados (email, whatsapp, linkedin)');
+  if (Array.isArray(data)) filaIds = data.map(r => r.id);
+
+  // Verificar que o join agencia_id funciona via REST (FK existente)
+  if (filaIds.length > 0) {
+    const joined = await q(`/crm_fila?id=eq.${filaIds[0]}&select=id,canal,status,crm_agencias!agencia_id(id,nome)`);
+    assert(Array.isArray(joined) && joined.length === 1, 'join crm_agencias!agencia_id retorna array (FK válida)');
+    assert(joined[0] && joined[0].crm_agencias && joined[0].crm_agencias.id, 'crm_agencias resolvido pelo join');
+  }
+
+  // Verificar canais aceitos pela tela: email, whatsapp, linkedin estão presentes
+  const canais = Array.isArray(data) ? data.map(r => r.canal) : [];
+  assert(canais.includes('email') && canais.includes('whatsapp') && canais.includes('linkedin'), 'canais do contrato presentes');
 }
 
 // 8. Sem duplicata de decisor (mesma empresa + email)
