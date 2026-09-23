@@ -29,16 +29,29 @@ async function sp(path, body, method='POST') {
   const r = await fetch(SUPA_URL+'/rest/v1/'+path, { method, headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'return=minimal'}, body:JSON.stringify(body) });
   return r.ok;
 }
+async function logCron(job, nivel, mensagem, contexto) {
+  try {
+    await fetch(SUPA_URL+'/rest/v1/crm_logs', {
+      method:'POST',
+      headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},
+      body:JSON.stringify({origem:'cron:'+job, nivel, mensagem, contexto:contexto||null})
+    });
+  } catch(e) { console.error('[logCron]', e.message); }
+}
 
 // ── job: gerar-fila-diario ───────────────────────────────────────────────────
 async function jobGerarFila(req, res) {
+  const inicio = Date.now();
+  await logCron('gerar-fila-diario', 'info', 'início', null);
   const r = await fetch(BASE_URL+'/api/fila', {
     method: 'POST',
     headers: { 'Content-Type':'application/json', Authorization:'Bearer '+(process.env.CRON_SECRET||SUPA_KEY||'') },
     body: JSON.stringify({ canais:['email','whatsapp','linkedin_convite'], limite:40 })
   });
   const data = await r.json();
-  console.log('[cron:gerar-fila-diario]', data.gerados, 'gerados', data.erros?.length||0, 'erros');
+  const ctx = {gerados:data.gerados||0, erros:data.erros?.length||0, ms:Date.now()-inicio};
+  console.log('[cron:gerar-fila-diario]', ctx.gerados, 'gerados', ctx.erros, 'erros');
+  await logCron('gerar-fila-diario', 'info', 'fim', ctx);
   return res.status(200).json({ ok:true, ...data });
 }
 
@@ -59,6 +72,8 @@ async function empIdsComEstrelas(threshold) {
   return [...ids];
 }
 async function jobEnriquecimento(req, res) {
+  const inicio = Date.now();
+  await logCron('enriquecimento-diario', 'info', 'início', null);
   if (!LUSHA_KEY) return res.status(200).json({ ok:true, msg:'LUSHA_API_KEY não configurada' });
   let revelados = 0;
   const ids3 = await empIdsComEstrelas(3);
@@ -89,7 +104,9 @@ async function jobEnriquecimento(req, res) {
       await new Promise(r=>setTimeout(r,500));
     }
   }
+  const ctx_enrich = {revelados, empresas_gte3:ids3.length, empresas_gte5:ids5.length, ms:Date.now()-inicio};
   console.log('[cron:enriquecimento-diario]', revelados, 'revelações');
+  await logCron('enriquecimento-diario', 'info', 'fim', ctx_enrich);
   return res.status(200).json({ ok:true, revelados, empresas_gte3:ids3.length, empresas_e5:ids5.length });
 }
 
@@ -108,6 +125,8 @@ async function buscarNoticias(empresa) {
   } catch(e){return[];}
 }
 async function jobNoticias(req, res) {
+  const inicio = Date.now();
+  await logCron('noticias-semanal', 'info', 'início', null);
   const scoreRows = await sg('crm_empresa_agencia_estrelas?or=(estrelas_manual.gte.3,estrelas_calculadas.gte.3)&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=1000');
   const empMap = {};
   for (const r of (Array.isArray(scoreRows)?scoreRows:[])) {
@@ -130,7 +149,9 @@ async function jobNoticias(req, res) {
     }
     await new Promise(r=>setTimeout(r,200));
   }
+  const ctx_noticias = {inseridas, empresas:empresas.length, ms:Date.now()-inicio};
   console.log('[cron:noticias-semanal]', inseridas, 'notícias para', empresas.length, 'empresas');
+  await logCron('noticias-semanal', 'info', 'fim', ctx_noticias);
   return res.status(200).json({ok:true,empresas:empresas.length,inseridas});
 }
 
@@ -139,6 +160,8 @@ function semanaInicio(ref) {
   const d = new Date(ref||Date.now()); d.setDate(d.getDate()-(d.getDay()===0?6:d.getDay()-1)); d.setHours(0,0,0,0); return d;
 }
 async function jobFechamento(req, res) {
+  const inicio = Date.now();
+  await logCron('fechamento-sexta', 'info', 'início', null);
   const now = new Date();
   const diaBRT = new Date(now.toLocaleString('en-US',{timeZone:'America/Sao_Paulo'}));
   const isSexta = diaBRT.getDay()===5;
