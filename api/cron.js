@@ -56,7 +56,7 @@ async function jobGerarFila(req, res) {
   const r = await fetch(BASE_URL+'/api/fila', {
     method: 'POST',
     headers: { 'Content-Type':'application/json', Authorization:'Bearer '+(process.env.CRON_SECRET||SUPA_KEY||'') },
-    body: JSON.stringify({ canais:['email','whatsapp','linkedin_convite'], limite:40 })
+    body: JSON.stringify({ canais:['email','whatsapp','linkedin_convite'], limite:5 })
   });
   const data = await r.json();
   const ctx = {gerados:data.gerados||0, erros:data.erros?.length||0, ms:Date.now()-inicio};
@@ -146,8 +146,8 @@ async function jobNoticias(req, res) {
   const empresaIds = Object.keys(empMap);
   if (empresaIds.length===0) return res.status(200).json({ok:true,processadas:0,inseridas:0});
   const empresas = [];
-  for (let i=0; i<Math.min(empresaIds.length,200); i+=50) {
-    const rows = await sg(`crm_empresas?id=in.(${empresaIds.slice(i,i+50).join(',')})&select=id,nome`);
+  for (let i=0; i<Math.min(empresaIds.length,10); i+=10) {
+    const rows = await sg(`crm_empresas?id=in.(${empresaIds.slice(i,i+10).join(',')})&select=id,nome`);
     if(Array.isArray(rows))empresas.push(...rows);
   }
   let inseridas = 0;
@@ -157,7 +157,6 @@ async function jobNoticias(req, res) {
       const ok = await sp('crm_noticias', {empresa_id:emp.id,titulo:n.titulo.slice(0,500),url:n.url||null,fonte:n.fonte||'Google News',data:n.publicado_em?new Date(n.publicado_em).toISOString():null});
       if(ok)inseridas++;
     }
-    await new Promise(r=>setTimeout(r,200));
   }
   const ctx_noticias = {inseridas, empresas:empresas.length, ms:Date.now()-inicio};
   console.log('[cron:noticias-semanal]', inseridas, 'notícias para', empresas.length, 'empresas');
