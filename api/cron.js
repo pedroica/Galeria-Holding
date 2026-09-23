@@ -125,7 +125,7 @@ async function jobNoticias(req, res) {
   for (const emp of empresas) {
     const noticias = await buscarNoticias(emp);
     for (const n of noticias) {
-      const ok = await sp('crm_noticias', {empresa_id:emp.id,titulo:n.titulo.slice(0,500),url:n.url||null,fonte:n.fonte||'Google News',publicado_em:n.publicado_em?new Date(n.publicado_em).toISOString():null});
+      const ok = await sp('crm_noticias', {empresa_id:emp.id,titulo:n.titulo.slice(0,500),url:n.url||null,fonte:n.fonte||'Google News',data:n.publicado_em?new Date(n.publicado_em).toISOString():null});
       if(ok)inseridas++;
     }
     await new Promise(r=>setTimeout(r,200));
