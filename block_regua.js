@@ -631,7 +631,7 @@ async function buscarDecisoresCrawler(grupoId, rank, lead) {
     if (dominio) params.push("domain="  + encodeURIComponent(dominio));
     if (lead && lead.nome) params.push("nome=" + encodeURIComponent(lead.nome));
 
-    var r = await fetch("/api/crawl?" + params.join("&"));
+    var r = await fetch("/api/enrich?provider=crawl&" + params.join("&"));
     if (!r.ok) return { ok: false, erro: "Erro HTTP " + r.status };
     var data = await r.json();
 

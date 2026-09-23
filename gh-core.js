@@ -37,7 +37,7 @@
             delete h['x-api-key']; delete h['anthropic-version'];
             delete h['anthropic-dangerous-direct-browser-access'];
             o.headers = h;
-            return origFetch('/api/claude', o);
+            return origFetch('/api/enrich?provider=claude', o);
           }
         } else if(url.indexOf('https://api.hunter.io/') === 0){
           var p2 = await getProxyInfo();

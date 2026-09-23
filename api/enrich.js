@@ -768,5 +768,87 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'provider graph inválido: ' + provider });
   }
 
-  return res.status(400).json({ error: 'provider inválido. Use: hunter, lusha, health, graph-*' });
+  // ── provider: claude — proxy Anthropic ──────────────────────────────────────
+  if (provider === 'claude') {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+    if (!ANTHROPIC_KEY) return res.status(500).json({ error: 'ANTHROPIC_API_KEY não configurada' });
+    try {
+      const r = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-api-key': ANTHROPIC_KEY, 'anthropic-version': '2023-06-01' },
+        body: JSON.stringify(req.body)
+      });
+      const d = await r.json();
+      return res.status(r.status).json(d);
+    } catch (e) { return res.status(502).json({ error: String(e) }); }
+  }
+
+  // ── provider: whatsapp — webhook stub Meta (preserva URL /api/whatsapp via rewrite) ──
+  if (provider === 'whatsapp') {
+    if (req.method === 'GET') {
+      const mode = req.query['hub.mode'];
+      const token = req.query['hub.verify_token'];
+      const challenge = req.query['hub.challenge'];
+      if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) return res.status(200).send(challenge);
+      return res.status(403).json({ error: 'forbidden' });
+    }
+    if (req.method === 'POST') return res.status(200).json({ ok: true });
+    return res.status(405).json({ error: 'method not allowed' });
+  }
+
+  // ── provider: gaia-board — board GAIA cifrado via KV ──────────────────────
+  if (provider === 'gaia-board') {
+    res.setHeader('Cache-Control', 'no-store');
+    const kvUrl = process.env.KV_REST_API_URL; const kvToken = process.env.KV_REST_API_TOKEN;
+    if (!kvUrl || !kvToken) return res.status(501).json({ error: 'KV não configurado.' });
+    const GAIA_KEY = 'gaia:board:v1';
+    async function kvCmd(cmd) {
+      const r = await fetch(kvUrl.replace(/\/+$/, ''), { method: 'POST', headers: { Authorization: 'Bearer ' + kvToken, 'Content-Type': 'application/json' }, body: JSON.stringify(cmd) });
+      if (!r.ok) throw new Error('KV ' + r.status);
+      return (await r.json()).result;
+    }
+    if (req.method === 'GET') {
+      const raw = await kvCmd(['GET', GAIA_KEY]);
+      if (!raw) return res.status(404).json({ error: 'Nenhum board publicado.' });
+      const rec = typeof raw === 'string' ? JSON.parse(raw) : raw;
+      return res.status(200).json({ ok: true, blob: rec.blob, updatedAt: rec.updatedAt || 0 });
+    }
+    if (req.method === 'POST') {
+      const secret = process.env.GAIA_PUBLISH_TOKEN;
+      if (!secret) return res.status(501).json({ error: 'GAIA_PUBLISH_TOKEN não configurada.' });
+      const a = String(req.headers['x-gaia-token'] || ''); const b = String(secret);
+      if (a.length !== b.length || Array.from(a).reduce((d, c, i) => d | c.charCodeAt(0) ^ b.charCodeAt(i), 0) !== 0) return res.status(401).json({ error: 'Token inválido.' });
+      const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      const blob = body.blob;
+      if (typeof blob !== 'string' || !blob || !/^[A-Za-z0-9\-_]+$/.test(blob) || blob.length > 512 * 1024) return res.status(400).json({ error: 'blob inválido ou grande demais.' });
+      const updatedAt = Date.now();
+      await kvCmd(['SET', GAIA_KEY, JSON.stringify({ blob, updatedAt })]);
+      return res.status(200).json({ ok: true, updatedAt });
+    }
+    return res.status(405).json({ error: 'Método não permitido.' });
+  }
+
+  // ── provider: crawl — crawler QSA + website ───────────────────────────────
+  if (provider === 'crawl') {
+    const { cnpj = '', domain = '' } = req.query;
+    if (!cnpj && !domain) return res.status(400).json({ erro: 'Forneça cnpj ou domain' });
+    const CRAWL_PATHS = ['/equipe','/time','/lideranca','/liderança','/sobre','/quem-somos','/sobre-nos','/a-empresa','/about','/team','/leadership','/about-us','/'];
+    const CARGOS_RX = ['CEO','C\\.E\\.O','CMO','C\\.M\\.O','CFO','CTO','COO','Presidente','Fundador','Co-?Fundador','Diretor[a]?(?:\\s+\\w+){0,3}','Head\\s+(?:de\\s+)?\\w+(?:\\s+\\w+){0,2}','VP\\s+(?:de\\s+)?\\w+(?:\\s+\\w+){0,2}','Vice-?Presidente(?:\\s+\\w+){0,3}','Gerente\\s+(?:de\\s+)?\\w+(?:\\s+\\w+){0,2}','S[oó]cio-?Administrador','Managing Director','General Manager','Partner','Owner'];
+    const CARGO_PAT = new RegExp(CARGOS_RX.join('|'), 'i');
+    const NOME_PT = '[A-ZÁÉÍÓÚÀÂÊÔÃÕÇÜ][a-záéíóúàâêôãõçü]{1,20}(?:\\s+(?:de|da|do|das|dos|e|van|von|del|della)?\\s*)?[A-ZÁÉÍÓÚÀÂÊÔÃÕÇÜ][a-záéíóúàâêôãõçü]{1,20}(?:\\s+[A-ZÁÉÍÓÚÀÂÊÔÃÕÇÜ][a-záéíóúàâêôãõçü]{1,20}){0,3}';
+    function normN(n){ return (n||'').trim().toLowerCase().replace(/\b(\w)/g,c=>c.toUpperCase()).replace(/\b(De|Da|Do|Das|Dos|E|Van|Von)\b/g,m=>m.toLowerCase()); }
+    function dedup(ps){ const v={}; return ps.filter(p=>{ const k=(p.nome||'').toLowerCase().replace(/\s+/g,''); if(!k||v[k])return false; v[k]=1; return true; }); }
+    async function buscarQSA(c){ const cl=c.replace(/\D/g,''); if(cl.length!==14)return []; try{ const r=await fetch('https://brasilapi.com.br/api/cnpj/v1/'+cl,{headers:{Accept:'application/json','User-Agent':'GaleriaHolding-CRM/1.0'},signal:AbortSignal.timeout(8000)}); if(!r.ok)return[]; const d=await r.json(); return (d.qsa||[]).filter(s=>s.nome_socio&&s.identificador_de_socio!==3).map(s=>({nome:normN(s.nome_socio),cargo:s.qualificacao_socio||'Sócio/Administrador',email:null,linkedin:null,fonte:'receita_federal',confianca:85})); }catch(e){return[];} }
+    function extJsonLD(h){ const ps=[]; const rx=/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi; let m; while((m=rx.exec(h))!==null){ try{ const obj=JSON.parse(m[1].trim()); const items=Array.isArray(obj)?obj.flat():[obj]; for(const item of items){ const cands=[item['@type']==='Person'?[item]:[],(item.member||[]),(item.employee||[])].flat(); for(const p of cands){ if(p&&p['@type']==='Person'&&p.name) ps.push({nome:normN(p.name),cargo:p.jobTitle||p.description||'',email:p.email||null,linkedin:Array.isArray(p.sameAs)?p.sameAs.find(u=>u.includes('linkedin')):(p.sameAs||null),fonte:'website_jsonld',confianca:80}); } } }catch(e){} } return ps.filter(p=>!p.cargo||CARGO_PAT.test(p.cargo)||p.cargo===''); }
+    function extTexto(h){ const txt=h.replace(/<script[\s\S]*?<\/script>/gi,'').replace(/<style[\s\S]*?<\/style>/gi,'').replace(/<[^>]+>/g,' ').replace(/&nbsp;/g,' ').replace(/\s{2,}/g,' '); const ps=[]; const CG=`(${CARGOS_RX.join('|')})`; const NG=`(${NOME_PT})`; const rx1=new RegExp(NG+'\\s*[–—\\-|,]\\s*'+CG,'gi'); let m; while((m=rx1.exec(txt))!==null){ if(m[1]&&m[2]) ps.push({nome:normN(m[1]),cargo:m[2].trim(),email:null,linkedin:null,fonte:'website_texto',confianca:60}); } return ps.filter(p=>CARGO_PAT.test(p.cargo)); }
+    async function scrape(dom){ const d=dom.replace(/^https?:\/\//i,'').replace(/^www\./i,'').split('/')[0]; const all=[]; let found=0; for(const path of CRAWL_PATHS){ let html=null; for(const p of['https','http']){ try{ const r=await fetch(p+'://'+d+path,{headers:{'User-Agent':'Mozilla/5.0','Accept':'text/html'},redirect:'follow',signal:AbortSignal.timeout(7000)}); if(r.ok&&(r.headers.get('content-type')||'').includes('html')){ html=await r.text(); break; } }catch(e){} } if(!html)continue; const jl=extJsonLD(html); const tx=extTexto(html); if(jl.length+tx.length>0){ all.push(...jl,...tx); found++; if(jl.length>0)break; } if(found>=3)break; } return all; }
+    const all=[];
+    if(cnpj){ try{ all.push(...(await buscarQSA(cnpj))); }catch(e){} }
+    if(domain){ try{ all.push(...(await scrape(domain))); }catch(e){} }
+    const pessoas=dedup(all).sort((a,b)=>(b.confianca||50)-(a.confianca||50));
+    res.setHeader('Cache-Control','s-maxage=21600,stale-while-revalidate=3600');
+    return res.json({ pessoas, total: pessoas.length });
+  }
+
+  return res.status(400).json({ error: 'provider inválido. Use: hunter, lusha, health, graph-*, claude, crawl, gaia-board, whatsapp' });
 }
