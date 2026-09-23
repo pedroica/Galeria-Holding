@@ -2540,7 +2540,7 @@ function nowStr() {
 
 // ── Bloco 1: GerarFilaModal ──────────────────────────────────────────────────
 var AGENCIAS_GERAR = [
-  {id:'960142b5-a688-41f8-8719-d516eeb843c6', nome:'Galeria Holding', slug:'galeria'},
+  {id:'3409ab82-f0cd-4d95-b6e2-398995425411', nome:'Galeria Holding', slug:'holding'},
   {id:'14a057af-31c6-4606-8236-4c97d8067335', nome:'404', slug:'404'},
   {id:'e8d734ba-b3e9-425b-942e-b8b56c98f56b', nome:'Caramelo', slug:'cccaramelo'},
   {id:'74886b76-2650-41e1-8d46-3c742681fadd', nome:'Catalyst', slug:'catalyst'},
@@ -4871,6 +4871,7 @@ function App() {
     'frame':      'e26e3106-33e8-43de-95c5-546477573186',
     'gaia':       'a8aecdac-1001-4643-bcd4-e818307b6d92',
     'galeria':    '960142b5-a688-41f8-8719-d516eeb843c6',
+    'holding':    '3409ab82-f0cd-4d95-b6e2-398995425411',
     'gux':        'ac8b92de-ab48-4153-bf18-c23b5ea19bfe',
     'mantiqueira':'1a67ab05-e42e-4975-be11-b6bf7f23ce03',
     'mila':       'b0473d79-afd9-404e-8784-04b4556a5a2c',
