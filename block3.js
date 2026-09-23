@@ -2672,7 +2672,7 @@ function GerarFilaModal(props) {
           // whatsapp (se tiver wa)
           if (dec.wa) {
             var tpl_wa = TEMPLATE_GERAR.whatsapp[et]||TEMPLATE_GERAR.whatsapp.etapa1;
-            rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'whatsapp', etapa:et, corpo:substGerar(tpl_wa.corpo,dec,empNome,ag.nome), status:'rascunho', gerado_em:now});
+            rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'whatsapp', etapa:et, assunto:null, corpo:substGerar(tpl_wa.corpo,dec,empNome,ag.nome), status:'rascunho', gerado_em:now});
           }
           if (!criados[ag.nome]) criados[ag.nome]={etapa1:0,etapa2:0};
           criados[ag.nome][et]=(criados[ag.nome][et]||0)+1;
