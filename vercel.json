@@ -2,24 +2,18 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "outputDirectory": ".",
   "rewrites": [
-    { "source": "/c/:token", "destination": "/api/c/:token" }
+    { "source": "/c/:token", "destination": "/api/fila?token=:token" },
+    { "source": "/api/whatsapp", "destination": "/api/enrich?provider=whatsapp" },
+    { "source": "/api/gerar-fila", "destination": "/api/fila" },
+    { "source": "/api/gerar-credencial", "destination": "/api/fila?action=credencial" },
+    { "source": "/api/crawl", "destination": "/api/enrich?provider=crawl" },
+    { "source": "/api/claude", "destination": "/api/enrich?provider=claude" },
+    { "source": "/api/gaia-board", "destination": "/api/enrich?provider=gaia-board" }
   ],
   "crons": [
-    {
-      "path": "/api/cron/gerar-fila-diario",
-      "schedule": "0 9 * * *"
-    },
-    {
-      "path": "/api/cron/noticias-semanal",
-      "schedule": "0 10 * * 1"
-    },
-    {
-      "path": "/api/cron/enriquecimento-diario",
-      "schedule": "30 13 * * *"
-    },
-    {
-      "path": "/api/cron/fechamento-sexta",
-      "schedule": "0 20 * * 5"
-    }
+    { "path": "/api/cron?job=gerar-fila-diario",      "schedule": "0 9 * * *"  },
+    { "path": "/api/cron?job=noticias-semanal",        "schedule": "0 10 * * 1" },
+    { "path": "/api/cron?job=enriquecimento-diario",   "schedule": "30 13 * * *" },
+    { "path": "/api/cron?job=fechamento-sexta",        "schedule": "0 20 * * 5"  }
   ]
 }

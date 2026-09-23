@@ -131,7 +131,7 @@
   }
 
   /* ── endpoint do board publicado (link fixo, opcional) ──────────────────── */
-  var API = "/api/gaia-board";
+  var API = "/api/enrich?provider=gaia-board";
 
   async function fetchPublished() {
     var r = await fetch(API, { cache: "no-store" });

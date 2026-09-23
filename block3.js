@@ -6797,7 +6797,7 @@ function AgCredenciaisTab({ agencia }) {
     if (sel.length === 0) return;
     setGerando(true);
     var jwt = window.__supaSession && window.__supaSession.access_token;
-    fetch('/api/gerar-credencial', {
+    fetch('/api/fila?action=credencial', {
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+(jwt||'')},
       body:JSON.stringify({agencia_ids:[],idioma:idiomaFiltro,blocos:sel,cases:[],titulo:agencia?agencia.name+' — Credencial':''})
@@ -7021,7 +7021,7 @@ function AgEnviarTab({ agencia, agenciaUuids }) {
     if (!agId) { setGeracaoErr('Agência sem UUID mapeado'); return; }
     var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
     setGerando(true); setGeracaoResult(null); setGeracaoErr(null);
-    fetch('/api/gerar-fila', {
+    fetch('/api/fila', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + jwt },
       body: JSON.stringify({ agencia_slug: agId, canais: ['email', 'whatsapp', 'linkedin_convite'], limite: limite || 30 })

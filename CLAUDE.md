@@ -169,13 +169,19 @@ Créditos após reveal: `GET /v3/account/usage` → `credits.balance`
 
 ## Limite Vercel Hobby
 
-Máximo **12 serverless functions**. Arquivo atual com exatamente 12:
-`api/c/[token].js`, `api/claude.js`, `api/crawl.js`, `api/enrich.js`, `api/gaia-board.js`,
-`api/gerar-credencial.js`, `api/gerar-fila.js`, `api/whatsapp.js`,
-`api/cron/enriquecimento-diario.js`, `api/cron/fechamento-sexta.js`,
-`api/cron/gerar-fila-diario.js`, `api/cron/noticias-semanal.js`
+Máximo **12 serverless functions**. Arquivo atual com **3 funções** (9 slots livres para Blocos 5-6):
+- `api/enrich.js` — providers: hunter, lusha-*, graph-*, health, claude, crawl, gaia-board, whatsapp
+- `api/fila.js` — GET `?token=<hex>` (credencial HTML), POST (gerar fila), POST `?action=credencial`
+- `api/cron.js` — GET/POST `?job=gerar-fila-diario|enriquecimento-diario|noticias-semanal|fechamento-sexta`
 
-Novas funcionalidades de API devem usar um arquivo existente (ex: `api/enrich.js` com `provider=novo`).
+URLs legacy continuam funcionando via rewrites em vercel.json:
+- `/api/whatsapp` → `/api/enrich?provider=whatsapp` (webhook Meta mantido)
+- `/api/gerar-fila` → `/api/fila` (retrocompatibilidade)
+- `/api/gerar-credencial` → `/api/fila?action=credencial`
+- `/api/claude`, `/api/crawl`, `/api/gaia-board` → provider equivalente em enrich
+- `/c/:token` → `/api/fila?token=:token`
+
+Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em `api/fila.js`.
 
 ---
 
