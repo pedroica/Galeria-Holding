@@ -2538,6 +2538,210 @@ function nowStr() {
 }
 // sharedGet/Set e personalGet/Set agora vêm de gh-store.js (carregado antes)
 
+// ── Bloco 1: GerarFilaModal ──────────────────────────────────────────────────
+var AGENCIAS_GERAR = [
+  {id:'3409ab82-f0cd-4d95-b6e2-398995425411', nome:'Galeria Holding', slug:'holding'},
+  {id:'14a057af-31c6-4606-8236-4c97d8067335', nome:'404', slug:'404'},
+  {id:'e8d734ba-b3e9-425b-942e-b8b56c98f56b', nome:'Caramelo', slug:'cccaramelo'},
+  {id:'74886b76-2650-41e1-8d46-3c742681fadd', nome:'Catalyst', slug:'catalyst'},
+  {id:'b0473d79-afd9-404e-8784-04b4556a5a2c', nome:'Milà', slug:'mila'},
+  {id:'a8aecdac-1001-4643-bcd4-e818307b6d92', nome:'GaIA', slug:'gaia'},
+];
+// Template fixo até o Bloco 2 (crm_templates) existir
+var TEMPLATE_GERAR = {
+  email: {
+    etapa1: { assunto:'{empresa} + Galeria Holding — 20 minutos', corpo:'Oi {primeiro_nome},\n\nVi o trabalho de {empresa} e queria entender como funciona o marketing de vocês.\n\nTeria 20 minutos para uma conversa rápida?\n\nAbraço,' },
+    etapa2: { assunto:'{empresa} — retorno', corpo:'Oi {primeiro_nome},\n\nFicou pendente minha mensagem da semana passada. Ainda faz sentido batermos um papo de 20 minutos sobre o marketing de {empresa}?\n\nAbraço,' }
+  },
+  whatsapp: {
+    etapa1: { corpo:'Oi {primeiro_nome}, sou Pedro Ica, sócio da Galeria Holding. Vi o trabalho de {empresa} e queria entender melhor o marketing de vocês. Teria 20 minutos?\n\nAbraço,' },
+    etapa2: { corpo:'Oi {primeiro_nome}, ficou pendente minha mensagem anterior sobre {empresa}. Ainda faz sentido batermos um papo de 20 minutos?\n\nAbraço,' }
+  }
+};
+function cargoPriGerar(cargo, categoria) {
+  if (categoria && categoria !== 'outro' && categoria !== null) {
+    if (['cmo','diretor_marketing','gerente_marketing','growth','digital','performance','content','branding','social','comunicacao'].indexOf(categoria) >= 0) return 2;
+    if (['ceo','founder','presidente'].indexOf(categoria) >= 0) return 1;
+    if (['cfo','juridico','rh','financeiro','operacoes','logistica'].indexOf(categoria) >= 0) return -1;
+    return 0;
+  }
+  var t = (cargo||'').toLowerCase();
+  if (/\b(cfo|chief financial|finan[cç]|juridic|legal|rh\b|recursos humanos|human resource|operac|supply chain|logistic|contabilid|accounti|tax|tribut)\b/.test(t)) return -1;
+  if (/\b(cmo|chief marketing|market|growth|performanc|digital|brand|social|content|comunic|m[ií]dia|media|crm|inbound|outbound|demand gen|acquisition|campanha)\b/.test(t)) return 2;
+  if (/\b(ceo|chief executive|president|founder|co-founder|proprietar|owner|managing director|diretor geral|diretor presidente)\b/.test(t)) return 1;
+  return 0;
+}
+function substGerar(texto, dec, empNome, agNome) {
+  var pn = (dec.nome||'').split(' ')[0];
+  return texto.replace(/{primeiro_nome}/g,pn).replace(/{empresa}/g,empNome||'').replace(/{cargo}/g,dec.cargo||'').replace(/{agencia}/g,agNome||'Galeria Holding');
+}
+
+function GerarFilaModal(props) {
+  var onClose = props.onClose; var onFilaGerada = props.onFilaGerada;
+  var mono = "'IBM Plex Mono',monospace"; var s = {fontFamily:mono};
+  function sj(path, opts) {
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
+    var hdrs = Object.assign({'apikey':SUPA_ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json'}, opts&&opts.headers);
+    return fetch(SUPA_URL+path, Object.assign({},opts,{headers:hdrs})).then(function(r){return r.json();});
+  }
+  var _N = useState(25); var N = _N[0]; var setN = _N[1];
+  var _agId = useState(AGENCIAS_GERAR[0].id); var agId = _agId[0]; var setAgId = _agId[1];
+  var _distribuir = useState(false); var distribuir = _distribuir[0]; var setDistribuir = _distribuir[1];
+  var _gerando = useState(false); var gerando = _gerando[0]; var setGerando = _gerando[1];
+  var _resultado = useState(null); var resultado = _resultado[0]; var setResultado = _resultado[1];
+  var _prog = useState(''); var prog = _prog[0]; var setProg = _prog[1];
+
+  async function gerar() {
+    setGerando(true); setResultado(null);
+    var rejeicoes = {}; var criados = {}; var nCriados = 0;
+    try {
+      setProg('Carregando carteira de clientes…');
+      var carteira = await sj('/rest/v1/crm_carteira_clientes?select=empresa_id&limit=2000');
+      var carteiraIds = new Set(Array.isArray(carteira)?carteira.map(function(r){return r.empresa_id;}):[]);
+
+      setProg('Carregando fila da semana…');
+      var semAtras = new Date(Date.now()-7*86400000).toISOString().slice(0,10);
+      var filaSem = await sj('/rest/v1/crm_fila?status=in.(rascunho,aprovado)&gerado_em=gte.'+semAtras+'&select=empresa_id,decisor_id&limit=3000');
+      var empNaFila = {}; var decNaFila = new Set();
+      if (Array.isArray(filaSem)) filaSem.forEach(function(r){ empNaFila[r.empresa_id]=(empNaFila[r.empresa_id]||0)+1; if(r.decisor_id) decNaFila.add(r.decisor_id); });
+
+      setProg('Carregando decisores…');
+      var decs = await sj('/rest/v1/crm_decisores?status=eq.ativo&email=not.is.null&select=id,nome,cargo,cargo_categoria,email,wa,empresa_id,ultimo_toque_em,respondeu&limit=3000');
+      if (!Array.isArray(decs)) throw new Error('Falha ao carregar decisores: '+((decs&&decs.message)||'erro'));
+
+      setProg('Carregando empresas…');
+      var empIds = Array.from(new Set(decs.map(function(d){return d.empresa_id;}).filter(Boolean)));
+      var empMap = {};
+      for (var i=0; i<empIds.length; i+=500) {
+        var chunk = empIds.slice(i,i+500);
+        var rr = await sj('/rest/v1/crm_empresas?id=in.('+chunk.join(',')+')'+'&select=id,nome,setor&limit=500');
+        if (Array.isArray(rr)) rr.forEach(function(e){empMap[e.id]=e;});
+      }
+
+      setProg('Selecionando candidatos…');
+      var porEmp = {};
+      decs.forEach(function(d) {
+        var pri = cargoPriGerar(d.cargo, d.cargo_categoria);
+        if (pri <= 0) { if(pri<0) rejeicoes['cargo_excluido']=(rejeicoes['cargo_excluido']||0)+1; return; }
+        if (!porEmp[d.empresa_id]) porEmp[d.empresa_id]=[];
+        porEmp[d.empresa_id].push(Object.assign({},d,{_pri:pri}));
+      });
+
+      var candidatos = [];
+      Object.keys(porEmp).forEach(function(empId) {
+        var emp = empMap[empId]; if (!emp) return;
+        if (carteiraIds.has(empId)) { rejeicoes['cliente_carteira']=(rejeicoes['cliente_carteira']||0)+1; return; }
+        if ((empNaFila[empId]||0)>=2) { rejeicoes['ja_2_na_fila']=(rejeicoes['ja_2_na_fila']||0)+1; return; }
+        var list = porEmp[empId];
+        var hasMarketing = list.some(function(d){return d._pri===2;});
+        var eligible = list.filter(function(d){return hasMarketing?d._pri===2:d._pri===1;}).filter(function(d){return !decNaFila.has(d.id);});
+        if (!eligible.length) { rejeicoes['decisor_ja_na_fila']=(rejeicoes['decisor_ja_na_fila']||0)+1; return; }
+        var lastToque = eligible.reduce(function(mx,d){return (d.ultimo_toque_em&&d.ultimo_toque_em>mx)?d.ultimo_toque_em:mx;}, '');
+        var dias = lastToque ? Math.floor((Date.now()-new Date(lastToque))/86400000) : 999;
+        if (dias < 5) { rejeicoes['tocada_recente']=(rejeicoes['tocada_recente']||0)+1; return; }
+        var etapa;
+        if (dias >= 5 && dias < 10) {
+          if (eligible.some(function(d){return d.respondeu;})) { rejeicoes['respondeu_aguardando']=(rejeicoes['respondeu_aguardando']||0)+1; return; }
+          etapa = 'etapa2';
+        } else { etapa = 'etapa1'; }
+        var slots = Math.min(2-(empNaFila[empId]||0), eligible.length);
+        eligible.sort(function(a,b){return b._pri-a._pri;});
+        candidatos.push({empId:empId,emp:emp,decs:eligible.slice(0,slots),etapa:etapa,dias:dias});
+      });
+      candidatos.sort(function(a,b){return b.dias-a.dias;});
+
+      // Selecionar até N empresas e atribuir agência
+      var agLista = distribuir ? AGENCIAS_GERAR : [AGENCIAS_GERAR.find(function(a){return a.id===agId;})||AGENCIAS_GERAR[0]];
+      if (distribuir && N < agLista.length*3) {
+        setResultado({erro:'N mínimo para distribuição é '+(agLista.length*3)+' (3 por agência × '+agLista.length+' agências).'});
+        setGerando(false); return;
+      }
+      var agIdx = 0; var empCount = 0;
+      var rows = [];
+      var now = new Date().toISOString();
+      for (var ci=0; ci<candidatos.length && empCount<N; ci++) {
+        var cand = candidatos[ci];
+        var ag = agLista[agIdx % agLista.length]; if (distribuir) agIdx++;
+        empCount++;
+        cand.decs.forEach(function(dec) {
+          var empNome = cand.emp.nome||'';
+          var et = cand.etapa;
+          // email (sempre)
+          var tpl_email = TEMPLATE_GERAR.email[et]||TEMPLATE_GERAR.email.etapa1;
+          rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'email', etapa:et, assunto:substGerar(tpl_email.assunto,dec,empNome,ag.nome), corpo:substGerar(tpl_email.corpo,dec,empNome,ag.nome), status:'rascunho', gerado_em:now});
+          // whatsapp (se tiver wa)
+          if (dec.wa) {
+            var tpl_wa = TEMPLATE_GERAR.whatsapp[et]||TEMPLATE_GERAR.whatsapp.etapa1;
+            rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'whatsapp', etapa:et, corpo:substGerar(tpl_wa.corpo,dec,empNome,ag.nome), status:'rascunho', gerado_em:now});
+          }
+          if (!criados[ag.nome]) criados[ag.nome]={etapa1:0,etapa2:0};
+          criados[ag.nome][et]=(criados[ag.nome][et]||0)+1;
+          nCriados++;
+        });
+      }
+
+      // INSERT em lotes de 50
+      setProg('Gravando '+rows.length+' itens na fila…');
+      var totalGravados = 0;
+      for (var j=0; j<rows.length; j+=50) {
+        var batch = rows.slice(j,j+50);
+        var res = await sj('/rest/v1/crm_fila', {method:'POST', headers:{'Prefer':'return=minimal'}, body:JSON.stringify(batch)});
+        if (res && res.message) throw new Error('Erro ao inserir: '+res.message);
+        totalGravados += batch.length;
+      }
+      var rejLista = Object.keys(rejeicoes).map(function(k){return rejeicoes[k]+' '+k;}).join(', ');
+      setResultado({ok:true, itens:totalGravados, criados:criados, rejeicoes:rejLista, nEmpresas:empCount});
+      if (onFilaGerada) onFilaGerada();
+    } catch(e) {
+      setResultado({erro:e.message});
+    }
+    setGerando(false);
+  }
+
+  return React.createElement("div",{style:{position:'fixed',inset:0,background:'rgba(0,0,0,.7)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}},
+    React.createElement("div",{style:{background:'#0d0d1a',border:'.5px solid #2D2D44',borderRadius:12,padding:'24px 28px',width:440,maxHeight:'80vh',overflowY:'auto',boxShadow:'0 8px 32px rgba(0,0,0,.5)'}},
+      React.createElement("div",{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:18}},
+        React.createElement("span",{style:{...s,fontSize:13,fontWeight:700,color:'#818CF8'}}, "⚡ Gerar nova fila"),
+        !gerando && React.createElement("button",{onClick:onClose,style:{background:'none',border:'none',color:'#9B9BB4',fontSize:18,cursor:'pointer'}},"×")
+      ),
+      !resultado && React.createElement("div",{style:{display:'flex',flexDirection:'column',gap:14}},
+        React.createElement("label",{style:{...s,fontSize:10,color:'#9B9BB4'}},
+          "Empresas (N)",
+          React.createElement("input",{type:'number',min:1,max:200,value:N,onChange:function(e){setN(parseInt(e.target.value)||25);},style:{display:'block',width:'100%',marginTop:4,background:'#111827',border:'.5px solid #2D2D44',borderRadius:5,padding:'5px 8px',color:'#F5F5F5',fontSize:11,fontFamily:mono}})
+        ),
+        React.createElement("label",{style:{...s,fontSize:10,color:'#9B9BB4'}},
+          "Agência",
+          React.createElement("select",{value:distribuir?'__dist__':agId,onChange:function(e){if(e.target.value==='__dist__'){setDistribuir(true);}else{setDistribuir(false);setAgId(e.target.value);}},style:{display:'block',width:'100%',marginTop:4,background:'#111827',border:'.5px solid #2D2D44',borderRadius:5,padding:'5px 8px',color:'#F5F5F5',fontSize:11,fontFamily:mono}},
+            AGENCIAS_GERAR.map(function(ag){return React.createElement("option",{key:ag.id,value:ag.id},ag.nome);}),
+            React.createElement("option",{value:'__dist__'},"↔ Distribuir entre agências (mín 3 cada)")
+          )
+        ),
+        React.createElement("div",{style:{...s,fontSize:9,color:'#555',borderTop:'.5px solid #1A1A2E',paddingTop:10}},
+          "Critérios: cargo marketing > CEO • não clientes • sem toque >10d (etapa1) ou 5-10d sem resposta (etapa2) • máx 2 por empresa/semana"
+        ),
+        gerando
+          ? React.createElement("div",{style:{...s,fontSize:10,color:'#60A5FA',padding:'8px 0'}},prog)
+          : React.createElement("button",{onClick:gerar,style:{...s,fontSize:11,fontWeight:700,padding:'8px 0',borderRadius:7,border:'none',background:'#4F46E5',color:'#fff',cursor:'pointer',width:'100%'}},"Gerar fila")
+      ),
+      resultado && resultado.erro && React.createElement("div",{style:{...s,fontSize:10,color:'#F87171',padding:'8px 0'}},
+        "❌ ",resultado.erro,
+        React.createElement("br",null),
+        React.createElement("button",{onClick:function(){setResultado(null);},style:{...s,fontSize:9,marginTop:8,padding:'4px 12px',border:'.5px solid #2D2D44',borderRadius:5,background:'transparent',color:'#9B9BB4',cursor:'pointer'}},"Tentar novamente")
+      ),
+      resultado && resultado.ok && React.createElement("div",{style:{display:'flex',flexDirection:'column',gap:8}},
+        React.createElement("div",{style:{...s,fontSize:11,color:'#34D399',fontWeight:700}},"✅ "+resultado.itens+" itens criados ("+resultado.nEmpresas+" empresas)"),
+        React.createElement("div",{style:{...s,fontSize:9,color:'#9B9BB4',whiteSpace:'pre-wrap'}},
+          Object.keys(resultado.criados).map(function(ag){ var c=resultado.criados[ag]; return ag+': '+(c.etapa1||0)+' etapa1 + '+(c.etapa2||0)+' etapa2'; }).join('\n')
+        ),
+        resultado.rejeicoes && React.createElement("div",{style:{...s,fontSize:9,color:'#555',borderTop:'.5px solid #1A1A2E',paddingTop:8}},
+          "Descartados: "+resultado.rejeicoes
+        ),
+        React.createElement("button",{onClick:onClose,style:{...s,fontSize:10,marginTop:4,padding:'6px 0',borderRadius:6,border:'.5px solid #818CF8',background:'transparent',color:'#818CF8',cursor:'pointer',width:'100%'}},"Fechar")
+      )
+    )
+  );
+}
+
 // D5/D6 — AprovacaoHoje: abas Email/WA/LinkedIn, edição inline, aprovar em lote,
 // registrar resposta e reunião
 function AprovacaoHoje() {
@@ -2557,6 +2761,10 @@ function AprovacaoHoje() {
   var _tick = useState(0); var tick = _tick[0]; var setTick = _tick[1];
   // E4-M5: índice focado para keyboard nav
   var _focused = useState(0); var focused = _focused[0]; var setFocused = _focused[1];
+  // Bloco 1: paginação em blocos de 10
+  var _bloco = useState(0); var bloco = _bloco[0]; var setBloco = _bloco[1];
+  var _contadores = useState({hoje:0,semana:0}); var contadores = _contadores[0]; var setContadores = _contadores[1];
+  var _showGerarFila = useState(false); var showGerarFila = _showGerarFila[0]; var setShowGerarFila = _showGerarFila[1];
 
   function supaJwt(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
@@ -2572,7 +2780,20 @@ function AprovacaoHoje() {
       else { setFila([]); setErroQuery('Erro ao carregar fila: ' + ((d&&d.message)||JSON.stringify(d))); }
     }).catch(function(e){ setFila([]); setErroQuery('Erro de rede: ' + e.message); });
   }
-  useEffect(function(){ load(); }, [tick]);
+  function loadContadores() {
+    var agora = new Date();
+    var hojeStr = agora.toISOString().slice(0,10);
+    var semAtras = new Date(agora-7*86400000).toISOString().slice(0,10);
+    Promise.all([
+      supaJwt('/rest/v1/crm_fila?status=eq.enviado&enviado_em=gte.'+hojeStr+'T00%3A00%3A00&select=id&limit=500').catch(function(){return [];}),
+      supaJwt('/rest/v1/crm_fila?status=eq.enviado&enviado_em=gte.'+semAtras+'T00%3A00%3A00&select=id&limit=1000').catch(function(){return [];})
+    ]).then(function(res){
+      setContadores({hoje:Array.isArray(res[0])?res[0].length:0, semana:Array.isArray(res[1])?res[1].length:0});
+    });
+  }
+  useEffect(function(){ load(); loadContadores(); }, [tick]);
+  // reset bloco ao trocar aba
+  useEffect(function(){ setBloco(0); }, [aba]);
   // E4-M3: auto-refresh
   useEffect(function() {
     var t = setInterval(function(){ setTick(function(n){return n+1;}); }, 60000);
@@ -2723,8 +2944,11 @@ function AprovacaoHoje() {
 
   if (fila===null) return React.createElement("div",{style:{flex:1,display:"flex",alignItems:"center",justifyContent:"center",...s,fontSize:10,color:"#2D2D44"}},"Carregando fila...");
 
-  var itensAba = abaItems[aba]||[];
+  var BLOCO_SZ = 10;
+  var itensAbaAll = abaItems[aba]||[];
+  var itensAba = itensAbaAll.slice(bloco*BLOCO_SZ, (bloco+1)*BLOCO_SZ);
   var totalFila = (fila||[]).length;
+  var restantes = Math.max(0, itensAbaAll.length - (bloco+1)*BLOCO_SZ);
   var canalAbas = [{k:'email',label:'Email',cor:'#60A5FA'},{k:'whatsapp',label:'WhatsApp',cor:'#34D399'},{k:'linkedin',label:'LinkedIn',cor:'#818CF8'}];
 
   return React.createElement("div",{style:{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}},
@@ -2744,17 +2968,27 @@ function AprovacaoHoje() {
         [...new Set(foraDosFiltros.map(function(x){return x.canal||'null';}))].join(', ')
       )
     ),
+    // Gerar nova fila modal
+    showGerarFila && React.createElement(GerarFilaModal, {onClose:function(){setShowGerarFila(false);}, onFilaGerada:function(){setShowGerarFila(false);setTick(function(n){return n+1;});}}),
     // Header
     React.createElement("div",{style:{padding:"11px 20px 0",borderBottom:".5px solid #2D2D44",flexShrink:0}},
       React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,marginBottom:8}},
         React.createElement("span",{style:{fontSize:13,fontWeight:500,color:"#F5F5F5",letterSpacing:"-.3px"}},"Aprovar hoje"),
         React.createElement("span",{style:{...s,fontSize:9,padding:"1px 7px",borderRadius:100,background:"rgba(255,107,43,.1)",color:"#FF6B2B",border:".5px solid rgba(255,107,43,.25)"}},totalFila),
+        // contadores de enviados
+        React.createElement("span",{style:{...s,fontSize:8,color:"#34D399",padding:"1px 6px",borderRadius:100,background:"rgba(52,211,153,.08)",border:".5px solid rgba(52,211,153,.2)"}},
+          "hoje: "+contadores.hoje
+        ),
+        React.createElement("span",{style:{...s,fontSize:8,color:"#60A5FA",padding:"1px 6px",borderRadius:100,background:"rgba(96,165,250,.08)",border:".5px solid rgba(96,165,250,.2)"}},
+          "semana: "+contadores.semana
+        ),
         // E4-M4: custo total acumulado (rascunhos pendentes)
         fila && fila.length > 0 && React.createElement("span",{style:{...s,fontSize:8,color:"#555",marginLeft:4}},
           "USD " + fila.reduce(function(a,x){return a+(Number(x.custo_usd)||0);},0).toFixed(4)
         ),
         sel.size>0 && React.createElement("button",{onClick:aprovarLote,style:{marginLeft:"auto",...s,fontSize:9,padding:"3px 12px",borderRadius:4,border:"none",background:"#22543D",color:"#68D391",cursor:"pointer"}},"✓ Aprovar "+sel.size+" selecionados"),
-        React.createElement("button",{onClick:load,style:{marginLeft:sel.size>0?0:"auto",...s,fontSize:8,padding:"2px 8px",borderRadius:4,border:".5px solid #2D2D44",background:"transparent",color:"#555",cursor:"pointer"}},"↺ Recarregar"),
+        React.createElement("button",{onClick:function(){setShowGerarFila(true);},style:{marginLeft:sel.size>0?4:"auto",...s,fontSize:9,padding:"3px 12px",borderRadius:4,border:".5px solid rgba(129,140,248,.4)",background:"rgba(129,140,248,.08)",color:"#818CF8",cursor:"pointer",fontWeight:700}},"⚡ Gerar nova fila"),
+        React.createElement("button",{onClick:load,style:{...s,fontSize:8,padding:"2px 8px",borderRadius:4,border:".5px solid #2D2D44",background:"transparent",color:"#555",cursor:"pointer"}},"↺"),
         // E4-M5: hint keyboard shortcuts
         React.createElement("span",{style:{...s,fontSize:7,color:"#2D2D44",marginLeft:4}},"J/K nav · Enter aprovar")
       ),
@@ -2836,7 +3070,15 @@ function AprovacaoHoje() {
                 React.createElement("button",{onClick:function(){registrarReuniao(item);},style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:".5px solid rgba(52,211,153,.25)",background:"rgba(52,211,153,.05)",color:"#34D399",cursor:"pointer"}},"📅 Reunião")
               )
             );
-          })
+          }),
+      // Navegação de blocos
+      itensAbaAll.length > BLOCO_SZ && React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8,padding:"12px 0 4px",borderTop:".5px solid #1A1A2E",marginTop:4}},
+        bloco>0 && React.createElement("button",{onClick:function(){setBloco(function(b){return b-1;});},style:{...s,fontSize:9,padding:"4px 14px",borderRadius:5,border:".5px solid #2D2D44",background:"transparent",color:"#9B9BB4",cursor:"pointer"}},"← Bloco anterior"),
+        React.createElement("span",{style:{...s,fontSize:9,color:"#555",flex:1,textAlign:"center"}},
+          "Bloco "+(bloco+1)+" / "+Math.ceil(itensAbaAll.length/BLOCO_SZ)+" · "+itensAbaAll.length+" itens no total"
+        ),
+        restantes>0 && React.createElement("button",{onClick:function(){setBloco(function(b){return b+1;});},style:{...s,fontSize:9,padding:"4px 14px",borderRadius:5,border:".5px solid rgba(129,140,248,.4)",background:"rgba(129,140,248,.08)",color:"#818CF8",cursor:"pointer",fontWeight:700}},"Próximo bloco ("+restantes+" restantes) →")
+      )
     )
   );
 }
@@ -4629,6 +4871,7 @@ function App() {
     'frame':      'e26e3106-33e8-43de-95c5-546477573186',
     'gaia':       'a8aecdac-1001-4643-bcd4-e818307b6d92',
     'galeria':    '960142b5-a688-41f8-8719-d516eeb843c6',
+    'holding':    '3409ab82-f0cd-4d95-b6e2-398995425411',
     'gux':        'ac8b92de-ab48-4153-bf18-c23b5ea19bfe',
     'mantiqueira':'1a67ab05-e42e-4975-be11-b6bf7f23ce03',
     'mila':       'b0473d79-afd9-404e-8784-04b4556a5a2c',
