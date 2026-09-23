@@ -13,10 +13,20 @@ const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPA_CRM_S
 const LUSHA_KEY = process.env.LUSHA_API_KEY || process.env.LUSHA_KEY;
 const BASE_URL = process.env.VERCEL_URL ? 'https://'+process.env.VERCEL_URL : 'https://galeria-holding-sage.vercel.app';
 
-function authCheck(req, res) {
+async function authCheck(req, res, job) {
   const auth = req.headers.authorization || '';
-  if (process.env.CRON_SECRET && auth !== 'Bearer '+process.env.CRON_SECRET) {
-    res.status(401).json({ error: 'unauthorized' }); return false;
+  const secret = (process.env.CRON_SECRET || '').trim();
+  if (secret && auth !== 'Bearer ' + secret) {
+    const hint = auth ? `bearer present, prefix=${auth.slice(0, 15)}` : 'no Authorization header';
+    try {
+      await fetch(SUPA_URL+'/rest/v1/crm_logs', {
+        method:'POST',
+        headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},
+        body:JSON.stringify({origem:'cron:'+(job||'unknown'), nivel:'error', mensagem:'401 unauthorized — authCheck failed', contexto:{hint, job:job||null}})
+      });
+    } catch(_) {}
+    res.status(401).json({ error: 'unauthorized' });
+    return false;
   }
   return true;
 }
@@ -189,8 +199,8 @@ async function jobFechamento(req, res) {
 
 // ── handler principal ─────────────────────────────────────────────────────────
 export default async function handler(req, res) {
-  if (!authCheck(req, res)) return;
   const { job } = req.query;
+  if (!await authCheck(req, res, job)) return;
   try {
     if (job === 'gerar-fila-diario')     return await jobGerarFila(req, res);
     if (job === 'enriquecimento-diario') return await jobEnriquecimento(req, res);
