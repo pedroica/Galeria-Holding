@@ -2582,7 +2582,7 @@ function GerarFilaModal(props) {
   function sj(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
     var hdrs = Object.assign({'apikey':SUPA_ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json'}, opts&&opts.headers);
-    return fetch(SUPA_URL+path, Object.assign({},opts,{headers:hdrs})).then(function(r){return r.json();});
+    return fetch(SUPA_URL+path, Object.assign({},opts,{headers:hdrs})).then(function(r){var ct=r.headers.get('content-type')||'';return ct.includes('json')?r.json():null;});
   }
   var _N = useState(25); var N = _N[0]; var setN = _N[1];
   var _agId = useState(AGENCIAS_GERAR[0].id); var agId = _agId[0]; var setAgId = _agId[1];
@@ -2769,11 +2769,11 @@ function AprovacaoHoje() {
   function supaJwt(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
     var hdrs = Object.assign({'apikey':SUPA_ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json'}, opts&&opts.headers);
-    return fetch(SUPA_URL+path, Object.assign({},opts,{headers:hdrs})).then(function(r){return r.json();});
+    return fetch(SUPA_URL+path, Object.assign({},opts,{headers:hdrs})).then(function(r){var ct=r.headers.get('content-type')||'';return ct.includes('json')?r.json():null;});
   }
 
   function load() {
-    supaJwt('/rest/v1/crm_fila?status=eq.rascunho&order=gerado_em.desc&limit=200' +
+    supaJwt('/rest/v1/crm_fila?status=eq.rascunho&order=gerado_em.desc&limit=500' +
       '&select=*,crm_empresas!empresa_id(id,nome,setor),crm_decisores!decisor_id(id,nome,cargo,email,wa,linkedin_url,temperatura,respondeu),crm_agencias!agencia_id(id,nome)'
     ).then(function(d){
       if (Array.isArray(d)) { setFila(d); setErroQuery(null); }
@@ -3094,7 +3094,7 @@ function FilaDoDia() {
   function sj(path, opts) {
     const jwt = (window.__supaSession && window.__supaSession.access_token) || ANON;
     const h = Object.assign({'apikey':ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json'}, opts&&opts.headers);
-    return fetch(SUPA+path, Object.assign({},opts,{headers:h})).then(function(r){return r.json();});
+    return fetch(SUPA+path, Object.assign({},opts,{headers:h})).then(function(r){var ct=r.headers.get('content-type')||'';return ct.includes('json')?r.json():null;});
   }
 
   const [fila,       setFila]       = useState(null);
