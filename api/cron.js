@@ -31,11 +31,15 @@ async function sp(path, body, method='POST') {
 }
 async function logCron(job, nivel, mensagem, contexto) {
   try {
-    await fetch(SUPA_URL+'/rest/v1/crm_logs', {
+    const r = await fetch(SUPA_URL+'/rest/v1/crm_logs', {
       method:'POST',
       headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},
       body:JSON.stringify({origem:'cron:'+job, nivel, mensagem, contexto:contexto||null})
     });
+    if (!r.ok) {
+      const body = await r.text();
+      console.error('[logCron] HTTP', r.status, body.slice(0,200));
+    }
   } catch(e) { console.error('[logCron]', e.message); }
 }
 
@@ -189,6 +193,7 @@ async function jobFechamento(req, res) {
 
 // ── handler principal ─────────────────────────────────────────────────────────
 export default async function handler(req, res) {
+  console.log('[cron] handler start — job:', req.query?.job, '— SUPA_KEY defined:', !!SUPA_KEY, '— SUPA_URL:', SUPA_URL.slice(0,40));
   if (!authCheck(req, res)) return;
   const { job } = req.query;
   try {
