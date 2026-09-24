@@ -394,6 +394,12 @@ function gerarResumoTexto(dados) {
     linhas.push('As cinco empresas com maior temperatura na semana: ' + dados.top5.join(', ') + '.');
   }
 
+  if (dados.oportunidades_criadas > 0) {
+    linhas.push('Pipeline: ' + dados.oportunidades_criadas + ' oportunidade(s) criada(s) na semana' +
+      (dados.oportunidades_ganhas > 0 ? ', ' + dados.oportunidades_ganhas + ' ganha(s)' : '') +
+      (dados.oportunidades_perdidas > 0 ? ', ' + dados.oportunidades_perdidas + ' perdida(s)' : '') + '.');
+  }
+
   if (dados.aviso) linhas.push('Aviso: ' + dados.aviso + '.');
 
   return linhas.join('\n');
@@ -407,12 +413,13 @@ async function jobFechamento(req, res) {
   const isSexta = diaBRT.getDay()===5;
   const semSeg = semanaInicio(now);
 
-  const [kanbanRows, filaRows, agencias, empresasNovas, toquesSem] = await Promise.all([
+  const [kanbanRows, filaRows, agencias, empresasNovas, toquesSem, oportRows] = await Promise.all([
     sg(`crm_kanban?select=id,col,agencia_id,atualizado_em&atualizado_em=gte.${semSeg.toISOString()}&limit=500`),
     sg(`crm_fila?select=id,canal,status,agencia_id,empresa_id&enviado_em=gte.${semSeg.toISOString()}&limit=2000`),
     sg('crm_agencias?select=id,nome&limit=20'),
     sg(`crm_empresas?criado_em=gte.${semSeg.toISOString()}&select=id,nome&limit=50`),
-    sg(`crm_toques?data=gte.${semSeg.toISOString().slice(0,10)}&select=empresa_id,resultado&limit=2000`)
+    sg(`crm_toques?data=gte.${semSeg.toISOString().slice(0,10)}&select=empresa_id,resultado&limit=2000`),
+    sg(`crm_oportunidades?criado_em=gte.${semSeg.toISOString()}&select=id,estagio,agencia_id&limit=500`)
   ]);
 
   const reunioesSem = (Array.isArray(kanbanRows)?kanbanRows:[]).filter(c=>c.col==='reuniao');
@@ -454,6 +461,10 @@ async function jobFechamento(req, res) {
     if (f.canal) porCanal[f.canal] = (porCanal[f.canal]||0)+1;
   }
 
+  const oportArr = Array.isArray(oportRows) ? oportRows : [];
+  const oportGanhas = oportArr.filter(o=>o.estagio==='Ganho').length;
+  const oportPerdidas = oportArr.filter(o=>o.estagio==='Perdido').length;
+
   const dados = {
     semana_inicio:       semSeg.toISOString().slice(0,10),
     gerado_em:           now.toISOString(),
@@ -465,6 +476,9 @@ async function jobFechamento(req, res) {
     por_canal:           porCanal,
     por_agencia:         byAg,
     top5:                top5Nomes,
+    oportunidades_criadas: oportArr.length,
+    oportunidades_ganhas:  oportGanhas,
+    oportunidades_perdidas: oportPerdidas,
     aviso:               isSexta ? null : 'Gerado fora de sexta (manual)'
   };
   dados.resumo_texto = gerarResumoTexto(dados);
