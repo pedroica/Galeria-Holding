@@ -142,13 +142,13 @@ async function toolGerarFila({ n, agencia_id, setor }) {
       method: 'POST',
       headers: { Prefer: 'return=minimal' },
       body: JSON.stringify({
-        empresa: emp.nome, empresa_id: emp.id,
-        decisor: dec.nome, decisor_id: dec.id,
+        empresa_id: emp.id,
+        decisor_id: dec.id,
         agencia_id: agId, canal: 'email', etapa: '1',
         status: 'rascunho',
         assunto: emp.nome + ' · uma conversa',
         corpo: 'Acompanho o trabalho da ' + emp.nome + '. Podemos conversar 20 minutos?',
-        criado_em: new Date().toISOString(), origem: 'copiloto'
+        gerado_em: new Date().toISOString(), modelo: 'copiloto'
       })
     });
     criados.push({ empresa: emp.nome, decisor: dec.nome, cargo: dec.cargo });
