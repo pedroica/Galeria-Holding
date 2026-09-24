@@ -150,20 +150,29 @@
     const [cronLogs,     setCronLogs]     = useState([]);
     const [relatorio,    setRelatorio]    = useState(null);
     const [agencias,     setAgencias]     = useState([]);
+    const [oportunidades, setOportunidades] = useState({ abertas: 0, ganhas: 0, perdidas: 0 });
     const [loading,      setLoading]      = useState(true);
 
     useEffect(() => {
       const since = new Date(Date.now() - 28 * 86400000).toISOString().slice(0, 10);
+      const mesInicio = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString();
       Promise.all([
         supa('crm_fila?status=eq.enviado&enviado_em=gte.' + since + 'T00:00:00&select=enviado_em,canal,agencia_id&limit=5000'),
         supa('crm_logs?origem=like.cron:*&order=criado_em.desc&limit=200'),
         supa('crm_relatorios?tipo=eq.semanal&order=semana_inicio.desc&limit=1'),
-        supa('crm_agencias?select=id,nome&limit=20')
-      ]).then(([fila, logs, rs, ags]) => {
+        supa('crm_agencias?select=id,nome&limit=20'),
+        supa('crm_oportunidades?select=id,estagio&criado_em=gte.' + mesInicio + '&limit=500')
+      ]).then(([fila, logs, rs, ags, ops]) => {
         setFilaEnviados(Array.isArray(fila) ? fila : []);
         setCronLogs(Array.isArray(logs) ? logs : []);
         setRelatorio(Array.isArray(rs) && rs[0] ? rs[0] : null);
         setAgencias(Array.isArray(ags) ? ags : []);
+        const opsArr = Array.isArray(ops) ? ops : [];
+        setOportunidades({
+          abertas:  opsArr.filter(o => !['Ganho','Perdido'].includes(o.estagio)).length,
+          ganhas:   opsArr.filter(o => o.estagio === 'Ganho').length,
+          perdidas: opsArr.filter(o => o.estagio === 'Perdido').length
+        });
         setLoading(false);
       }).catch(() => setLoading(false));
     }, []);
@@ -211,6 +220,16 @@
       style: { flex: 1, overflow: 'auto', padding: '16px 24px', background: '#060606' }
     },
       React.createElement('div', { style: { fontSize: 13, color: '#F5F5F5', marginBottom: 16, ...mono } }, 'ATIVIDADE'),
+
+      // Oportunidades counters
+      React.createElement('div', { style: { display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' } },
+        [['Abertas este mês', oportunidades.abertas, '#60A5FA'],['Ganhas este mês', oportunidades.ganhas, '#34D399'],['Perdidas este mês', oportunidades.perdidas, '#EF4444']].map(([label, val, cor]) =>
+          React.createElement('div', { key: label, style: { background: '#0d0d1a', border: '1px solid #1A1A2E', borderRadius: 8, padding: '10px 16px', minWidth: 140 } },
+            React.createElement('div', { style: { fontSize: 8, color: '#555', ...mono, marginBottom: 4 } }, label.toUpperCase()),
+            React.createElement('div', { style: { fontSize: 22, fontWeight: 700, color: cor, ...mono } }, val)
+          )
+        )
+      ),
 
       // Bar chart
       React.createElement('div', { style: card },

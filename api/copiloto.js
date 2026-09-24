@@ -185,20 +185,65 @@ async function toolRegistrarResultado({ empresa, decisor, resultado, nota, data 
   return { registrado: true, empresa, decisor: decisor || null, resultado, data: dataStr };
 }
 
+async function toolListarOportunidades({ estagio, agencia_id, oferta, limit }) {
+  let q = '/rest/v1/crm_oportunidades?select=id,titulo,estagio,agencia_id,oferta,valor_estimado,proximo_passo,aberta_em,atualizado_em,empresa_id&order=atualizado_em.desc&limit=' + (limit || 20);
+  if (estagio)    q += '&estagio=eq.' + encodeURIComponent(estagio);
+  if (agencia_id) q += '&agencia_id=eq.' + encodeURIComponent(agencia_id);
+  if (oferta)     q += '&oferta=eq.' + encodeURIComponent(oferta);
+  const rows = await supa(q);
+  return { oportunidades: rows || [], total: rows?.length || 0 };
+}
+
+async function toolCriarOportunidade({ empresa, agencia_id, titulo, oferta, estagio, valor_estimado, origem }) {
+  const emps = await supa('/rest/v1/crm_empresas?nome=ilike.' + encodeURIComponent('%' + empresa + '%') + '&select=id,nome&limit=1');
+  const emp = emps?.[0];
+  const now = new Date().toISOString();
+  const body = { titulo: titulo || (emp?.nome || empresa), estagio: estagio || 'Prospect', origem: origem || 'abordagem_direta', oferta: oferta || 'outro', aberta_em: now, criado_em: now, atualizado_em: now };
+  if (emp?.id) body.empresa_id = emp.id;
+  if (agencia_id) body.agencia_id = agencia_id;
+  if (valor_estimado) body.valor_estimado = valor_estimado;
+  const rows = await supa('/rest/v1/crm_oportunidades', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify(body) });
+  const nova = rows?.[0];
+  if (nova) await supa('/rest/v1/crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: nova.id, tipo: 'criada', para: nova.estagio, texto: 'Criada via Copiloto' }) });
+  return { criada: !!nova, id: nova?.id, empresa: emp?.nome || empresa };
+}
+
+async function toolMoverEstagio({ oportunidade_id, novo_estagio }) {
+  const rows = await supa('/rest/v1/crm_oportunidades?id=eq.' + oportunidade_id + '&select=id,estagio&limit=1');
+  const op = rows?.[0];
+  if (!op) return { erro: 'Oportunidade não encontrada' };
+  await supa('/rest/v1/crm_oportunidades?id=eq.' + oportunidade_id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ estagio: novo_estagio, atualizado_em: new Date().toISOString() }) });
+  await supa('/rest/v1/crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id, tipo: 'estagio', de: op.estagio, para: novo_estagio, texto: 'Movido via Copiloto' }) });
+  return { movido: true, de: op.estagio, para: novo_estagio };
+}
+
+async function toolAtribuirDono({ oportunidade_id, agencia_id }) {
+  const rows = await supa('/rest/v1/crm_oportunidades?id=eq.' + oportunidade_id + '&select=id,agencia_id&limit=1');
+  const op = rows?.[0];
+  if (!op) return { erro: 'Oportunidade não encontrada' };
+  await supa('/rest/v1/crm_oportunidades?id=eq.' + oportunidade_id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ agencia_id, atualizado_em: new Date().toISOString() }) });
+  await supa('/rest/v1/crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id, tipo: 'dono', de: op.agencia_id, para: agencia_id, texto: 'Atribuído via Copiloto' }) });
+  return { atribuido: true, agencia_id };
+}
+
 async function execTool(name, input) {
   switch (name) {
-    case 'buscar_empresa':      return toolBuscarEmpresa(input);
-    case 'listar_decisores':    return toolListarDecisores(input);
-    case 'historico_toques':    return toolHistoricoToques(input);
-    case 'itens_fila':          return toolItensFila(input);
-    case 'contadores_semana':   return toolContadoresSemana();
-    case 'listar_templates':    return toolListarTemplates(input);
-    case 'noticias_empresa':    return toolNoticiasEmpresa(input);
+    case 'buscar_empresa':          return toolBuscarEmpresa(input);
+    case 'listar_decisores':        return toolListarDecisores(input);
+    case 'historico_toques':        return toolHistoricoToques(input);
+    case 'itens_fila':              return toolItensFila(input);
+    case 'contadores_semana':       return toolContadoresSemana();
+    case 'listar_templates':        return toolListarTemplates(input);
+    case 'noticias_empresa':        return toolNoticiasEmpresa(input);
+    case 'listar_oportunidades':    return toolListarOportunidades(input);
+    case 'criar_oportunidade':      return toolCriarOportunidade(input);
+    case 'mover_estagio':           return toolMoverEstagio(input);
+    case 'atribuir_dono':           return toolAtribuirDono(input);
     default: return { erro: 'Ferramenta desconhecida: ' + name };
   }
 }
 
-const ACTION_TOOLS = ['gerar_fila', 'registrar_resultado', 'abordar'];
+const ACTION_TOOLS = ['gerar_fila', 'registrar_resultado', 'abordar', 'criar_oportunidade', 'mover_estagio', 'atribuir_dono'];
 
 // ─── System prompt ───────────────────────────────────────────────────────────
 function buildSystem() {
@@ -245,7 +290,11 @@ const TOOL_DEFS = [
   { name: 'noticias_empresa',  description: 'Notícias sobre uma empresa armazenadas no CRM (crm_noticias).',                                                  input_schema: { type: 'object', properties: { empresa: { type: 'string' } }, required: ['empresa'] } },
   { name: 'gerar_fila',        description: 'AÇÃO: Gera rascunhos de prospecção em crm_fila. Requer confirmação do usuário antes de executar.',              input_schema: { type: 'object', properties: { n: { type: 'number', description: 'Quantidade (máx 20)' }, agencia_id: { type: 'string', description: 'UUID da agência' }, setor: { type: 'string', description: 'Setor das empresas (ex: varejo, cosméticos, automotivo)' } }, required: ['n'] } },
   { name: 'registrar_resultado', description: 'AÇÃO: Registra toque/resultado em crm_toques. Requer confirmação.',                                           input_schema: { type: 'object', properties: { empresa: { type: 'string' }, decisor: { type: 'string' }, resultado: { type: 'string', enum: ['sem_resposta','resposta','reuniao_marcada','nao_interesse','outro'] }, nota: { type: 'string' }, data: { type: 'string', description: 'ISO 8601, opcional' } }, required: ['empresa','resultado'] } },
-  { name: 'abordar',           description: 'AÇÃO: Abre o painel Abordar preenchido para um decisor. Requer confirmação.',                                   input_schema: { type: 'object', properties: { decisor_id: { type: 'string' }, decisor_nome: { type: 'string' }, empresa: { type: 'string' }, canal: { type: 'string', enum: ['email','whatsapp','linkedin_convite'] }, agencia_id: { type: 'string' } }, required: ['empresa'] } }
+  { name: 'abordar',               description: 'AÇÃO: Abre o painel Abordar preenchido para um decisor. Requer confirmação.',                                   input_schema: { type: 'object', properties: { decisor_id: { type: 'string' }, decisor_nome: { type: 'string' }, empresa: { type: 'string' }, canal: { type: 'string', enum: ['email','whatsapp','linkedin_convite'] }, agencia_id: { type: 'string' } }, required: ['empresa'] } },
+  { name: 'listar_oportunidades',  description: 'Lista oportunidades do pipeline. Filtros: estagio, agencia_id (UUID), oferta, limit.',                           input_schema: { type: 'object', properties: { estagio: { type: 'string', enum: ['Prospect','Reunião marcada','Reunião feita','Briefing','Proposta','Negociação','Ganho','Perdido','Pausado'] }, agencia_id: { type: 'string' }, oferta: { type: 'string' }, limit: { type: 'number' } } } },
+  { name: 'criar_oportunidade',    description: 'AÇÃO: Cria oportunidade em crm_oportunidades. Requer confirmação.',                                              input_schema: { type: 'object', properties: { empresa: { type: 'string' }, agencia_id: { type: 'string' }, titulo: { type: 'string' }, oferta: { type: 'string' }, estagio: { type: 'string' }, valor_estimado: { type: 'number' }, origem: { type: 'string', enum: ['abordagem_direta','fila','indicação','inbound','upsell'] } }, required: ['empresa'] } },
+  { name: 'mover_estagio',         description: 'AÇÃO: Move oportunidade para novo estágio. Requer confirmação.',                                                  input_schema: { type: 'object', properties: { oportunidade_id: { type: 'string' }, novo_estagio: { type: 'string', enum: ['Prospect','Reunião marcada','Reunião feita','Briefing','Proposta','Negociação','Ganho','Perdido','Pausado'] } }, required: ['oportunidade_id','novo_estagio'] } },
+  { name: 'atribuir_dono',         description: 'AÇÃO: Atribui agência dona a uma oportunidade. Requer confirmação.',                                             input_schema: { type: 'object', properties: { oportunidade_id: { type: 'string' }, agencia_id: { type: 'string', description: 'UUID da agência' } }, required: ['oportunidade_id','agencia_id'] } }
 ];
 
 // ─── Conversation DB ─────────────────────────────────────────────────────────

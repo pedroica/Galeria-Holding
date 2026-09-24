@@ -3127,6 +3127,40 @@ function AprovacaoHoje() {
           })});
         }
       });
+    // Bloco 7: criar oportunidade em crm_oportunidades quando reunião marcada
+    (function() {
+      var SUPA_B = 'https://uetltlnjmobeiunxfsqi.supabase.co';
+      var ANON_B = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
+      var jwt_b = (window.__supaSession && window.__supaSession.access_token) || ANON_B;
+      var empId = item.empresa_id;
+      var agId  = item.agencia_id;
+      if (!empId) return;
+      // Verificar se já existe oportunidade aberta nos últimos 30 dias para empresa+agência
+      var desde30 = new Date(Date.now() - 30*86400000).toISOString();
+      fetch(SUPA_B + '/rest/v1/crm_oportunidades?empresa_id=eq.' + empId + '&agencia_id=eq.' + agId + '&aberta_em=gte.' + desde30 + '&select=id&limit=1', {
+        headers: { apikey: ANON_B, Authorization: 'Bearer ' + jwt_b }
+      }).then(function(r){ return r.ok ? r.json() : []; }).then(function(rows) {
+        if (Array.isArray(rows) && rows.length > 0) return; // já existe
+        var emp = item.crm_empresas || {};
+        var agNome = (item.crm_agencias || {}).nome || '';
+        var body = JSON.stringify({
+          empresa_id: empId, agencia_id: agId || null,
+          titulo: (emp.nome || 'Empresa') + ' — ' + agNome,
+          estagio: 'Reunião marcada', origem: 'fila',
+          aberta_em: agora, criado_em: agora, atualizado_em: agora
+        });
+        fetch(SUPA_B + '/rest/v1/crm_oportunidades', {
+          method: 'POST', headers: { apikey: ANON_B, Authorization: 'Bearer ' + jwt_b, 'Content-Type': 'application/json', Prefer: 'return=representation' }, body: body
+        }).then(function(r){ return r.ok ? r.json() : null; }).then(function(rows) {
+          var nova = Array.isArray(rows) && rows[0] ? rows[0] : null;
+          if (!nova) return;
+          fetch(SUPA_B + '/rest/v1/crm_oportunidade_eventos', {
+            method: 'POST', headers: { apikey: ANON_B, Authorization: 'Bearer ' + jwt_b, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+            body: JSON.stringify({ oportunidade_id: nova.id, tipo: 'criada', para: 'Reunião marcada', texto: 'Criada automaticamente via Fila — reunião marcada' })
+          });
+        });
+      });
+    })();
     setFila(function(p){return p.map(function(x){return x.id===item.id?Object.assign({},x,{_reuniao:true}):x;});});
   }
 
@@ -5227,6 +5261,9 @@ function App() {
   };
   const [alertaBadge, setAlertaBadge] = useState(() => lsGet("gh_alertas_v2", []).filter(a => !a.lido).length);
   const [cronAlerta, setCronAlerta] = useState(false);
+  const [meuPapel, setMeuPapel] = useState('admin'); // default admin até verificar
+  const [minhaAgenciaId, setMinhaAgenciaId] = useState(null);
+  const [acessoNegado, setAcessoNegado] = useState(false);
   useEffect(() => {
     function handleAbordagemCopiloto(e) {
       const p = e.detail || {};
@@ -5321,6 +5358,31 @@ function App() {
       }
     })
     .catch(() => {});
+  }, [curUser]);
+  // Bloco 7: verificar crm_usuarios e bloquear se não cadastrado
+  useEffect(() => {
+    if (!curUser) return;
+    var email = curUser.email || '';
+    if (!email) return;
+    var SUPA_A2 = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
+    var jwt2 = (window.__supaSession && window.__supaSession.access_token) || SUPA_A2;
+    fetch('https://uetltlnjmobeiunxfsqi.supabase.co/rest/v1/crm_usuarios?email=eq.' + encodeURIComponent(email) + '&select=papel,agencia_id,ativo&limit=1', {
+      headers: { apikey: SUPA_A2, Authorization: 'Bearer ' + jwt2 }
+    }).then(function(r){ return r.ok ? r.json() : []; }).then(function(rows) {
+      if (!Array.isArray(rows) || rows.length === 0) {
+        // Email de admins hardcoded: nunca bloqueiam
+        if (email === 'pedro.ica@galeriaholding.co' || email === 'pedroica@gmail.com') {
+          setMeuPapel('admin'); setAcessoNegado(false); return;
+        }
+        setAcessoNegado(true); return;
+      }
+      var u = rows[0];
+      if (!u.ativo) { setAcessoNegado(true); return; }
+      setMeuPapel(u.papel || 'leitor');
+      setMinhaAgenciaId(u.agencia_id || null);
+      setAcessoNegado(false);
+      // Atualizar ultimo_acesso_em via service key não disponível no frontend — apenas registra
+    }).catch(function(){});
   }, [curUser]);
   useEffect(() => {
     // Auto-show config on first load if no Claude key
@@ -5462,6 +5524,7 @@ function App() {
     }
   }, "Carregando...");
   if (!curUser) { return /*#__PURE__*/React.createElement(MagicLinkScreen, null); }
+  if (acessoNegado) { return React.createElement("div", {style:{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',height:'100vh',background:'#060606',fontFamily:'IBM Plex Mono,monospace'}}, React.createElement("div",{style:{fontSize:14,color:'#EF4444',marginBottom:12}},'Acesso negado'), React.createElement("div",{style:{fontSize:11,color:'#555',marginBottom:20}},'Este e-mail não está cadastrado no CRM. Peça ao administrador para liberar.'), React.createElement("button",{onClick:logout,style:{fontSize:10,padding:'6px 18px',background:'#1A1A2E',border:'1px solid #2D2D44',color:'#eee',borderRadius:6,cursor:'pointer'}},'Sair')); }
   return /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
@@ -5588,7 +5651,7 @@ function App() {
     }
   }, "GALERIA HOLDING")),
   React.createElement("div", { style:{ display:'flex', alignItems:'stretch', flex:1 } },
-    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['ferramentas','Ferramentas']].map(([s, l]) =>
+    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['pipeline','Pipeline'],['admin','Admin'],['ferramentas','Ferramentas']].map(([s, l]) =>
       React.createElement("div", {
         key: s,
         onClick: () => { if (s === 'ferramentas') { setToolsOpen(true); } else { navTo(s, null, null); } },
@@ -5623,7 +5686,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
