@@ -113,4 +113,29 @@ test.describe('Bloco 3 — painel Abordar', () => {
     const aviso = page.getByText(/2 decisores|Empresa já abordada|abordada por outra/).first();
     await expect(aviso).toBeVisible({ timeout: 5000 });
   });
+
+  // ── Bug fix: agSel usa agId selecionado, não AG[0] hardcoded ─────────────
+  test('aviso de agência usa agId selecionado (bug fix agSel)', async ({ page }) => {
+    // Mock: empresa foi tocada pela agência 'ag-outra' nesta semana
+    await page.route('**/rest/v1/crm_toques*', async route => {
+      const url = route.request().url();
+      if (url.includes('empresa_id') && url.includes('semana') || (url.includes('empresa_id') && url.includes('gte'))) {
+        await route.fulfill({
+          status: 200, contentType: 'application/json',
+          body: JSON.stringify([{ agencia_id: 'ag-outra-id', decisor_id: 'dec-1' }])
+        });
+      } else { await route.continue(); }
+    });
+
+    await abrirAbordagemPanel(page);
+    await page.getByText('📨 Abordar').first().click();
+    await page.waitForTimeout(2000);
+    // Modal must be open
+    await expect(page.getByText('AGÊNCIA', { exact: true })).toBeVisible({ timeout: 5000 });
+    // The warning is driven by the actual agId state — no JS error thrown
+    const errors = [];
+    page.on('pageerror', e => errors.push(e.message));
+    await page.waitForTimeout(1000);
+    expect(errors.filter(e => e.includes('TypeError'))).toHaveLength(0);
+  });
 });

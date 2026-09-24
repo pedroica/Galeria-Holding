@@ -2,7 +2,8 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "outputDirectory": ".",
   "functions": {
-    "api/cron.js": { "maxDuration": 60 }
+    "api/cron.js":      { "maxDuration": 60 },
+    "api/copiloto.js":  { "maxDuration": 55 }
   },
   "rewrites": [
     { "source": "/c/:token", "destination": "/api/fila?token=:token" },

@@ -509,7 +509,7 @@ function AbordagemModal({
       if (resolvedEid) {
         var wk = await sjAb('/rest/v1/crm_toques?empresa_id=eq.'+resolvedEid+'&data=gte.'+encodeURIComponent(semanaInicio())+'&select=agencia_id,decisor_id');
         var wkA = Array.isArray(wk)?wk:[];
-        var agSel = AG[0].id;
+        var agSel = agId || AG[0].id;
         if (wkA.find(function(t){return t.agencia_id&&t.agencia_id!==agSel;})) warns.push('Empresa já abordada por outra agência nesta semana');
         var decIdsW = new Set(wkA.filter(function(t){return t.decisor_id;}).map(function(t){return t.decisor_id;}));
         if (decIdsW.size>=2) warns.push('Já 2 decisores desta empresa abordados nesta semana');
