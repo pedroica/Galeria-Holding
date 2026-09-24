@@ -5650,7 +5650,7 @@ function App() {
       whiteSpace: "nowrap"
     }
   }, "GALERIA HOLDING")),
-  React.createElement("div", { style:{ display:'flex', alignItems:'stretch', flex:1 } },
+  React.createElement("div", { className:"tb-nav", style:{ display:'flex', alignItems:'stretch', flex:1 } },
     [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['pipeline','Pipeline'],['admin','Admin'],['ferramentas','Ferramentas']].map(([s, l]) =>
       React.createElement("div", {
         key: s,
