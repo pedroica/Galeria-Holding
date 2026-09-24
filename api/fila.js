@@ -66,13 +66,20 @@ function canaisDisponiveis(d) {
   return cs;
 }
 function interpolar(txt, vars) {
-  return (txt || '').replace(/\{\{(\w+)\}\}/g, (_, k) => vars[k] !== undefined ? String(vars[k]) : '');
+  return (txt || '').replace(/\{(\w+)\}/g, (_, k) => vars[k] !== undefined ? String(vars[k]) : '{'+k+'}');
+}
+function setorStr(emp) {
+  const raw = (emp.setor || emp.segmento_detalhe || '').trim();
+  if (!raw) return 'marketing';
+  if (raw === raw.toUpperCase() && raw.length <= 5) return 'marketing';
+  if (raw.length <= 2) return 'marketing';
+  return raw.toLowerCase();
 }
 const FALLBACK_TEMPLATES = {
-  email:             { assunto:'Uma oportunidade para {{empresa}}', corpo:'Olá {{nome}},\n\nAcompanho o trabalho da {{empresa}} e acredito que há uma proposta que pode fazer sentido para vocês.\n\nPoderíamos conversar 20 minutos esta semana?' },
-  whatsapp:          { assunto:null, corpo:'Olá {{nome}}, vi o trabalho da {{empresa}} e queria apresentar uma oportunidade da {{agencia}}. Posso mandar mais detalhes?' },
-  linkedin_convite:  { assunto:null, corpo:'Olá {{nome}}, acompanho a {{empresa}} e queria explorar uma parceria com a {{agencia}}.' },
-  linkedin_mensagem: { assunto:null, corpo:'Olá {{nome}}, queria continuar nossa conversa sobre uma parceria entre {{agencia}} e {{empresa}}.' },
+  email:             { assunto:'Uma oportunidade para {empresa}', corpo:'{primeiro_nome},\n\nAcompanho o trabalho da {empresa} e acredito que há uma proposta que pode fazer sentido para vocês.\n\nPoderíamos conversar 20 minutos esta semana?\n\nAbraço,' },
+  whatsapp:          { assunto:null, corpo:'{primeiro_nome}, vi o trabalho da {empresa} e queria apresentar uma oportunidade da {agencia}. Posso mandar mais detalhes?' },
+  linkedin_convite:  { assunto:null, corpo:'{primeiro_nome}, acompanho a {empresa} e queria explorar uma parceria com a {agencia}.' },
+  linkedin_mensagem: { assunto:null, corpo:'{primeiro_nome}, queria continuar nossa conversa sobre uma parceria entre {agencia} e {empresa}.' },
 };
 
 async function gerarTexto(anthropic, prompt, canal) {
@@ -204,7 +211,7 @@ export default async function handler(req, res) {
       if (sb !== sa) return sb - sa;
       return (new Date(b.sinal_recente_em||0).getTime()) - (new Date(a.sinal_recente_em||0).getTime()) || (b.temperatura||0) - (a.temperatura||0);
     });
-    const templates = await sg(`crm_templates?agencia_id=eq.${ag.id}&tipo=eq.prospeccao&select=*`);
+    const templates = await sg(`crm_templates?agencia_id=eq.${ag.id}&tipo=eq.prospeccao&ativo=eq.true&select=*`);
     const cases = await sg(`crm_cases?agencia_id=eq.${ag.id}&ativo=eq.true&permitido_em_prospeccao=eq.true&destaque=eq.true&select=id,titulo,marca,resumo,url_pagina&limit=5`);
     for (const d of elegiveis) {
       if (totalGerado >= limite) break;
@@ -212,14 +219,16 @@ export default async function handler(req, res) {
       const canalList = canaisDisponiveis(d).filter(c => canais.includes(c) && (restante[c] || 0) > 0);
       if (canalList.length === 0) continue;
       const canal = canalList[0]; const etapa = d.etapa_cadencia || 'etapa1';
-      const tpl = (templates || []).find(t => t.canal === canal && t.etapa && t.etapa.includes(etapa.replace('etapa','')));
+      const etapaStr = etapa.replace('etapa','');
+      const tpl = (templates || []).find(t => t.canal === canal && t.etapa === etapaStr);
       const caso = cases && cases.length > 0 ? cases[Math.floor(Math.random() * cases.length)] : null;
       const estrelas = scoreMap[d.empresa_id] || 0;
       const prompt = `Gere uma mensagem de prospecção.\nAgência: ${ag.nome}\nEmpresa-alvo: ${emp.nome||d.empresa_id}\nSetor: ${emp.setor||emp.segmento_detalhe||'não especificado'}\nDecisores: ${d.nome}, ${d.cargo||'cargo desconhecido'}\nCanal: ${canal}\nEtapa: ${etapa}\nRelevância: ${estrelas}/5 estrelas\n${tpl?'Template base: '+tpl.corpo.slice(0,300):''}\n${caso?'Case: '+caso.titulo+' ('+caso.marca+') — '+caso.resumo:''}`;
       try {
         let txt;
         if (sem_ia) {
-          const vars = {nome:d.nome||'',cargo:d.cargo||'',empresa:emp.nome||'',setor:emp.setor||emp.segmento_detalhe||'',agencia:ag.nome||'',nome_decisor:d.nome||'',nome_empresa:emp.nome||''};
+          const setor = setorStr(emp);
+          const vars = {primeiro_nome:(d.nome||'').split(' ')[0],nome:d.nome||'',cargo:d.cargo||'',empresa:emp.nome||'',setor,agencia:ag.nome||'',nome_decisor:d.nome||'',nome_empresa:emp.nome||''};
           const base = tpl || FALLBACK_TEMPLATES[canal] || FALLBACK_TEMPLATES.email;
           txt = {assunto:interpolar(base.assunto||'',vars),corpo:interpolar(base.corpo||'',vars),tokens_prompt:0,tokens_resposta:0,custo_usd:0};
         } else {

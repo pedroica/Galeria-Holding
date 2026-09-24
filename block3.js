@@ -436,9 +436,7 @@ Mínimo 5 pessoas. Retorne SOMENTE o JSON, sem texto adicional.`;
       decisor: abordagemDecidor,
       empresa: selEmpresa.nome,
       setor: selEmpresa.setor,
-      onClose: function () {
-        setAbordagemDecidor(null);
-      },
+      onClose: function () { setAbordagemDecidor(null); },
       onKanbanAdd: onKanbanAdd
     }), showAdd && /*#__PURE__*/React.createElement("div", {
       style: {
@@ -2541,13 +2539,160 @@ function nowStr() {
 // ── Bloco 1: GerarFilaModal ──────────────────────────────────────────────────
 var AGENCIAS_GERAR = [
   {id:'3409ab82-f0cd-4d95-b6e2-398995425411', nome:'Galeria Holding', slug:'holding'},
+  {id:'960142b5-a688-41f8-8719-d516eeb843c6', nome:'Galeria', slug:'galeria'},
   {id:'14a057af-31c6-4606-8236-4c97d8067335', nome:'404', slug:'404'},
   {id:'e8d734ba-b3e9-425b-942e-b8b56c98f56b', nome:'Caramelo', slug:'cccaramelo'},
   {id:'74886b76-2650-41e1-8d46-3c742681fadd', nome:'Catalyst', slug:'catalyst'},
   {id:'b0473d79-afd9-404e-8784-04b4556a5a2c', nome:'Milà', slug:'mila'},
   {id:'a8aecdac-1001-4643-bcd4-e818307b6d92', nome:'GaIA', slug:'gaia'},
 ];
-// Template fixo até o Bloco 2 (crm_templates) existir
+// ── Bloco 2: TemplatesView ────────────────────────────────────────────────────
+function TemplatesView() {
+  var _templates = useState([]); var templates = _templates[0]; var setTemplates = _templates[1];
+  var _loading = useState(true); var loading = _loading[0]; var setLoading = _loading[1];
+  var _agFiltro = useState(AGENCIAS_GERAR[0].id); var agFiltro = _agFiltro[0]; var setAgFiltro = _agFiltro[1];
+  var _editId = useState(null); var editId = _editId[0]; var setEditId = _editId[1];
+  var _editCorpo = useState(''); var editCorpo = _editCorpo[0]; var setEditCorpo = _editCorpo[1];
+  var _editAssunto = useState(''); var editAssunto = _editAssunto[0]; var setEditAssunto = _editAssunto[1];
+  var _saving = useState(false); var saving = _saving[0]; var setSaving = _saving[1];
+  var _prevEmp = useState(null); var prevEmp = _prevEmp[0]; var setPrevEmp = _prevEmp[1];
+  var _prevDec = useState(null); var prevDec = _prevDec[0]; var setPrevDec = _prevDec[1];
+  var mono = 'IBM Plex Mono,monospace';
+  var inp = {width:'100%',background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:6,padding:'5px 8px',color:'#F5F5F5',fontSize:11,outline:'none',boxSizing:'border-box',fontFamily:mono};
+
+  useEffect(function() {
+    supaFetch('/rest/v1/crm_templates?tipo=eq.prospeccao&order=agencia_id.asc,canal.asc,etapa.asc').then(function(d) {
+      setTemplates(Array.isArray(d)?d:[]); setLoading(false);
+    }).catch(function(){setLoading(false);});
+    supaFetch('/rest/v1/crm_empresas?select=id,nome,setor&order=nome.asc&limit=1').then(function(d) {
+      if (Array.isArray(d) && d.length > 0) {
+        setPrevEmp(d[0]);
+        supaFetch('/rest/v1/crm_decisores?empresa_id=eq.'+d[0].id+'&status=eq.ativo&limit=1').then(function(ds) {
+          if (Array.isArray(ds) && ds.length > 0) setPrevDec(ds[0]);
+        });
+      }
+    });
+  }, []);
+
+  function wc(txt) { return (txt||'').trim().split(/\s+/).filter(function(w){return w.length>0;}).length; }
+
+  function prevText(corpo) {
+    if (!prevEmp) return corpo;
+    var pn = prevDec ? (prevDec.nome||'').split(' ')[0] : '{primeiro_nome}';
+    var cargo = prevDec ? (prevDec.cargo||'{cargo}') : '{cargo}';
+    var ag = AGENCIAS_GERAR.find(function(a){return a.id===agFiltro;});
+    var setor = setorGerar(prevEmp);
+    return corpo
+      .replace(/{primeiro_nome}/g,pn).replace(/{empresa}/g,prevEmp.nome||'')
+      .replace(/{cargo}/g,cargo).replace(/{setor}/g,setor)
+      .replace(/{agencia}/g,ag?ag.nome:'Galeria Holding');
+  }
+
+  function startEdit(t) { setEditId(t.id); setEditCorpo(t.corpo); setEditAssunto(t.assunto||''); }
+  function cancelEdit() { setEditId(null); }
+  function saveEdit() {
+    setSaving(true);
+    var jwt = (window.__supaSession&&window.__supaSession.access_token)||SUPA_ANON;
+    fetch(SUPA_URL+'/rest/v1/crm_templates?id=eq.'+editId, {
+      method:'PATCH',
+      headers:{'apikey':SUPA_ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({corpo:editCorpo,assunto:editAssunto||null,atualizado_em:new Date().toISOString()})
+    }).then(function() {
+      setTemplates(function(prev){return prev.map(function(t){return t.id===editId?Object.assign({},t,{corpo:editCorpo,assunto:editAssunto||null}):t;});});
+      setSaving(false); setEditId(null);
+    }).catch(function(){setSaving(false);});
+  }
+  function toggleAtivo(t) {
+    var jwt = (window.__supaSession&&window.__supaSession.access_token)||SUPA_ANON;
+    fetch(SUPA_URL+'/rest/v1/crm_templates?id=eq.'+t.id, {
+      method:'PATCH',
+      headers:{'apikey':SUPA_ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json','Prefer':'return=minimal'},
+      body:JSON.stringify({ativo:!t.ativo,atualizado_em:new Date().toISOString()})
+    }).then(function() {
+      setTemplates(function(prev){return prev.map(function(tt){return tt.id===t.id?Object.assign({},tt,{ativo:!tt.ativo}):tt;});});
+    });
+  }
+
+  var tplsFiltrados = templates.filter(function(t){return t.agencia_id===agFiltro;});
+  var canais = ['email','whatsapp','linkedin','ligacao'];
+  var canaisLbl = {email:'Email',whatsapp:'WhatsApp',linkedin:'LinkedIn',ligacao:'Ligação'};
+  var WORD_LIMITS = {'email:1':90,'email:2':50,'whatsapp:1':60,'whatsapp:2':60};
+  var CHAR_LIMITS = {'linkedin:1':280};
+
+  if (loading) return React.createElement("div",{style:{padding:24,color:'#555',fontFamily:mono,fontSize:11}},'Carregando templates…');
+
+  return React.createElement("div",{style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column',padding:'16px 20px',gap:10}},
+    React.createElement("div",{style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap',flexShrink:0}},
+      AGENCIAS_GERAR.map(function(ag) {
+        var active = ag.id===agFiltro;
+        return React.createElement("button",{key:ag.id,onClick:function(){setAgFiltro(ag.id);setEditId(null);},
+          style:{padding:'4px 10px',borderRadius:6,border:'.5px solid '+(active?'#FF6B2B44':'#1A1A2E'),background:active?'#FF6B2B22':'transparent',color:active?'#FF6B2B':'#555',fontSize:10,fontFamily:mono,cursor:'pointer'}
+        },ag.nome);
+      })
+    ),
+    prevEmp && React.createElement("div",{style:{fontSize:9,color:'#555',fontFamily:mono,flexShrink:0}},
+      'Preview: '+prevEmp.nome+(prevDec?' · '+prevDec.nome:'')+(prevEmp.setor?' · '+prevEmp.setor:'')
+    ),
+    React.createElement("div",{style:{flex:1,overflowY:'auto',display:'flex',flexDirection:'column',gap:14}},
+      canais.map(function(canal) {
+        var tplsC = tplsFiltrados.filter(function(t){return t.canal===canal;}).sort(function(a,b){return parseInt(a.etapa,10)-parseInt(b.etapa,10);});
+        if (!tplsC.length) return null;
+        return React.createElement("div",{key:canal},
+          React.createElement("div",{style:{fontFamily:mono,fontSize:9,color:'#818CF8',fontWeight:700,textTransform:'uppercase',letterSpacing:.5,marginBottom:8}},canaisLbl[canal]||canal),
+          tplsC.map(function(t) {
+            var isEdit = editId===t.id;
+            var limW = WORD_LIMITS[canal+':'+t.etapa];
+            var limC = CHAR_LIMITS[canal+':'+t.etapa];
+            var corpo = isEdit ? editCorpo : t.corpo;
+            var overLim = limW ? wc(corpo)>limW : (limC ? corpo.length>limC : false);
+            return React.createElement("div",{key:t.id,style:{background:'#0D0D1A',border:'.5px solid '+(isEdit?'#818CF8':'#1A1A2E'),borderRadius:8,padding:'12px 14px',marginBottom:6,opacity:t.ativo?1:0.5}},
+              React.createElement("div",{style:{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:8}},
+                React.createElement("div",{style:{display:'flex',alignItems:'center',gap:8}},
+                  React.createElement("span",{style:{fontSize:11,fontWeight:600,color:'#F5F5F5',fontFamily:mono}},'Etapa '+t.etapa),
+                  !t.ativo && React.createElement("span",{style:{fontSize:9,color:'#F87171',fontFamily:mono}},'desativado')
+                ),
+                !isEdit && React.createElement("div",{style:{display:'flex',gap:8}},
+                  React.createElement("button",{onClick:function(){startEdit(t);},style:{fontSize:9,color:'#60A5FA',background:'none',border:'none',cursor:'pointer',fontFamily:mono}},'editar'),
+                  React.createElement("button",{onClick:function(){toggleAtivo(t);},style:{fontSize:9,color:t.ativo?'#F87171':'#34D399',background:'none',border:'none',cursor:'pointer',fontFamily:mono}},t.ativo?'desativar':'ativar')
+                )
+              ),
+              !isEdit && canal==='email' && t.assunto && React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',fontFamily:mono,marginBottom:6,paddingBottom:6,borderBottom:'.5px solid #1A1A2E'}},'Assunto: '+t.assunto),
+              isEdit && React.createElement("div",{style:{display:'flex',flexDirection:'column',gap:8}},
+                canal==='email' && React.createElement("div",null,
+                  React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Assunto'),
+                  React.createElement("input",{style:inp,value:editAssunto,onChange:function(e){var v=e.target.value;setEditAssunto(v);}})
+                ),
+                React.createElement("div",null,
+                  React.createElement("div",{style:{fontSize:9,color:'#9B9BB4',fontFamily:mono,marginBottom:2}},'Corpo'),
+                  React.createElement("textarea",{style:Object.assign({},inp,{height:120,resize:'vertical',lineHeight:1.5}),value:editCorpo,onChange:function(e){var v=e.target.value;setEditCorpo(v);}})
+                ),
+                React.createElement("div",{style:{display:'flex',alignItems:'center',justifyContent:'space-between'}},
+                  React.createElement("div",{style:{display:'flex',gap:8}},
+                    React.createElement("button",{onClick:saveEdit,disabled:saving||overLim,style:{padding:'4px 12px',borderRadius:5,border:'none',background:overLim?'#444':'#FF6B2B',color:'#fff',fontSize:10,fontFamily:mono,cursor:overLim?'not-allowed':'pointer'}},saving?'…':'Salvar'),
+                    React.createElement("button",{onClick:cancelEdit,style:{padding:'4px 10px',borderRadius:5,border:'.5px solid #2D2D44',background:'transparent',color:'#9B9BB4',fontSize:10,fontFamily:mono,cursor:'pointer'}},'Cancelar')
+                  ),
+                  React.createElement("span",{style:{fontSize:9,fontFamily:mono,color:overLim?'#F87171':'#555'}},
+                    limC ? (editCorpo.length+'/'+limC+' chars') : (limW ? (wc(editCorpo)+'/'+limW+' palavras') : (wc(editCorpo)+' palavras'))
+                  )
+                )
+              ),
+              !isEdit && React.createElement("div",null,
+                React.createElement("pre",{style:{fontSize:10,color:'#9B9BB4',margin:0,whiteSpace:'pre-wrap',fontFamily:mono,lineHeight:1.5,maxHeight:90,overflow:'hidden'}},
+                  prevText(t.corpo).slice(0,280)+(prevText(t.corpo).length>280?'…':'')
+                ),
+                React.createElement("div",{style:{fontSize:9,fontFamily:mono,color:overLim?'#F87171':'#555',marginTop:4}},
+                  limC ? (t.corpo.length+'/'+limC+' chars') : (limW ? (wc(t.corpo)+'/'+limW+' palavras') : (wc(t.corpo)+' palavras'))
+                )
+              )
+            );
+          })
+        );
+      })
+    )
+  );
+}
+
+// Template fixo até o Bloco 2 (crm_templates) existir — agora usado como fallback quando tabela vazia
 var TEMPLATE_GERAR = {
   email: {
     etapa1: { assunto:'{empresa} + Galeria Holding — 20 minutos', corpo:'Oi {primeiro_nome},\n\nVi o trabalho de {empresa} e queria entender como funciona o marketing de vocês.\n\nTeria 20 minutos para uma conversa rápida?\n\nAbraço,' },
@@ -2571,9 +2716,21 @@ function cargoPriGerar(cargo, categoria) {
   if (/\b(ceo|chief executive|president|founder|co-founder|proprietar|owner|managing director|diretor geral|diretor presidente)\b/.test(t)) return 1;
   return 0;
 }
-function substGerar(texto, dec, empNome, agNome) {
+function setorGerar(emp) {
+  var raw = (emp.setor||'').trim();
+  if (!raw) return 'marketing';
+  if (raw === raw.toUpperCase() && raw.length <= 5) return 'marketing';
+  if (raw.length <= 2) return 'marketing';
+  return raw.toLowerCase();
+}
+function substGerar(texto, dec, empNome, agNome, setor) {
   var pn = (dec.nome||'').split(' ')[0];
-  return texto.replace(/{primeiro_nome}/g,pn).replace(/{empresa}/g,empNome||'').replace(/{cargo}/g,dec.cargo||'').replace(/{agencia}/g,agNome||'Galeria Holding');
+  return texto
+    .replace(/{primeiro_nome}/g,pn)
+    .replace(/{empresa}/g,empNome||'')
+    .replace(/{cargo}/g,dec.cargo||'')
+    .replace(/{agencia}/g,agNome||'Galeria Holding')
+    .replace(/{setor}/g,setor||'marketing');
 }
 
 function GerarFilaModal(props) {
@@ -2590,6 +2747,15 @@ function GerarFilaModal(props) {
   var _gerando = useState(false); var gerando = _gerando[0]; var setGerando = _gerando[1];
   var _resultado = useState(null); var resultado = _resultado[0]; var setResultado = _resultado[1];
   var _prog = useState(''); var prog = _prog[0]; var setProg = _prog[1];
+  var _tplMap = useState(null); var tplMap = _tplMap[0]; var setTplMap = _tplMap[1];
+
+  useEffect(function() {
+    sj('/rest/v1/crm_templates?tipo=eq.prospeccao&ativo=eq.true&select=id,agencia_id,canal,etapa,assunto,corpo').then(function(d) {
+      var m = {};
+      if (Array.isArray(d)) d.forEach(function(t) { m[t.agencia_id+':'+t.canal+':'+t.etapa] = t; });
+      setTplMap(m);
+    }).catch(function() { setTplMap({}); });
+  }, []);
 
   async function gerar() {
     setGerando(true); setResultado(null);
@@ -2666,13 +2832,18 @@ function GerarFilaModal(props) {
         cand.decs.forEach(function(dec) {
           var empNome = cand.emp.nome||'';
           var et = cand.etapa;
+          var etNm = et === 'etapa2' ? '2' : '1';
+          var setorV = setorGerar(cand.emp);
+          var tm = tplMap || {};
           // email (sempre)
-          var tpl_email = TEMPLATE_GERAR.email[et]||TEMPLATE_GERAR.email.etapa1;
-          rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'email', etapa:et, assunto:substGerar(tpl_email.assunto,dec,empNome,ag.nome), corpo:substGerar(tpl_email.corpo,dec,empNome,ag.nome), status:'rascunho', gerado_em:now});
+          var tplE = tm[ag.id+':email:'+etNm] || null;
+          var emailBase = tplE || TEMPLATE_GERAR.email[et] || TEMPLATE_GERAR.email.etapa1;
+          rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'email', etapa:et, assunto:substGerar(emailBase.assunto||'',dec,empNome,ag.nome,setorV), corpo:substGerar(emailBase.corpo||'',dec,empNome,ag.nome,setorV), status:'rascunho', gerado_em:now, template_id:tplE?tplE.id:null});
           // whatsapp (se tiver wa)
           if (dec.wa) {
-            var tpl_wa = TEMPLATE_GERAR.whatsapp[et]||TEMPLATE_GERAR.whatsapp.etapa1;
-            rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'whatsapp', etapa:et, assunto:null, corpo:substGerar(tpl_wa.corpo,dec,empNome,ag.nome), status:'rascunho', gerado_em:now});
+            var tplW = tm[ag.id+':whatsapp:'+etNm] || null;
+            var waBase = tplW || TEMPLATE_GERAR.whatsapp[et] || TEMPLATE_GERAR.whatsapp.etapa1;
+            rows.push({empresa_id:cand.empId, decisor_id:dec.id, agencia_id:ag.id, agencia_slug:ag.slug, canal:'whatsapp', etapa:et, assunto:null, corpo:substGerar(waBase.corpo||'',dec,empNome,ag.nome,setorV), status:'rascunho', gerado_em:now, template_id:tplW?tplW.id:null});
           }
           if (!criados[ag.nome]) criados[ag.nome]={etapa1:0,etapa2:0};
           criados[ag.nome][et]=(criados[ag.nome][et]||0)+1;
@@ -3094,6 +3265,159 @@ function AprovacaoHoje() {
 // ─────────────────────────────────────────────────────────────────────────────
 // FILA DO DIA — disparo de prospecções aprovadas via Outlook / WA / LinkedIn
 // ─────────────────────────────────────────────────────────────────────────────
+// ─── Histórico de Toques ─────────────────────────────────────────────────────
+function HistoricoView() {
+  var mono = 'IBM Plex Mono,monospace';
+  var SUPA = 'https://uetltlnjmobeiunxfsqi.supabase.co';
+  var ANON = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
+  function sjH(path, opts) {
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || ANON;
+    var h = Object.assign({'apikey':ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json'}, opts&&opts.headers);
+    return fetch(SUPA+path, Object.assign({},opts,{headers:h})).then(function(r){return r.status===204?null:r.json();});
+  }
+
+  var _toques = useState(null); var toques = _toques[0]; var setToques = _toques[1];
+  var _loading = useState(true); var loading = _loading[0]; var setLoading = _loading[1];
+  var _search = useState(''); var search = _search[0]; var setSearch = _search[1];
+  var _filtCanal = useState(''); var filtCanal = _filtCanal[0]; var setFiltCanal = _filtCanal[1];
+  var _filtAgencia = useState(''); var filtAgencia = _filtAgencia[0]; var setFiltAgencia = _filtAgencia[1];
+  var _filtResultado = useState(''); var filtResultado = _filtResultado[0]; var setFiltResultado = _filtResultado[1];
+  var _filtPeriodo = useState('30'); var filtPeriodo = _filtPeriodo[0]; var setFiltPeriodo = _filtPeriodo[1];
+
+  var AG_MAP = useMemo(function(){
+    var m = {};
+    var ags = (typeof AGENCIAS_GERAR !== 'undefined') ? AGENCIAS_GERAR : [];
+    ags.forEach(function(a){ m[a.id] = a.nome||a.label||a.id; });
+    return m;
+  }, []);
+
+  function spDateStr(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('pt-BR', {timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  }
+
+  function loadToques() {
+    setLoading(true);
+    var days = parseInt(filtPeriodo)||30;
+    var since = new Date(Date.now() - days*86400000).toISOString();
+    sjH('/rest/v1/crm_toques?select=id,criado_em,data,canal,agencia_id,etapa,resultado,nota,origem,decisor_id,empresa_id,crm_decisores!decisor_id(nome,cargo),crm_empresas!empresa_id(nome)'
+      +'&data=gte.'+since+'&order=data.desc&limit=500')
+      .then(function(rows){ setToques(Array.isArray(rows)?rows:[]); setLoading(false); })
+      .catch(function(){ setToques([]); setLoading(false); });
+  }
+
+  useEffect(function(){ loadToques(); }, [filtPeriodo]);
+
+  var filtered = useMemo(function(){
+    if (!toques) return [];
+    var q = (search||'').toLowerCase();
+    return toques.filter(function(t){
+      var empNome = (t.crm_empresas&&t.crm_empresas.nome)||'';
+      var decNome = (t.crm_decisores&&t.crm_decisores.nome)||'';
+      if (q && !empNome.toLowerCase().includes(q) && !decNome.toLowerCase().includes(q)) return false;
+      if (filtCanal && t.canal !== filtCanal) return false;
+      if (filtAgencia && t.agencia_id !== filtAgencia) return false;
+      if (filtResultado && t.resultado !== filtResultado) return false;
+      return true;
+    });
+  }, [toques, search, filtCanal, filtAgencia, filtResultado]);
+
+  function exportCSV() {
+    var headers = ['Data/Hora SP','Empresa','Decisor','Cargo','Canal','Agência','Etapa','Resultado','Nota','Origem'];
+    var rows = filtered.map(function(t){
+      return [
+        spDateStr(t.data||t.criado_em),
+        (t.crm_empresas&&t.crm_empresas.nome)||'',
+        (t.crm_decisores&&t.crm_decisores.nome)||'',
+        (t.crm_decisores&&t.crm_decisores.cargo)||'',
+        t.canal||'',
+        AG_MAP[t.agencia_id]||t.agencia_id||'',
+        t.etapa||'',
+        t.resultado||'',
+        (t.nota||'').replace(/"/g,"'"),
+        t.origem||''
+      ].map(function(v){ return '"'+String(v||'').replace(/"/g,"'")+'"'; }).join(',');
+    });
+    var csv = [headers.join(',')].concat(rows).join('\n');
+    var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href=url; a.download='historico_toques.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  var agIds = useMemo(function(){
+    var seen = {};
+    (toques||[]).forEach(function(t){ if (t.agencia_id) seen[t.agencia_id]=1; });
+    return Object.keys(seen);
+  }, [toques]);
+
+  var selStyle = {fontFamily:mono,fontSize:9,background:'#0f1623',border:'.5px solid #2D2D44',color:'#9B9BB4',padding:'4px 8px',borderRadius:3,outline:'none'};
+
+  return React.createElement('div', {style:{padding:'14px 20px',display:'flex',flexDirection:'column',gap:10,height:'100%',overflowY:'auto'}},
+    // Cabeçalho + filtros
+    React.createElement('div', {style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+      React.createElement('span', {style:{fontFamily:mono,fontSize:11,fontWeight:600,color:'#FBBF24'}},'📋 Histórico de Toques'),
+      React.createElement('button', {onClick:loadToques,style:{fontFamily:mono,fontSize:8,padding:'2px 8px',border:'.5px solid #2D2D44',borderRadius:3,background:'transparent',color:'#555',cursor:'pointer'}},'↺'),
+      React.createElement('button', {onClick:exportCSV,disabled:!filtered.length,style:{fontFamily:mono,fontSize:8,padding:'3px 10px',borderRadius:3,border:'.5px solid rgba(52,211,153,.3)',background:'rgba(52,211,153,.06)',color:'#34D399',cursor:'pointer',marginLeft:'auto'}},'⬇ CSV'),
+      React.createElement('span', {style:{fontFamily:mono,fontSize:8,color:'#555'}},filtered.length+' registros')
+    ),
+    React.createElement('div', {style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
+      React.createElement('input', {value:search,onChange:function(e){setSearch(e.target.value);},placeholder:'Buscar empresa ou decisor…',style:{fontFamily:mono,fontSize:9,background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:3,padding:'4px 10px',color:'#F5F5F5',outline:'none',width:200}}),
+      React.createElement('select', {value:filtPeriodo,onChange:function(e){setFiltPeriodo(e.target.value);},style:selStyle},
+        React.createElement('option',{value:'7'},'Últimos 7 dias'),
+        React.createElement('option',{value:'30'},'Últimos 30 dias'),
+        React.createElement('option',{value:'90'},'Últimos 90 dias'),
+        React.createElement('option',{value:'365'},'Últimos 365 dias')
+      ),
+      React.createElement('select', {value:filtCanal,onChange:function(e){setFiltCanal(e.target.value);},style:selStyle},
+        React.createElement('option',{value:''},'Todos canais'),
+        ['email','whatsapp','linkedin','ligacao'].map(function(c){ return React.createElement('option',{key:c,value:c},c); })
+      ),
+      agIds.length>0&&React.createElement('select', {value:filtAgencia,onChange:function(e){setFiltAgencia(e.target.value);},style:selStyle},
+        React.createElement('option',{value:''},'Todas agências'),
+        agIds.map(function(id){ return React.createElement('option',{key:id,value:id},AG_MAP[id]||id); })
+      ),
+      React.createElement('select', {value:filtResultado,onChange:function(e){setFiltResultado(e.target.value);},style:selStyle},
+        React.createElement('option',{value:''},'Todos resultados'),
+        ['sem_resposta','enviado','atendeu','caixa_postal','nao_atendeu','reuniao_marcada','resposta'].map(function(r){ return React.createElement('option',{key:r,value:r},r); })
+      )
+    ),
+    loading
+      ? React.createElement('div',{style:{fontFamily:mono,fontSize:10,color:'#555',padding:'40px 0',textAlign:'center'}},'Carregando…')
+      : filtered.length === 0
+        ? React.createElement('div',{style:{fontFamily:mono,fontSize:10,color:'#555',padding:'40px 0',textAlign:'center'}},'Nenhum toque encontrado.')
+        : React.createElement('div',{style:{overflowX:'auto'}},
+            React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontFamily:mono,fontSize:9}},
+              React.createElement('thead',null,
+                React.createElement('tr',{style:{borderBottom:'.5px solid #2D2D44'}},
+                  ['Data/Hora SP','Empresa','Decisor','Canal','Agência','Etapa','Resultado','Nota'].map(function(h){
+                    return React.createElement('th',{key:h,style:{padding:'5px 8px',textAlign:'left',color:'#555',fontWeight:500,whiteSpace:'nowrap'}},h);
+                  })
+                )
+              ),
+              React.createElement('tbody',null,
+                filtered.map(function(t){
+                  var res = t.resultado||'';
+                  var resColor = res==='reuniao_marcada'?'#34D399':res==='atendeu'?'#60A5FA':res==='sem_resposta'?'#555':'#9B9BB4';
+                  return React.createElement('tr',{key:t.id,style:{borderBottom:'.5px solid #111',transition:'background .1s'},
+                    onMouseOver:function(e){e.currentTarget.style.background='rgba(255,255,255,.02)';},
+                    onMouseOut:function(e){e.currentTarget.style.background='transparent';}},
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#9B9BB4',whiteSpace:'nowrap'}},spDateStr(t.data||t.criado_em)),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#F5F5F5',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},(t.crm_empresas&&t.crm_empresas.nome)||'—'),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#FF6B2B',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},(t.crm_decisores&&t.crm_decisores.nome)||'—'),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#818CF8'}},t.canal||'—'),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#A78BFA',whiteSpace:'nowrap'}},AG_MAP[t.agencia_id]||(t.agencia_id?t.agencia_id.slice(0,8)+'…':'—')),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#555'}},t.etapa||'—'),
+                    React.createElement('td',{style:{padding:'5px 8px',color:resColor,whiteSpace:'nowrap'}},res||'—'),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#555',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},t.nota||'')
+                  );
+                })
+              )
+            )
+          )
+  );
+}
+
 function FilaDoDia() {
   const mono = "'IBM Plex Mono',monospace";
   const SUPA  = 'https://uetltlnjmobeiunxfsqi.supabase.co';
@@ -3472,13 +3796,21 @@ function FilaDoDia() {
       .then(function(){
         sj('/rest/v1/crm_toques',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({
           decisor_id:item.decisor_id, empresa_id:item.empresa_id,
+          agencia_id:item.agencia_id||null,
           canal:item.canal, direcao:'enviado',
+          etapa:item.etapa||item.etapa_cadencia||null,
+          template_id:item.template_id||null,
+          texto_enviado:(item.corpo||'').slice(0,2000),
           assunto:(item.assunto||'').slice(0,500),
           resumo:(item.contexto_para_aprovacao||'').slice(0,500),
-          data:now, fonte:'manual', resultado:'sem_resposta'
+          data:now, fonte:'manual', resultado:'sem_resposta',
+          origem:'fila', criado_em:now
         })});
         if (item.decisor_id) {
           sj('/rest/v1/crm_decisores?id=eq.'+item.decisor_id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({ultimo_toque_em:now})});
+        }
+        if (item.empresa_id) {
+          sj('/rest/v1/crm_empresas?id=eq.'+item.empresa_id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({ultimo_toque_em:now})});
         }
         setFila(function(p){return (p||[]).filter(function(x){return x.id!==item.id;});});
         setTail(function(p){return [Object.assign({},item,{status:'enviado',enviado_em:now})].concat(p);});
@@ -3673,9 +4005,9 @@ function FilaDoDia() {
       ),
       // Abas de canal + botão de sequência (WA/LinkedIn)
       React.createElement('div',{style:{display:'flex',gap:0,alignItems:'center',marginTop:2}},
-        [['email','Email','#60A5FA'],['whatsapp','WhatsApp','#34D399'],['linkedin','LinkedIn','#818CF8']].map(function(x){
+        [['email','Email','#60A5FA'],['whatsapp','WhatsApp','#34D399'],['linkedin','LinkedIn','#818CF8'],['historico','Histórico','#FBBF24']].map(function(x){
           var k=x[0],lbl=x[1],cor=x[2];
-          var cnt = (fila||[]).filter(function(i){return i.canal===k;}).length;
+          var cnt = k!=='historico' ? (fila||[]).filter(function(i){return i.canal===k;}).length : 0;
           var ativo = aba===k;
           return React.createElement('button',{key:k,onClick:function(){setAba(k);setFocused(0);setSeqAtivo(false);},
             style:{fontFamily:mono,fontSize:9,padding:'5px 14px',border:'none',background:'transparent',
@@ -3702,14 +4034,16 @@ function FilaDoDia() {
       )
     ),
     // Conteúdo
-    React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'10px 20px'}},
-      abaItems.length===0&&tailItems.length===0
-        ? React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',padding:'60px 0',gap:8,opacity:.3}},
-            React.createElement('div',{style:{fontSize:28}},'✅'),
-            React.createElement('div',{style:{fontFamily:mono,fontSize:10,color:'#F5F5F5'}},'Fila vazia para esta aba')
-          )
-        : React.createElement(React.Fragment,null,
-            // Itens aprovados
+    React.createElement('div',{style:{flex:1,overflowY:'auto',padding:aba==='historico'?'0':'10px 20px'}},
+      aba==='historico'
+        ? React.createElement(HistoricoView, null)
+        : abaItems.length===0&&tailItems.length===0
+          ? React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',padding:'60px 0',gap:8,opacity:.3}},
+              React.createElement('div',{style:{fontSize:28}},'✅'),
+              React.createElement('div',{style:{fontFamily:mono,fontSize:10,color:'#F5F5F5'}},'Fila vazia para esta aba')
+            )
+          : React.createElement(React.Fragment,null,
+              // Itens aprovados
             abaItems.map(function(item,idx){
               var d    = item.crm_decisores||{};
               var emp  = item.crm_empresas||{};
@@ -5225,7 +5559,7 @@ function App() {
     }
   }, "GALERIA HOLDING")),
   React.createElement("div", { style:{ display:'flex', alignItems:'stretch', flex:1 } },
-    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['ferramentas','Ferramentas']].map(([s, l]) =>
+    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['templates','Templates'],['ferramentas','Ferramentas']].map(([s, l]) =>
       React.createElement("div", {
         key: s,
         onClick: () => { if (s === 'ferramentas') { setToolsOpen(true); } else { navTo(s, null, null); } },
@@ -5260,7 +5594,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -7389,6 +7723,7 @@ function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
   const [novoT, setNovoT] = React.useState({canal:'email',tema:'',resumo:'',resultado:''});
   const [saving,  setSaving]        = React.useState(false);
   const [copied,  setCopied]        = React.useState(false);
+  const [abordandoDec, setAbordandoDec] = React.useState(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -7463,7 +7798,16 @@ function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
     tabBtn:  (active) => ({padding:'5px 14px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,background:active?'#7C3AED':'#1A1A2E',color:active?'#fff':'#9B9BB4'})
   };
 
-  return /*#__PURE__*/React.createElement("div", {style:S.overlay, onClick:onClose},
+  return /*#__PURE__*/React.createElement("div", null,
+    abordandoDec && /*#__PURE__*/React.createElement(AbordagemModal, {
+      decisor: abordandoDec,
+      empresa: nome,
+      empresaId: empresaId,
+      setor: '',
+      onClose: function(){ setAbordandoDec(null); },
+      onKanbanAdd: null
+    }),
+    /*#__PURE__*/React.createElement("div", {style:S.overlay, onClick:onClose},
     /*#__PURE__*/React.createElement("div", {style:S.drawer, onClick:e=>e.stopPropagation()},
       // ── Header
       /*#__PURE__*/React.createElement("div", {style:S.hdr},
@@ -7494,10 +7838,14 @@ function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
               d.linkedin_url && /*#__PURE__*/React.createElement("a", {href:d.linkedin_url,target:'_blank',rel:'noopener',style:{fontSize:11,color:'#9B9BB4',textDecoration:'none'}}, 'in')
             ),
             d.ultimo_toque_em && /*#__PURE__*/React.createElement("div", {style:{fontSize:10,color:'#4B4B6A',fontFamily:'IBM Plex Mono,monospace',marginTop:6}},
-              'Último contato: '+new Date(d.ultimo_toque_em).toLocaleDateString('pt-BR')+(d.ultimo_tema?' — '+d.ultimo_tema:'')
+              'Último toque: '+new Date(d.ultimo_toque_em).toLocaleDateString('pt-BR')+(d.ultimo_tema?' · '+d.ultimo_tema:'')
             ),
             d.gancho && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#fbbf24',marginTop:4,fontStyle:'italic'}}, '💡 '+d.gancho),
-            d.observacoes && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#9B9BB4',marginTop:4}}, d.observacoes)
+            d.observacoes && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#9B9BB4',marginTop:4}}, d.observacoes),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function(){ setAbordandoDec(d); },
+              style:{marginTop:8,width:'100%',padding:'5px 0',borderRadius:6,border:'.5px solid rgba(255,107,43,.4)',background:'rgba(255,107,43,.08)',color:'#FF6B2B',cursor:'pointer',fontSize:10,fontWeight:700}
+            }, '📨 Abordar')
           )),
           // Add decisor form
           !showAddD && /*#__PURE__*/React.createElement("button", {
@@ -7586,6 +7934,7 @@ function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
           }, '🗑 Deletar')
         )
       )
+    )
     )
   );
 }

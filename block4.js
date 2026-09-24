@@ -181,7 +181,10 @@ function EmpresasView({
   const [search, setSearch] = useState("");
   const [filtroSetor, setFiltroSetor] = useState("Todos");
   const [filtroStatus, setFiltroStatus] = useState("todos");
+  const [filtroToque, setFiltroToque] = useState("todos");
   const [selEmpresa, setSelEmpresa] = useState(null);
+  const [contadoresSemana, setContadoresSemana] = useState({empresas:0,decisores:0,reunioes:0});
+  const [reuniaoEmpIds, setReuniaoEmpIds] = useState(new Set());
   const [enrichLoading, setEnrichLoading] = useState({});
   const [abordagemDec, setAbordagemDec] = useState(null);
   const [showAdd, setShowAdd] = useState(false);
@@ -292,7 +295,7 @@ function EmpresasView({
       var offset = 0;
       while (true) {
         var rows = await supaJwtFig(
-          '/rest/v1/crm_empresas?select=id,nome,website,dominio,enriquecido_em&limit='+PAGE+'&offset='+offset
+          '/rest/v1/crm_empresas?select=id,nome,website,dominio,enriquecido_em,ultimo_toque_em&limit='+PAGE+'&offset='+offset
         ).catch(function(){ return []; });
         if (!Array.isArray(rows) || rows.length === 0) break;
         rows.forEach(function(r) { if (r.nome) m[r.nome.toLowerCase().trim()] = r; });
@@ -301,6 +304,33 @@ function EmpresasView({
       }
       console.log('[supaEmpMap] carregadas', Object.keys(m).length, 'empresas');
       setSupaEmpMap(m);
+    })();
+  }, []);
+
+  // ── Carrega contadores semanais + empresas com reunião marcada ────────────
+  useEffect(function() {
+    (async function() {
+      var now = new Date();
+      var sp = new Date(now.toLocaleString('en-US', {timeZone:'America/Sao_Paulo'}));
+      var day = sp.getDay();
+      var diff = day === 0 ? -6 : 1 - day;
+      var mon = new Date(sp); mon.setDate(sp.getDate() + diff); mon.setHours(0,0,0,0);
+      var offset = now.getTime() - sp.getTime();
+      var monISO = new Date(mon.getTime() + offset).toISOString();
+
+      supaJwtFig('/rest/v1/crm_toques?select=empresa_id,decisor_id,resultado&criado_em=gte.'+monISO+'&limit=2000')
+        .then(function(rows) {
+          if (!Array.isArray(rows)) return;
+          var empSet = new Set(), decSet = new Set(), reunioes = 0;
+          var reuniaoEmps = new Set();
+          rows.forEach(function(r) {
+            if (r.empresa_id) empSet.add(r.empresa_id);
+            if (r.decisor_id) decSet.add(r.decisor_id);
+            if (r.resultado === 'reuniao_marcada') { reunioes++; if (r.empresa_id) reuniaoEmps.add(r.empresa_id); }
+          });
+          setContadoresSemana({empresas:empSet.size, decisores:decSet.size, reunioes:reunioes});
+          setReuniaoEmpIds(reuniaoEmps);
+        }).catch(function(){});
     })();
   }, []);
 
@@ -314,7 +344,7 @@ function EmpresasView({
     }
     if (!empId) { setSupaDecisores([]); return; }
     setSupaDecLoading(true);
-    supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&status=eq.ativo&select=id,nome,cargo,email,wa,wa2,wa3,wa4,linkedin_url,criado_em&order=criado_em.desc')
+    supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&status=eq.ativo&select=id,nome,cargo,email,wa,wa2,wa3,wa4,linkedin_url,criado_em,ultimo_toque_em&order=criado_em.desc')
       .then(function(rows) {
         var list = Array.isArray(rows) ? rows : [];
         setSupaDecisores(list);
@@ -790,9 +820,31 @@ function EmpresasView({
       if (filtroStatus === "sem" && nVer > 0) return false;
       if (filtroStatus === "parcial" && (nVer === 0 || nVer >= 5)) return false;
       if (filtroStatus === "completo" && nVer < 5) return false;
+      // Filtros de toque
+      var supaRow = supaEmpMap[(e.nome||'').toLowerCase().trim()];
+      var utStr = supaRow && supaRow.ultimo_toque_em;
+      var ut = utStr ? new Date(utStr) : null;
+      var agora = Date.now();
+      if (filtroToque === 'nunca' && ut) return false;
+      if (filtroToque === 'esta_semana') {
+        var now2 = new Date();
+        var sp2 = new Date(now2.toLocaleString('en-US', {timeZone:'America/Sao_Paulo'}));
+        var d2 = sp2.getDay(); var diff2 = d2===0?-6:1-d2;
+        var mon2 = new Date(sp2); mon2.setDate(sp2.getDate()+diff2); mon2.setHours(0,0,0,0);
+        var off2 = now2.getTime()-sp2.getTime();
+        var monMs = mon2.getTime()+off2;
+        if (!ut || ut.getTime() < monMs) return false;
+      }
+      if (filtroToque === 'sem_resposta_10') {
+        if (!ut || (agora - ut.getTime()) < 10*86400000) return false;
+      }
+      if (filtroToque === 'reuniao_marcada') {
+        var empId2 = supaRow && supaRow.id;
+        if (!empId2 || !reuniaoEmpIds.has(empId2)) return false;
+      }
       return true;
     }).sort((a, b) => b.score - a.score);
-  }, [empresas, search, filtroSetor, filtroStatus, accs]);
+  }, [empresas, search, filtroSetor, filtroStatus, filtroToque, accs, supaEmpMap, reuniaoEmpIds]);
 
   // ── enriquecer ─────────────────────────────────────────────────────────────
   const enriquecer = async empresa => {
@@ -920,7 +972,9 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
     }, abordagemDec && /*#__PURE__*/React.createElement(AbordagemModal, {
       decisor: abordagemDec,
       empresa: selEmpresa.nome,
+      empresaId: selEmpresa.empresa_id || (supaEmpMap && supaEmpMap[(selEmpresa.nome||'').toLowerCase().trim()] && supaEmpMap[(selEmpresa.nome||'').toLowerCase().trim()].id) || null,
       setor: selEmpresa.setor,
+      clienteAtivo: selEmpresa.cliente_ativo || false,
       onClose: () => setAbordagemDec(null),
       onKanbanAdd: onKanbanAdd
     }), showAdd && /*#__PURE__*/React.createElement("div", {
@@ -1355,6 +1409,9 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         phones.map((p,pi)=>{var n=(p||"").replace(/[^0-9]/g,"");var num=n.startsWith("55")&&n.length>=12?n:"55"+n;return /*#__PURE__*/React.createElement("a",{key:pi,href:"https://wa.me/"+num,target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:"rgba(37,211,102,.12)",border:"1px solid rgba(37,211,102,.22)",color:"#25D366",fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"💬 WA"+(phones.length>1?" "+(pi+1):""));}),
         (d.linkedin_url||d.linkedin)&&/*#__PURE__*/React.createElement("a",{href:(d.linkedin_url||d.linkedin).startsWith("http")?(d.linkedin_url||d.linkedin):"https://"+(d.linkedin_url||d.linkedin),target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:"rgba(10,102,194,.12)",border:"1px solid rgba(10,102,194,.22)",color:"#0A66C2",fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"💼 LI")
       ),
+      d.ultimo_toque_em&&/*#__PURE__*/React.createElement("div",{style:{fontSize:8,color:"#4B4B6A",fontFamily:"'IBM Plex Mono',monospace",textAlign:"center",paddingInline:8,marginBottom:4,marginTop:-4}},
+        'Último toque: '+new Date(d.ultimo_toque_em).toLocaleDateString('pt-BR')
+      ),
       /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:5,paddingInline:8,borderTop:"1px solid rgba(255,255,255,.04)",paddingTop:8,width:"100%",boxSizing:"border-box",justifyContent:"center"}},
         /*#__PURE__*/React.createElement("button",{onClick:()=>setAbordagemDec(d),style:{flex:2,padding:"5px 0",borderRadius:7,border:".5px solid rgba(255,107,43,.4)",background:"rgba(255,107,43,.1)",color:"#FF6B2B",cursor:"pointer",fontSize:9,fontWeight:700}},"📨 Abordar"),
         /*#__PURE__*/React.createElement("button",{onClick:()=>remover(selEmpresa,d,"verificado"),style:{padding:"5px 8px",borderRadius:7,border:".5px solid rgba(255,71,87,.2)",background:"rgba(255,71,87,.08)",color:"#FF4757",cursor:"pointer",fontSize:11}},"×")
@@ -1781,7 +1838,19 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       borderBottom: ".5px solid #2D2D44",
       flexShrink: 0
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, React.createElement("div", {style:{display:"flex",gap:16,marginBottom:10,padding:"8px 0",borderBottom:".5px solid #111"}},
+    [
+      {label:'Empresas tocadas', val:contadoresSemana.empresas, cor:'#60A5FA'},
+      {label:'Decisores tocados', val:contadoresSemana.decisores, cor:'#818CF8'},
+      {label:'Reuniões marcadas', val:contadoresSemana.reunioes, cor:'#34D399', meta:40},
+    ].map(function(c){
+      return React.createElement("div",{key:c.label,style:{display:'flex',flexDirection:'column',gap:2}},
+        React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:18,fontWeight:700,color:c.cor}},
+          c.val, c.meta ? React.createElement('span',{style:{fontSize:10,color:'#555',fontWeight:400}},' / '+c.meta) : null),
+        React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:8,color:'#555'}},c.label+' esta semana')
+      );
+    })
+  ), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -1875,7 +1944,23 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       background: filtroStatus === v ? "rgba(255,107,43,.1)" : "transparent",
       color: filtroStatus === v ? "#FF6B2B" : "#9B9BB4"
     }
-  }, l))), filtroStatus === 'sem' && React.createElement("button", {
+  }, l))), /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:4,flexWrap:"wrap"}},
+    [
+      ["todos","Todos toques"],
+      ["nunca","Nunca abordada"],
+      ["esta_semana","Esta semana"],
+      ["sem_resposta_10","Sem resp. +10d"],
+      ["reuniao_marcada","Reunião marcada"]
+    ].map(function(pair){
+      var v=pair[0], l=pair[1];
+      return React.createElement("button",{key:v,onClick:function(){setFiltroToque(v);},style:{
+        padding:"5px 10px",borderRadius:100,border:".5px solid",fontSize:9,fontFamily:"IBM Plex Mono,monospace",cursor:"pointer",
+        borderColor:filtroToque===v?"#FBBF24":"#2D2D44",
+        background:filtroToque===v?"rgba(251,191,36,.1)":"transparent",
+        color:filtroToque===v?"#FBBF24":"#9B9BB4"
+      }},l);
+    })
+  ), filtroStatus === 'sem' && React.createElement("button", {
       onClick: function(){ setSelEmpresas(function(prev){ return prev.size === filtradas.length ? new Set() : new Set(filtradas.map(function(x){ return x.rank; })); }); },
       style: { padding:"4px 10px", borderRadius:6, border:".5px solid #818CF8", background:"transparent", color:"#818CF8", fontSize:9, fontFamily:"IBM Plex Mono,monospace", cursor:"pointer", flexShrink:0 }
     }, selEmpresas.size === filtradas.length ? "✕ Limpar" : "☐ Todas"), filtroStatus === 'sem' && selEmpresas.size > 0 && React.createElement("button", {
@@ -1905,7 +1990,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       key: e.rank,
       onClick: () => {
         var supaRow = supaEmpMap[e.nome.toLowerCase().trim()] || null;
-        setSelEmpresa(Object.assign({}, e, supaRow ? {empresa_id: supaRow.id, website: supaRow.website, dominio: supaRow.dominio, enriquecido_em: supaRow.enriquecido_em} : {}));
+        setSelEmpresa(Object.assign({}, e, supaRow ? {empresa_id: supaRow.id, website: supaRow.website, dominio: supaRow.dominio, enriquecido_em: supaRow.enriquecido_em, ultimo_toque_em: supaRow.ultimo_toque_em} : {}));
       },
       style: {
         display: "flex",
@@ -1961,7 +2046,15 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         fontFamily: "IBM Plex Mono,monospace",
         marginTop: 2
       }
-    }, e.setor), (e.website || e.site) && /*#__PURE__*/React.createElement("a", {
+    }, e.setor), (function(){
+      var sr = supaEmpMap[(e.nome||'').toLowerCase().trim()];
+      var ut = sr && sr.ultimo_toque_em;
+      if (!ut) return React.createElement('div',{style:{fontSize:8,color:'#333',fontFamily:'IBM Plex Mono,monospace',marginTop:2}},'nunca abordada');
+      var dias = Math.floor((Date.now()-new Date(ut).getTime())/86400000);
+      var utStr = new Date(ut).toLocaleDateString('pt-BR');
+      return React.createElement('div',{style:{fontSize:8,color:dias>10?'#EF9F27':'#4B4B6A',fontFamily:'IBM Plex Mono,monospace',marginTop:2}},
+        'último toque: '+utStr+' ('+dias+'d)');
+    })(), (e.website || e.site) && /*#__PURE__*/React.createElement("a", {
       href: ("https://" + (e.website || e.site)).replace("https://https://", "https://"),
       target: "_blank",
       rel: "noopener noreferrer",
