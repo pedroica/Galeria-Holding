@@ -8,6 +8,7 @@ export default defineConfig({
   testMatch: '**/*.spec.js',
   globalSetup: './tests/globalSetup.js',
   timeout: 30000,
+  workers: 1,
   use: {
     baseURL: APP_URL,
     headless: true,
