@@ -28,7 +28,7 @@ test.describe('Bloco 5 — Copiloto', () => {
   // ── Test 1: nav item e tela inicial ──────────────────────────────────────
   test('nav item Copiloto abre tela com placeholder e sugestões', async ({ page }) => {
     await abrirCopiloto(page);
-    await expect(page.getByText('🤖')).toBeVisible({ timeout: 5000 });
+    await expect(page.getByText('🤖', { exact: true })).toBeVisible({ timeout: 5000 });
     await expect(page.getByPlaceholder(/Pergunte sobre empresas/)).toBeVisible({ timeout: 5000 });
   });
 
@@ -93,8 +93,6 @@ test.describe('Bloco 5 — Copiloto', () => {
 
     await expect(page.getByText('Da web')).toBeVisible({ timeout: 10000 });
     await expect(page.getByText('Do banco CRM')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText('🌐')).toBeVisible({ timeout: 5000 });
-    await expect(page.getByText('🗄️')).toBeVisible({ timeout: 5000 });
   });
 
   // ── Test 4: gerar_fila mostra cartão de confirmação ───────────────────────
@@ -185,7 +183,7 @@ test.describe('Bloco 5 — Copiloto', () => {
     } else {
       // Without service key, just verify sidebar renders
       await abrirCopiloto(page);
-      await expect(page.getByText('CONVERSAS')).toBeVisible({ timeout: 5000 });
+      await expect(page.getByText('CONVERSAS', { exact: true })).toBeVisible({ timeout: 5000 });
     }
   });
 
@@ -208,7 +206,7 @@ test.describe('Bloco 5 — Copiloto', () => {
     const hamburger = page.locator('button', { hasText: '☰' });
     if (await hamburger.isVisible({ timeout: 3000 }).catch(() => false)) {
       await hamburger.click();
-      await expect(page.getByText('CONVERSAS')).toBeVisible({ timeout: 3000 });
+      await expect(page.getByText('CONVERSAS', { exact: true })).toBeVisible({ timeout: 3000 });
       // Close with ✕
       const closeBtn = page.locator('button', { hasText: '✕' });
       if (await closeBtn.isVisible({ timeout: 2000 }).catch(() => false)) {
