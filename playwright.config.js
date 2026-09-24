@@ -1,17 +1,17 @@
 import { defineConfig } from '@playwright/test';
 
+const APP_URL = process.env.APP_URL || 'https://galeria-holding-sage.vercel.app';
+const AUTH_STATE = 'tests/.auth-state.json';
+
 export default defineConfig({
   testDir: './tests',
-  testMatch: '**/*.playwright.mjs',
+  testMatch: '**/*.spec.js',
+  globalSetup: './tests/globalSetup.js',
   timeout: 30000,
   use: {
-    baseURL: 'http://localhost:3333',
+    baseURL: APP_URL,
     headless: true,
     viewport: { width: 1440, height: 900 },
-  },
-  webServer: {
-    url: 'http://localhost:3333',
-    reuseExistingServer: true,
-    timeout: 10000,
+    storageState: AUTH_STATE,
   },
 });
