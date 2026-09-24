@@ -19,9 +19,13 @@ function supa(path, opts = {}) {
   return fetch(SUPA_URL + path, {
     ...opts,
     headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json', ...(opts.headers || {}) }
-  }).then(r => {
-    if (r.status === 204) return null; // No Content (PATCH/DELETE with return=minimal)
-    return r.ok ? r.json() : r.json().then(e => { throw e; });
+  }).then(async r => {
+    if (r.status === 204) return null; // No Content (PATCH/DELETE minimal)
+    const text = await r.text();
+    if (!text) return r.ok ? null : (() => { throw new Error('HTTP ' + r.status); })();
+    const data = JSON.parse(text); // throws SyntaxError on malformed JSON
+    if (!r.ok) throw data;
+    return data;
   });
 }
 
