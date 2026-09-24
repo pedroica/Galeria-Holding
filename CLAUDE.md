@@ -36,6 +36,8 @@ block5.js           — Kanban estratégico (KES)
 block6.js           — Calendário / Agenda
 block7.js           — Radar de leads + enriquecimento C-level
 block_agente.js     — Agente autônomo de prospecção
+block_atividade.js  — Tela Atividade (Bloco 6): gráfico toques/dia, tabela canal/agência,
+                      lista de execuções de crons, último relatório de sexta
 api/enrich.js       — Proxy: Hunter, Lusha (person + empresa), health check
 api/gerar-fila.js   — Gera lote crm_fila (rascunho)
 api/cron/           — Crons diários/semanais
@@ -83,6 +85,30 @@ const SUPA_URL  = 'https://uetltlnjmobeiunxfsqi.supabase.co';  // OK no frontend
 const SUPA_ANON = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r'; // anon key, pública por design
 ```
 Server-side secrets ficam **somente** em variáveis de ambiente Vercel.
+
+---
+
+## Variáveis de ambiente (Vercel Production + .env local)
+
+| Variável | Uso | Onde usar |
+|---|---|---|
+| `SUPA_CRM_URL` | URL do projeto Supabase CRM | api/* (fallback hardcoded) |
+| `SUPA_CRM_ANON_KEY` | Anon key do Supabase CRM (pública) | api/*, também hardcoded no frontend |
+| `SUPA_CRM_SERVICE_KEY` | Service key do Supabase CRM | api/* server-side only |
+| `SUPABASE_SERVICE_ROLE_KEY` | Alias de SUPA_CRM_SERVICE_KEY (aceito nos apis) | api/* server-side only |
+| `SUPA_AGENTE_URL` | URL do projeto Supabase Agente | api/copiloto.js |
+| `SUPA_AGENTE_ANON_KEY` | Anon key do Supabase Agente | api/copiloto.js |
+| `SUPA_AGENTE_SERVICE_KEY` | Service key do Supabase Agente | api/copiloto.js server-side only |
+| `ANTHROPIC_API_KEY` | Chave da API Anthropic Claude | api/copiloto.js, api/fila.js |
+| `LUSHA_API_KEY` | Chave da API Lusha V3 | api/enrich.js, api/cron.js |
+| `CRON_SECRET` | Token Bearer que a Vercel envia nos crons | api/cron.js (authCheck) |
+| `MS_CLIENT_ID` | Azure App Registration — Microsoft Graph | api/enrich.js |
+| `MS_CLIENT_SECRET` | Azure App Secret — Microsoft Graph (expira 2028-09-21) | api/enrich.js server-side only, nunca logar |
+| `MS_TENANT_ID` | Azure Tenant ID — Galeria | api/enrich.js |
+| `PLAYWRIGHT_TEST_EMAIL` | Email do usuário de teste Playwright | tests/ apenas |
+| `PLAYWRIGHT_TEST_PASSWORD` | Senha do usuário de teste Playwright | tests/ apenas |
+
+Nunca colocar valores de secrets em arquivos, commits, logs ou no chat.
 
 ---
 

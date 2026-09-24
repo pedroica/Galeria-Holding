@@ -53,71 +53,234 @@ async function logCron(job, nivel, mensagem, contexto) {
 async function jobGerarFila(req, res) {
   const inicio = Date.now();
   await logCron('gerar-fila-diario', 'info', 'início', null);
-  const r = await fetch(BASE_URL+'/api/fila', {
-    method: 'POST',
-    headers: { 'Content-Type':'application/json', Authorization:'Bearer '+(process.env.CRON_SECRET||SUPA_KEY||'') },
-    body: JSON.stringify({ canais:['email','whatsapp','linkedin_convite'], limite:40, sem_ia:true })
-  });
-  const data = await r.json();
-  const ctx = {gerados:data.gerados||0, erros:data.erros?.length||0, ms:Date.now()-inicio};
-  console.log('[cron:gerar-fila-diario]', ctx.gerados, 'gerados', ctx.erros, 'erros');
+
+  // Pré-check: menos de 30 rascunhos na fila
+  const rascRows = await sg('crm_fila?status=eq.rascunho&select=id&limit=31');
+  const qtdRascunhos = Array.isArray(rascRows) ? rascRows.length : 0;
+  if (qtdRascunhos >= 30) {
+    const ctx = { motivo: 'fila_cheia', qtdRascunhos, ms: Date.now()-inicio };
+    await logCron('gerar-fila-diario', 'info', 'fim — pulado', ctx);
+    return res.status(200).json({ ok:true, pulado:true, ...ctx });
+  }
+
+  // Agências com ≥3 templates ativos por canal
+  const templates = await sg('crm_templates?ativo=eq.true&select=agencia_id,canal&limit=500');
+  const agCanalCount = {};
+  for (const t of (Array.isArray(templates) ? templates : [])) {
+    const key = t.agencia_id + ':' + t.canal;
+    agCanalCount[key] = (agCanalCount[key] || 0) + 1;
+  }
+  const agElegiveis = new Set();
+  for (const [key, cnt] of Object.entries(agCanalCount)) {
+    if (cnt >= 3) agElegiveis.add(key.split(':')[0]);
+  }
+  if (agElegiveis.size === 0) {
+    const ctx = { motivo: 'sem_agencias_elegiveis', qtdRascunhos, ms: Date.now()-inicio };
+    await logCron('gerar-fila-diario', 'info', 'fim — pulado', ctx);
+    return res.status(200).json({ ok:true, pulado:true, ...ctx });
+  }
+
+  // Gerar por canal com limites: email=25, whatsapp=10, linkedin_convite=10
+  const canaisConfig = [
+    { canal: 'email',            limite: 25 },
+    { canal: 'whatsapp',         limite: 10 },
+    { canal: 'linkedin_convite', limite: 10 }
+  ];
+  let totalGerados = 0;
+  const porCanal   = {};
+  const descartes  = {};
+
+  for (const { canal, limite } of canaisConfig) {
+    const agParaCanal = [...agElegiveis].filter(id => (agCanalCount[id + ':' + canal] || 0) >= 3);
+    if (agParaCanal.length === 0) {
+      descartes[canal] = 'sem_agencia_com_3_templates';
+      continue;
+    }
+    try {
+      const r = await fetch(BASE_URL + '/api/fila', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (process.env.CRON_SECRET || '') },
+        body: JSON.stringify({ canais: [canal], limite, sem_ia: true })
+      });
+      const data = r.ok ? await r.json().catch(() => ({})) : {};
+      const gerados = data.gerados || 0;
+      porCanal[canal] = gerados;
+      totalGerados += gerados;
+      if (data.erros?.length) descartes[canal] = data.erros.slice(0, 3).map(String).join('; ');
+    } catch (e) {
+      descartes[canal] = e.message;
+    }
+  }
+
+  // Resumo por agência: conta rascunhos gerados hoje
+  const hojeISO = new Date().toISOString().slice(0, 10);
+  const novosFila = await sg('crm_fila?status=eq.rascunho&gerado_em=gte.' + hojeISO + 'T00:00:00&select=agencia_id,canal&limit=500');
+  const porAgencia = {};
+  for (const item of (Array.isArray(novosFila) ? novosFila : [])) {
+    if (!item.agencia_id) continue;
+    if (!porAgencia[item.agencia_id]) porAgencia[item.agencia_id] = {};
+    porAgencia[item.agencia_id][item.canal] = (porAgencia[item.agencia_id][item.canal] || 0) + 1;
+  }
+
+  const ctx = { gerados: totalGerados, qtdRascunhos, porCanal, porAgencia, descartes, ms: Date.now()-inicio };
+  console.log('[cron:gerar-fila-diario]', totalGerados, 'gerados', JSON.stringify(porCanal));
   await logCron('gerar-fila-diario', 'info', 'fim', ctx);
-  return res.status(200).json({ ok:true, ...data });
+  return res.status(200).json({ ok: true, ...ctx });
 }
 
 // ── job: enriquecimento-diario ───────────────────────────────────────────────
-async function lushaCall(nome, empresa_nome) {
-  if (!LUSHA_KEY || !nome) return null;
+
+// Lusha V3: busca contatos por domínio/empresa
+async function lushaSearchV3(dominio, empresa_nome) {
+  if (!LUSHA_KEY) return [];
+  const target = dominio
+    ? { companies: { include: { domains: [dominio] } } }
+    : { companies: { include: { name: empresa_nome } } };
   try {
-    const [fn,...ln] = nome.split(' ');
-    const r = await fetch('https://api.lusha.com/person', { method:'POST', headers:{api_key:LUSHA_KEY,'Content-Type':'application/json'}, body:JSON.stringify({firstName:fn,lastName:ln.join(' '),company:empresa_nome||''}) });
-    if (!r.ok) return null;
-    return r.json();
-  } catch(e) { return null; }
+    const r = await fetch('https://api.lusha.com/v3/contacts/prospecting', {
+      method: 'POST',
+      headers: { api_key: LUSHA_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        filters: {
+          contacts: { include: { seniority: [9,10,8,6], departments: ['Marketing','General Management'] } },
+          ...target
+        },
+        pagination: { page: 0, size: 5 }
+      })
+    });
+    if (!r.ok) return [];
+    const d = await r.json();
+    return Array.isArray(d.contacts) ? d.contacts : [];
+  } catch (_) { return []; }
 }
-async function empIdsComEstrelas(threshold) {
-  const rows = await sg(`crm_empresa_agencia_estrelas?or=(estrelas_manual.gte.${threshold},estrelas_calculadas.gte.${threshold})&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=500`);
-  const ids = new Set();
-  for (const r of (Array.isArray(rows)?rows:[])) { const eff=r.estrelas_manual!=null?Number(r.estrelas_manual):Number(r.estrelas_calculadas||0); if(eff>=threshold)ids.add(r.empresa_id); }
-  return [...ids];
+
+// Lusha V3: revela email/telefone de contatos (max 5 por chamada = 1 crédito revealEmail + revealPhone cada)
+async function lushaRevealV3(contacts) {
+  if (!LUSHA_KEY || !contacts.length) return [];
+  try {
+    const r = await fetch('https://api.lusha.com/v3/contacts/enrich', {
+      method: 'POST',
+      headers: { api_key: LUSHA_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ contacts: contacts.slice(0, 2), reveal: ['emails', 'phones'] })
+    });
+    if (!r.ok) return [];
+    const d = await r.json();
+    return Array.isArray(d.results) ? d.results : [];
+  } catch (_) { return []; }
 }
+
+// Lusha V3: créditos restantes
+async function lushaCreditsV3() {
+  if (!LUSHA_KEY) return null;
+  try {
+    const r = await fetch('https://api.lusha.com/v3/account/usage', { headers: { api_key: LUSHA_KEY } });
+    return r.ok ? r.json() : null;
+  } catch (_) { return null; }
+}
+
 async function jobEnriquecimento(req, res) {
   const inicio = Date.now();
   await logCron('enriquecimento-diario', 'info', 'início', null);
-  if (!LUSHA_KEY) return res.status(200).json({ ok:true, msg:'LUSHA_API_KEY não configurada' });
+  if (!LUSHA_KEY) {
+    await logCron('enriquecimento-diario', 'info', 'fim — pulado', { motivo: 'LUSHA_KEY_ausente' });
+    return res.status(200).json({ ok: true, pulado: true, motivo: 'LUSHA_KEY_ausente' });
+  }
+
+  // Teto diário de crm_configuracoes (padrão 10)
+  const cfgRows = await sg('crm_configuracoes?chave=eq.enriquecimento_diario_max&select=valor&limit=1');
+  const teto = Array.isArray(cfgRows) && cfgRows[0]?.valor ? Number(cfgRows[0].valor) : 10;
+
+  // Setores com mais reuniões no histórico → prioridade
+  const kanbanReunioes = await sg('crm_kanban?col=eq.reuniao&select=empresa_id&limit=500');
+  const reunioesPorEmpresa = {};
+  for (const k of (Array.isArray(kanbanReunioes) ? kanbanReunioes : [])) {
+    if (k.empresa_id) reunioesPorEmpresa[k.empresa_id] = (reunioesPorEmpresa[k.empresa_id] || 0) + 1;
+  }
+  // Empresas com decisores sem email, ordenadas por prioridade
+  const semEmail = await sg('crm_decisores?email=is.null&select=id,nome,empresa_id,linkedin_url&order=ultimo_toque_em.desc.nullslast&limit=200');
+  const decisoresSemEmail = Array.isArray(semEmail) ? semEmail : [];
+  if (decisoresSemEmail.length === 0) {
+    const creditos = await lushaCreditsV3();
+    const ctx = { revelados: 0, teto, motivo: 'nenhum_decisor_sem_email', creditos_restantes: creditos?.credits?.balance ?? null, ms: Date.now()-inicio };
+    await logCron('enriquecimento-diario', 'info', 'fim', ctx);
+    return res.status(200).json({ ok: true, ...ctx });
+  }
+
+  // Buscar nomes das empresas
+  const empIds = [...new Set(decisoresSemEmail.map(d => d.empresa_id).filter(Boolean))].slice(0, 100);
+  const empRows = empIds.length > 0 ? await sg(`crm_empresas?id=in.(${empIds.join(',')})&select=id,nome,dominio,setor&limit=100`) : [];
+  const empMap  = {};
+  for (const e of (Array.isArray(empRows) ? empRows : [])) empMap[e.id] = e;
+
+  // Ordenar: empresas com mais reuniões no histórico primeiro
+  decisoresSemEmail.sort((a, b) => {
+    const ra = reunioesPorEmpresa[a.empresa_id] || 0;
+    const rb = reunioesPorEmpresa[b.empresa_id] || 0;
+    return rb - ra;
+  });
+
   let revelados = 0;
-  const ids3 = await empIdsComEstrelas(3);
-  if (ids3.length > 0) {
-    const inClause = ids3.slice(0,100).join(',');
-    const semEmail = await sg(`crm_decisores?email=is.null&empresa_id=in.(${inClause})&select=id,nome,empresa_id&limit=20`);
-    const empNomes = await sg(`crm_empresas?id=in.(${ids3.slice(0,50).join(',')})&select=id,nome`);
-    const empNomeMap = {}; for (const e of (Array.isArray(empNomes)?empNomes:[])) empNomeMap[e.id]=e.nome;
-    for (const d of (Array.isArray(semEmail)?semEmail:[])) {
-      if (revelados >= 1400) break;
-      const data = await lushaCall(d.nome, empNomeMap[d.empresa_id]||'');
-      const email = data?.emailAddresses?.[0]?.emailAddress;
-      if (email) { await sp('crm_decisores?id=eq.'+d.id, {email,fonte:'lusha',atualizado_em:new Date().toISOString()}, 'PATCH'); revelados++; }
-      await new Promise(r=>setTimeout(r,500));
+  let creditosUsados = 0;
+  const reveladosPorEmpresa = {};
+
+  for (const dec of decisoresSemEmail) {
+    if (revelados >= teto) break;
+
+    // Máximo 2 revelações por empresa
+    const empRev = reveladosPorEmpresa[dec.empresa_id] || 0;
+    if (empRev >= 2) continue;
+
+    const emp = empMap[dec.empresa_id] || {};
+    const dominio = emp.dominio || null;
+
+    // Buscar contato no Lusha V3
+    const contacts = await lushaSearchV3(dominio, emp.nome || '');
+    await new Promise(r => setTimeout(r, 400));
+
+    if (!contacts.length) continue;
+
+    // Revelar email/telefone
+    const results = await lushaRevealV3(contacts);
+    await new Promise(r => setTimeout(r, 400));
+    creditosUsados += results.length * 2; // revealEmail + revealPhone por contato
+
+    for (const result of results) {
+      const email = result.email || result.emailAddresses?.[0]?.emailAddress || null;
+      const tel   = result.phoneNumber || result.phoneNumbers?.[0]?.internationalNumber || null;
+      const linkedinUrl = result.linkedin_url || result.linkedinUrl || null;
+
+      if (!email && !tel) continue;
+
+      // Tenta casar com decisor existente ou cria um novo
+      const [fn, ...ln] = (result.firstName || '').split(' ');
+      const nomeCompleto = [result.firstName, result.lastName].filter(Boolean).join(' ');
+      const decCorrespondente = decisoresSemEmail.find(d =>
+        d.empresa_id === dec.empresa_id &&
+        nomeCompleto && d.nome && d.nome.toLowerCase().includes(result.lastName?.toLowerCase())
+      ) || dec;
+
+      const patch = { atualizado_em: new Date().toISOString(), fonte: 'lusha_v3' };
+      if (email) patch.email = email;
+      if (tel)   patch.wa   = tel;
+      if (linkedinUrl && !decCorrespondente.linkedin_url) patch.linkedin_url = linkedinUrl;
+
+      await sp('crm_decisores?id=eq.' + decCorrespondente.id, patch, 'PATCH');
+      revelados++;
+      reveladosPorEmpresa[dec.empresa_id] = empRev + 1;
+      if (revelados >= teto) break;
     }
   }
-  const ids5 = await empIdsComEstrelas(5);
-  if (ids5.length > 0) {
-    const inClause = ids5.slice(0,50).join(',');
-    const semWA = await sg(`crm_decisores?wa=is.null&empresa_id=in.(${inClause})&select=id,nome,empresa_id&limit=10`);
-    const empNomes5 = await sg(`crm_empresas?id=in.(${ids5.slice(0,50).join(',')})&select=id,nome`);
-    const empNomeMap5 = {}; for (const e of (Array.isArray(empNomes5)?empNomes5:[])) empNomeMap5[e.id]=e.nome;
-    for (const d of (Array.isArray(semWA)?semWA:[])) {
-      if (revelados >= 1400) break;
-      const data = await lushaCall(d.nome, empNomeMap5[d.empresa_id]||'');
-      const tel = data?.phoneNumbers?.[0]?.internationalNumber;
-      if (tel) { await sp('crm_decisores?id=eq.'+d.id, {wa:tel,fonte:'lusha',atualizado_em:new Date().toISOString()}, 'PATCH'); revelados++; }
-      await new Promise(r=>setTimeout(r,500));
-    }
-  }
-  const ctx_enrich = {revelados, empresas_gte3:ids3.length, empresas_gte5:ids5.length, ms:Date.now()-inicio};
-  console.log('[cron:enriquecimento-diario]', revelados, 'revelações');
+
+  const creditosInfo = await lushaCreditsV3();
+  const ctx_enrich = {
+    revelados, teto, creditos_usados: creditosUsados,
+    creditos_restantes: creditosInfo?.credits?.balance ?? null,
+    empresas_tentadas: Object.keys(reveladosPorEmpresa).length,
+    ms: Date.now()-inicio
+  };
+  console.log('[cron:enriquecimento-diario]', revelados, 'revelações,', creditosUsados, 'créditos usados');
   await logCron('enriquecimento-diario', 'info', 'fim', ctx_enrich);
-  return res.status(200).json({ ok:true, revelados, empresas_gte3:ids3.length, empresas_e5:ids5.length });
+  return res.status(200).json({ ok: true, ...ctx_enrich });
 }
 
 // ── job: noticias-semanal ────────────────────────────────────────────────────
@@ -201,6 +364,41 @@ async function jobNoticias(req, res) {
 function semanaInicio(ref) {
   const d = new Date(ref||Date.now()); d.setDate(d.getDate()-(d.getDay()===0?6:d.getDay()-1)); d.setHours(0,0,0,0); return d;
 }
+
+function ptDate(iso) {
+  const [y,m,d] = (iso||'').slice(0,10).split('-');
+  return d+'/'+m+'/'+y;
+}
+
+function gerarResumoTexto(dados) {
+  const linhas = [];
+  const sem = ptDate(dados.semana_inicio);
+  linhas.push('Semana de ' + sem + '.');
+  linhas.push('Foram enviados ' + dados.enviados_total + ' toques no total, com ' +
+    dados.respostas_total + ' resposta(s) e taxa de resposta de ' + dados.taxa_resposta_pct + '%.');
+  linhas.push((dados.reunioes_total || 0) + ' reuniao(oes) agendada(s) na semana.');
+
+  if (dados.empresas_novas > 0) {
+    linhas.push(dados.empresas_novas + ' empresa(s) nova(s) foram abordadas pela primeira vez.');
+  }
+
+  if (dados.por_agencia) {
+    const ativas = Object.entries(dados.por_agencia).filter(([,n]) => n.enviados > 0);
+    for (const [ag, nums] of ativas) {
+      linhas.push('Agencia ' + ag + ': ' + nums.enviados + ' enviado(s), ' +
+        nums.respostas + ' resposta(s), ' + nums.reunioes + ' reuniao(oes).');
+    }
+  }
+
+  if (dados.top5?.length) {
+    linhas.push('As cinco empresas com maior temperatura na semana: ' + dados.top5.join(', ') + '.');
+  }
+
+  if (dados.aviso) linhas.push('Aviso: ' + dados.aviso + '.');
+
+  return linhas.join('\n');
+}
+
 async function jobFechamento(req, res) {
   const inicio = Date.now();
   await logCron('fechamento-sexta', 'info', 'início', null);
@@ -208,22 +406,78 @@ async function jobFechamento(req, res) {
   const diaBRT = new Date(now.toLocaleString('en-US',{timeZone:'America/Sao_Paulo'}));
   const isSexta = diaBRT.getDay()===5;
   const semSeg = semanaInicio(now);
-  const kanbanRows = await sg(`crm_kanban?select=id,col,agencia_id,responsavel,atualizado_em&atualizado_em=gte.${semSeg.toISOString()}&limit=500`);
+
+  const [kanbanRows, filaRows, agencias, empresasNovas, toquesSem] = await Promise.all([
+    sg(`crm_kanban?select=id,col,agencia_id,atualizado_em&atualizado_em=gte.${semSeg.toISOString()}&limit=500`),
+    sg(`crm_fila?select=id,canal,status,agencia_id,empresa_id&enviado_em=gte.${semSeg.toISOString()}&limit=2000`),
+    sg('crm_agencias?select=id,nome&limit=20'),
+    sg(`crm_empresas?criado_em=gte.${semSeg.toISOString()}&select=id,nome&limit=50`),
+    sg(`crm_toques?data=gte.${semSeg.toISOString().slice(0,10)}&select=empresa_id,resultado&limit=2000`)
+  ]);
+
   const reunioesSem = (Array.isArray(kanbanRows)?kanbanRows:[]).filter(c=>c.col==='reuniao');
-  const filaRows = await sg(`crm_fila?select=id,canal,status,agencia_id&enviado_em=gte.${semSeg.toISOString()}&limit=2000`);
   const fila = Array.isArray(filaRows)?filaRows:[];
-  const agencias = await sg('crm_agencias?select=id,nome&limit=20');
+
+  // Top 5 empresas mais quentes: soma de toques na semana + reuniões
+  const scoreEmpresa = {};
+  for (const f of fila) {
+    if (f.empresa_id) scoreEmpresa[f.empresa_id] = (scoreEmpresa[f.empresa_id]||0) + 1;
+  }
+  for (const t of (Array.isArray(toquesSem)?toquesSem:[])) {
+    if (t.empresa_id) scoreEmpresa[t.empresa_id] = (scoreEmpresa[t.empresa_id]||0) + 2;
+  }
+  for (const k of reunioesSem) {
+    if (k.agencia_id) scoreEmpresa[k.agencia_id] = (scoreEmpresa[k.agencia_id]||0) + 5;
+  }
+  const top5EmpIds = Object.entries(scoreEmpresa).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([id])=>id);
+  let top5Nomes = [];
+  if (top5EmpIds.length > 0) {
+    const top5Rows = await sg(`crm_empresas?id=in.(${top5EmpIds.join(',')})&select=id,nome`);
+    const nomeMap = {};
+    for (const e of (Array.isArray(top5Rows)?top5Rows:[])) nomeMap[e.id]=e.nome;
+    top5Nomes = top5EmpIds.map(id => nomeMap[id]||id);
+  }
+
   const byAg = {};
   for (const ag of (Array.isArray(agencias)?agencias:[])) {
-    const agFila=fila.filter(f=>f.agencia_id===ag.id);
-    byAg[ag.nome||ag.id]={reunioes:reunioesSem.filter(c=>(c.agencia_id||c.responsavel||'').toLowerCase().includes(ag.id.toLowerCase())).length,enviados:agFila.length,respostas:agFila.filter(f=>f.status==='respondido').length};
+    const agFila = fila.filter(f=>f.agencia_id===ag.id);
+    byAg[ag.nome||ag.id] = {
+      reunioes: reunioesSem.filter(c=>c.agencia_id===ag.id).length,
+      enviados: agFila.length,
+      respostas: agFila.filter(f=>f.status==='respondido').length
+    };
   }
-  const dados = {semana_inicio:semSeg.toISOString().slice(0,10),gerado_em:now.toISOString(),reunioes_total:reunioesSem.length,enviados_total:fila.length,respostas_total:fila.filter(x=>x.status==='respondido').length,taxa_resposta_pct:fila.length>0?Math.round(fila.filter(x=>x.status==='respondido').length/fila.length*100):0,por_agencia:byAg,aviso:isSexta?null:'Gerado fora de sexta (manual)'};
-  const upsertRes = await fetch(SUPA_URL+'/rest/v1/crm_relatorios',{method:'POST',headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},body:JSON.stringify({tipo:'semanal',semana_inicio:semSeg.toISOString().slice(0,10),gerado_em:now.toISOString(),dados})});
+
+  // Por canal
+  const porCanal = {};
+  for (const f of fila) {
+    if (f.canal) porCanal[f.canal] = (porCanal[f.canal]||0)+1;
+  }
+
+  const dados = {
+    semana_inicio:       semSeg.toISOString().slice(0,10),
+    gerado_em:           now.toISOString(),
+    reunioes_total:      reunioesSem.length,
+    enviados_total:      fila.length,
+    respostas_total:     fila.filter(x=>x.status==='respondido').length,
+    taxa_resposta_pct:   fila.length>0 ? Math.round(fila.filter(x=>x.status==='respondido').length/fila.length*100) : 0,
+    empresas_novas:      Array.isArray(empresasNovas) ? empresasNovas.length : 0,
+    por_canal:           porCanal,
+    por_agencia:         byAg,
+    top5:                top5Nomes,
+    aviso:               isSexta ? null : 'Gerado fora de sexta (manual)'
+  };
+  dados.resumo_texto = gerarResumoTexto(dados);
+
+  const upsertRes = await fetch(SUPA_URL+'/rest/v1/crm_relatorios', {
+    method:'POST',
+    headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},
+    body:JSON.stringify({tipo:'semanal', semana_inicio:semSeg.toISOString().slice(0,10), gerado_em:now.toISOString(), dados})
+  });
   let token = null;
   if (upsertRes.ok) { const rows=await upsertRes.json(); token=Array.isArray(rows)&&rows[0]?rows[0].token:null; }
   const linkRelatorio = token ? `${BASE_URL}/api/relatorio/${token}` : null;
-  const ctx_fech = {reunioes:dados.reunioes_total,enviados:dados.enviados_total,respostas:dados.respostas_total,token,ms:Date.now()-inicio};
+  const ctx_fech = {reunioes:dados.reunioes_total,enviados:dados.enviados_total,respostas:dados.respostas_total,top5:top5Nomes,token,ms:Date.now()-inicio};
   console.log('[cron:fechamento-sexta]', ctx_fech);
   await logCron('fechamento-sexta', 'info', 'fim', ctx_fech);
   return res.status(200).json({ok:true,token,link:linkRelatorio,...dados});

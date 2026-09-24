@@ -5226,6 +5226,7 @@ function App() {
     if (tab) setAgenciaTab(tab);
   };
   const [alertaBadge, setAlertaBadge] = useState(() => lsGet("gh_alertas_v2", []).filter(a => !a.lido).length);
+  const [cronAlerta, setCronAlerta] = useState(false);
   useEffect(() => {
     function handleAbordagemCopiloto(e) {
       const p = e.detail || {};
@@ -5304,6 +5305,23 @@ function App() {
       if (localStorage.getItem('gh_graph_connected') || localStorage.getItem('gh_graph_error')) navTo('fila', null, null);
     } catch(e) {}
   }, []);
+  // Alerta cron: verifica se crons rodaram no dia esperado
+  useEffect(() => {
+    if (!curUser) return;
+    const hoje = new Date().toISOString().slice(0, 10);
+    const SUPA_A = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
+    const jwt = window.__supaSession?.access_token || SUPA_A;
+    fetch('https://uetltlnjmobeiunxfsqi.supabase.co/rest/v1/crm_logs?origem=like.cron:*&criado_em=gte=' + hoje + 'T00:00:00&order=criado_em.desc&limit=100', {
+      headers: { apikey: SUPA_A, Authorization: 'Bearer ' + jwt }
+    })
+    .then(r => r.ok ? r.json() : [])
+    .then(logs => {
+      if (typeof window.checkCronAlertFromLogs === 'function') {
+        setCronAlerta(window.checkCronAlertFromLogs(logs));
+      }
+    })
+    .catch(() => {});
+  }, [curUser]);
   useEffect(() => {
     // Auto-show config on first load if no Claude key
     if (!getClaudeKey()) {
@@ -5538,7 +5556,9 @@ function App() {
       color: "#555"
     },
     onClick: () => saveSt("ghub_res_review", new Date().toISOString())
-  }, "Dispensar")), /*#__PURE__*/React.createElement("div", {
+  }, "Dispensar")), cronAlerta && React.createElement("div", {
+  style: { background: '#E24B4A', color: '#fff', padding: '6px 16px', fontSize: 10, fontFamily: 'IBM Plex Mono,monospace', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }
+}, "⚠ Cron com falha ou atrasado. Verifique a tela Atividade."), /*#__PURE__*/React.createElement("div", {
     className: "topbar"
   }, /*#__PURE__*/React.createElement("div", {
     className: "brand"
@@ -5568,7 +5588,7 @@ function App() {
     }
   }, "GALERIA HOLDING")),
   React.createElement("div", { style:{ display:'flex', alignItems:'stretch', flex:1 } },
-    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['templates','Templates'],['copiloto','Copiloto'],['ferramentas','Ferramentas']].map(([s, l]) =>
+    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['ferramentas','Ferramentas']].map(([s, l]) =>
       React.createElement("div", {
         key: s,
         onClick: () => { if (s === 'ferramentas') { setToolsOpen(true); } else { navTo(s, null, null); } },
@@ -5603,7 +5623,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
