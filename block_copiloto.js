@@ -160,9 +160,10 @@ function CopiloView() {
   const [input, setInput]                 = useState('');
   const [streaming, setStreaming]         = useState(false);
   const [showSidebar, setShowSidebar]     = useState(false);
-  const bottomRef  = useRef(null);
-  const inputRef   = useRef(null);
-  const abortRef   = useRef(null);
+  const bottomRef       = useRef(null);
+  const inputRef        = useRef(null);
+  const abortRef        = useRef(null);
+  const skipLoadRef     = useRef(false); // skip DB reload when activeId set from stream
 
   const isMobile = window.innerWidth < 768;
 
@@ -183,6 +184,7 @@ function CopiloView() {
   // Load messages when active conversation changes
   useEffect(() => {
     if (!activeId) { setMessages([]); return; }
+    if (skipLoadRef.current) { skipLoadRef.current = false; return; } // set from stream — keep in-memory confirms
     (async () => {
       const jwt = getJwt();
       const r = await fetch('https://uetltlnjmobeiunxfsqi.supabase.co/rest/v1/crm_copiloto_conversas?id=eq.' + activeId + '&select=mensagens&limit=1', {
@@ -280,7 +282,7 @@ function CopiloView() {
           } else if (ev.t === 'abordar') {
             window.dispatchEvent(new CustomEvent('copiloto:abordar', { detail: ev.params }));
           } else if (ev.t === 'done') {
-            if (ev.conversaId && ev.conversaId !== activeId) { setActiveId(ev.conversaId); loadConversas(); }
+            if (ev.conversaId && ev.conversaId !== activeId) { skipLoadRef.current = true; setActiveId(ev.conversaId); loadConversas(); }
             else { loadConversas(); }
             setMessages(prev => prev.map(m => m._id === streamId ? { ...m, _streaming: false } : m));
           } else if (ev.t === 'error') {
