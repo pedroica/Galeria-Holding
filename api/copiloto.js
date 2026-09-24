@@ -200,7 +200,7 @@ const ACTION_TOOLS = ['gerar_fila', 'registrar_resultado', 'abordar'];
 function buildSystem() {
   const spDate = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'full', timeStyle: 'short' });
   const h   = KNOWLEDGE.holding || {};
-  const ags  = (KNOWLEDGE.agencias || []).map(a => '- ' + a.nome + ': ' + (a.especialidade || a.descricao || '')).join('\n');
+  const ags  = (KNOWLEDGE.agencias || []).map(a => '- ' + a.nome + (a.id ? ' [id:' + a.id + ']' : '') + ': ' + (a.especialidade || a.descricao || '')).join('\n');
   const prods = (KNOWLEDGE.produtos_proprietarios || []).map(p => '- ' + p.nome + ' (' + p.agencia + '): ' + p.descricao).join('\n');
   return `Você é o Copiloto de Prospecção da Galeria Holding. Hoje é ${spDate} (horário de São Paulo).
 Você está assistindo ${h.responsavel_prospeccao || 'Pedro Ica'}, ${h.cargo_responsavel || 'Sócio e Head de Growth'}.
