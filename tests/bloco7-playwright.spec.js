@@ -201,7 +201,7 @@ test.describe('Bloco 7 — Tela Pipeline Global', () => {
     await page.goto(APP_URL);
     await page.getByText('Pipeline', { exact: true }).first().click();
     await page.waitForTimeout(2500);
-    await expect(page.getByText(/PROSPECT|PROPOSTA|NEGOCIAÇÃO/)).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/PROSPECT|PROPOSTA|NEGOCIAÇÃO/).first()).toBeVisible({ timeout: 10000 });
   });
 
   test('nav item Admin existe na topbar', async ({ page }) => {
