@@ -3806,7 +3806,11 @@ function FilaDoDia() {
       var raw = d.wa||'';
       var digits = raw.replace(/\D/g,'');
       if (!digits||digits.length<10){
-        notify('⚠ Número inválido: '+(raw||'vazio — verifique o campo wa deste decisor'),'#E24B4A');
+        if (!raw) {
+          notify('📵 Sem número WhatsApp para este contato — tente o canal Email ou LinkedIn','#FBBF24');
+        } else {
+          notify('⚠ Número WA inválido: '+raw+' — corrija na Base ou use outro canal','#E24B4A');
+        }
         return;
       }
       // Normaliza: se já tem +55 (12-13 dígitos iniciando com 55), usa como está
