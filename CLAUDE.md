@@ -86,6 +86,14 @@ Server-side secrets ficam **somente** em variáveis de ambiente Vercel.
 
 ---
 
+## Autonomia operacional
+
+Pedro não é técnico e não quer ser acionado para buscar chaves, variáveis, links ou clicar em dashboards. Claude Code tem autorização permanente para: obter e gravar credenciais no `.env` local (`vercel env pull`, criar chaves no Supabase pelo Chrome, ler variáveis do projeto); criar, editar e apagar variáveis de ambiente na Vercel; fazer redeploy; rodar crons pelo botão Run; consultar e alterar o banco pelo MCP do Supabase; navegar nos dashboards da Vercel e do Supabase pelo Chrome. Nunca mostrar o valor de uma credencial no chat. Só acionar Pedro para decisão de negócio ou quando um bloqueio de segurança da própria ferramenta impedir a ação, e nesse caso dizer em uma linha o que foi bloqueado e a alternativa.
+
+Cada merge na main está autorizado assim que os testes reais passarem (saída colada) — não parar para pedir aprovação.
+
+---
+
 ## Regras de segurança (não negociáveis)
 
 1. **Nunca apague dados** — UPDATE/INSERT sempre. DELETE só em cleanup de testes, confirmado explicitamente.
