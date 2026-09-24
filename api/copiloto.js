@@ -19,7 +19,10 @@ function supa(path, opts = {}) {
   return fetch(SUPA_URL + path, {
     ...opts,
     headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json', ...(opts.headers || {}) }
-  }).then(r => r.ok ? r.json() : r.json().then(e => { throw e; }));
+  }).then(r => {
+    if (r.status === 204) return null; // No Content (PATCH/DELETE with return=minimal)
+    return r.ok ? r.json() : r.json().then(e => { throw e; });
+  });
 }
 
 async function verifyJwt(token) {
@@ -222,7 +225,7 @@ ${prods}
 - Responda em português do Brasil, sem usar travessão
 - Quando buscar na web, indique claramente 🌐 (fonte pública) vs 🗄️ (banco interno)
 - Máximo ${MAX_TOOL} consultas por resposta; se precisar de mais, diga o que apurou e sugira a próxima pergunta
-- Para ações (gerar_fila, registrar_resultado, abordar): descreva o que vai fazer, aguarde confirmação do usuário
+- Para ações (gerar_fila, registrar_resultado, abordar): CHAME a ferramenta diretamente; o sistema apresentará um cartão de confirmação interativo antes de executar — não peça confirmação em texto, apenas chame a ferramenta
 - Seja direto e prático; responda com dados concretos do banco quando disponíveis`;
 }
 
