@@ -506,6 +506,7 @@ select.kes-input{cursor:pointer}
 .kes-btn-danger:hover{background:rgba(226,75,74,.2)}
 .kes-divider{height:.5px;background:#2D2D44;margin:14px 0}
 
+.tb-nav{overflow:hidden}
 /* mobile */
 @media(max-width:768px){
   .kes-cols,.fcs-cols{gap:8px}
@@ -517,6 +518,8 @@ select.kes-input{cursor:pointer}
   body{overflow-x:hidden;overflow-y:auto}
   .topbar{height:auto;min-height:50px;flex-wrap:wrap}
   .tb-right{flex-wrap:wrap;padding:4px 8px;gap:3px!important}
+  .tb-nav{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+  .tb-nav::-webkit-scrollbar{display:none}
 }
 
 /* ── MOBILE V3 ───────────────────────────────────────────────── */

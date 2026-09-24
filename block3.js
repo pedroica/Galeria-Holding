@@ -3806,7 +3806,11 @@ function FilaDoDia() {
       var raw = d.wa||'';
       var digits = raw.replace(/\D/g,'');
       if (!digits||digits.length<10){
-        notify('⚠ Número inválido: '+(raw||'vazio — verifique o campo wa deste decisor'),'#E24B4A');
+        if (!raw) {
+          notify('📵 Sem número WhatsApp para este contato — tente o canal Email ou LinkedIn','#FBBF24');
+        } else {
+          notify('⚠ Número WA inválido: '+raw+' — corrija na Base ou use outro canal','#E24B4A');
+        }
         return;
       }
       // Normaliza: se já tem +55 (12-13 dígitos iniciando com 55), usa como está
@@ -5144,6 +5148,11 @@ function MagicLinkScreen() {
   const [sent, setSent] = useState(false);
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
+  // Detect session expiry: CRM data exists but no auth token
+  const sessionExpired = !!localStorage.getItem('ghub_session_warn') ||
+    (!localStorage.getItem('sb-uetltlnjmobeiunxfsqi-auth-token') &&
+     (localStorage.getItem('ghub_accs') || localStorage.getItem('ghub_me_session')));
+  useEffect(() => { if (sessionExpired) localStorage.removeItem('ghub_session_warn'); }, []);
   const send = async () => {
     if (!email || !email.includes("@")) { setErr("E-mail inválido."); return; }
     setErr(""); setLoading(true);
@@ -5168,6 +5177,7 @@ function MagicLinkScreen() {
         /*#__PURE__*/React.createElement("div", { style: { fontSize:20,fontWeight:500,color:"#F5F5F5",letterSpacing:"-.3px" } }, "Galeria Holding"),
         /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:9,color:"#9B9BB4",letterSpacing:2,marginTop:4 } }, "CENTRAL COMERCIAL")
       ),
+      sessionExpired && /*#__PURE__*/React.createElement("div", { style: { ...s,fontSize:10,color:"#FBBF24",background:"rgba(251,191,36,.1)",border:".5px solid rgba(251,191,36,.3)",borderRadius:6,padding:"8px 12px",marginBottom:12,textAlign:"center" } }, "⚠ Sessão expirada — faça login novamente"),
       /*#__PURE__*/React.createElement("div", { style: { marginBottom:10 } },
         /*#__PURE__*/React.createElement("label", { style: { ...s,fontSize:9,color:"#9B9BB4",letterSpacing:.5,textTransform:"uppercase",display:"block",marginBottom:5 } }, "E-mail"),
         /*#__PURE__*/React.createElement("input", { className:"gh-input", type:"email", placeholder:"seu@email.com", value:email, onChange:e=>setEmail(e.target.value), onKeyDown:e=>e.key==="Enter"&&send() })
@@ -5650,7 +5660,7 @@ function App() {
       whiteSpace: "nowrap"
     }
   }, "GALERIA HOLDING")),
-  React.createElement("div", { style:{ display:'flex', alignItems:'stretch', flex:1 } },
+  React.createElement("div", { className:"tb-nav", style:{ display:'flex', alignItems:'stretch', flex:1 } },
     [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['pipeline','Pipeline'],['admin','Admin'],['ferramentas','Ferramentas']].map(([s, l]) =>
       React.createElement("div", {
         key: s,
