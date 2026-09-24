@@ -3091,14 +3091,14 @@ function AprovacaoHoje() {
     var temp = (d.temperatura||0)+1;
     supaJwt('/rest/v1/crm_decisores?id=eq.'+d.id, {method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({respondeu:true,temperatura:temp})});
     // Criar card no kanban se não existir
-    supaJwt('/rest/v1/crm_kanban?empresa_id=eq.'+(item.empresa_id||'')+'&agencia_id=eq.'+(item.agencia_id||'')+'&select=id&limit=1')
+    var agSlug = item.agencia_slug || '';
+    supaJwt('/rest/v1/crm_kanban?empresa_id=eq.'+(item.empresa_id||'')+'&agencia_id=eq.'+agSlug+'&select=id&limit=1')
       .then(function(rows){
         if (Array.isArray(rows)&&rows.length===0) {
           var emp=item.crm_empresas||{}; var ag=item.crm_agencias||{};
           supaJwt('/rest/v1/crm_kanban',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({
-            empresa_id:item.empresa_id,agencia_id:item.agencia_id,col:'contato',
-            empresa_nome:emp.nome||'',responsavel:ag.nome||'',
-            origem:'prospeccao',criado_em:new Date().toISOString()
+            tab:agSlug||'holding',col:'contato',nome:emp.nome||'',
+            empresa_id:item.empresa_id,agencia_id:agSlug,responsavel:ag.nome||''
           })});
         }
       });
@@ -3114,16 +3114,16 @@ function AprovacaoHoje() {
     var ag = item.crm_agencias||{};
     var agora = new Date().toISOString();
     supaJwt('/rest/v1/crm_decisores?id=eq.'+d.id, {method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({reuniao_marcada_em:agora,agencia_prospectando:item.agencia_id,temperatura:(d.temperatura||0)+2})});
-    supaJwt('/rest/v1/crm_kanban?empresa_id=eq.'+(item.empresa_id||'')+'&agencia_id=eq.'+(item.agencia_id||'')+'&select=id&limit=1')
+    var agSlug2 = item.agencia_slug || '';
+    supaJwt('/rest/v1/crm_kanban?empresa_id=eq.'+(item.empresa_id||'')+'&agencia_id=eq.'+agSlug2+'&select=id&limit=1')
       .then(function(rows){
         if (Array.isArray(rows)&&rows.length>0) {
           supaJwt('/rest/v1/crm_kanban?id=eq.'+rows[0].id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({col:'reuniao',atualizado_em:agora})});
         } else {
           var emp=item.crm_empresas||{};
           supaJwt('/rest/v1/crm_kanban',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({
-            empresa_id:item.empresa_id,agencia_id:item.agencia_id,col:'reuniao',
-            empresa_nome:emp.nome||'',responsavel:ag.nome||'',
-            origem:'prospeccao',criado_em:agora
+            tab:agSlug2||'holding',col:'reuniao',nome:emp.nome||'',
+            empresa_id:item.empresa_id,agencia_id:agSlug2,responsavel:ag.nome||''
           })});
         }
       });
@@ -6708,7 +6708,7 @@ function TelaHoje() {
     return fetch(SUPA_URL + path, { headers: { apikey: SUPA_ANON, Authorization: 'Bearer ' + jwt(), 'Content-Type': 'application/json' } }).then(function(r){ return r.ok ? r.json() : []; });
   }
 
-  var hoje = new Date(); hoje.setHours(0,0,0,0);
+  var hoje = new Date(new Date().toLocaleString('en-US',{timeZone:'America/Sao_Paulo'})); hoje.setHours(0,0,0,0);
   var hojeIso = hoje.toISOString();
 
   var _stats = React.useState(null); var stats = _stats[0]; var setStats = _stats[1];
@@ -6719,7 +6719,7 @@ function TelaHoje() {
   React.useEffect(function() {
     var pending = sj('/rest/v1/crm_fila?status=eq.rascunho&select=id,canal,custo_usd');
     var enviados = sj('/rest/v1/crm_fila?status=in.(aprovado,enviado)&enviado_em=gte.' + hojeIso + '&select=id,canal');
-    var respondeu = sj('/rest/v1/crm_fila?status=eq.respondido&respondido_em=gte.' + hojeIso + '&select=id,canal');
+    var respondeu = sj('/rest/v1/crm_toques?data=gte.' + hojeIso + '&resultado=in.(respondeu,resposta,reuniao_marcada)&select=id,empresa_id');
     var reunioes = sj('/rest/v1/crm_kanban?col=eq.reuniao&atualizado_em=gte.' + hojeIso + '&select=id,nome,produto');
     var kanbanAll = sj('/rest/v1/crm_kanban?select=id,col,atualizado_em,agencia_id');
     // Card "Semana fechada": busca relatório da semana corrente
@@ -8001,7 +8001,10 @@ function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
             ),
             /*#__PURE__*/React.createElement("div", {style:{marginBottom:8}},
               /*#__PURE__*/React.createElement("div", {style:S.lbl}, 'Resultado'),
-              /*#__PURE__*/React.createElement("input", {style:S.inp, placeholder:'Ex: reunião marcada, proposta enviada, sem resposta…', value:novoT.resultado, onChange:e=>setNovoT(p=>({...p,resultado:e.target.value}))})
+              /*#__PURE__*/React.createElement("select", {style:S.inp, value:novoT.resultado, onChange:e=>setNovoT(p=>({...p,resultado:e.target.value}))},
+                /*#__PURE__*/React.createElement("option", {value:''}, '— selecione —'),
+                ['sem_resposta','respondeu','reuniao_marcada','resposta','reuniao','bounce','visualizado','atendeu','nao_atendeu','caixa_postal'].map(function(r){return /*#__PURE__*/React.createElement("option",{key:r,value:r},r.replace(/_/g,' '));})
+              )
             ),
             /*#__PURE__*/React.createElement("div", {style:{display:'flex',gap:8,marginTop:4}},
               /*#__PURE__*/React.createElement("button", {onClick:addToque,disabled:saving,style:{...S.btn,background:'#34D399',color:'#111',flex:1}}, saving?'Salvando…':'Salvar'),

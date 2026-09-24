@@ -74,7 +74,7 @@ async function toolHistoricoToques({ empresa, decisor, periodo }) {
 }
 
 async function toolItensFila({ status, canal, agencia }) {
-  let q = '/rest/v1/crm_fila?select=id,empresa,decisor,canal,etapa,assunto,status,agencia_id,criado_em&order=criado_em.desc&limit=50';
+  let q = '/rest/v1/crm_fila?select=id,empresa_id,decisor_id,canal,etapa,assunto,status,agencia_id,agencia_slug,gerado_em&order=gerado_em.desc&limit=50';
   if (status)  q += '&status=eq.' + encodeURIComponent(status);
   if (canal)   q += '&canal=eq.' + encodeURIComponent(canal);
   if (agencia) q += '&agencia_id=eq.' + encodeURIComponent(agencia);
@@ -171,8 +171,8 @@ async function toolRegistrarResultado({ empresa, decisor, resultado, nota, data 
     headers: { Prefer: 'return=minimal' },
     body: JSON.stringify({
       empresa_id: emps[0].id, decisor_id: decs?.[0]?.id || null,
-      canal: 'manual', direcao: 'enviado', fonte: 'manual',
-      resultado: resultado || 'outro', nota: nota || '',
+      canal: 'outro', direcao: 'enviado', fonte: 'manual',
+      resultado: resultado || 'sem_resposta', nota: nota || '',
       data: dataStr, criado_em: new Date().toISOString()
     })
   });
@@ -289,7 +289,7 @@ const TOOL_DEFS = [
   { name: 'listar_templates',  description: 'Lista templates de prospecção por agência e canal.',                                                              input_schema: { type: 'object', properties: { agencia: { type: 'string', description: 'UUID da agência' }, canal: { type: 'string', enum: ['email','whatsapp','linkedin_convite','linkedin_mensagem'] } } } },
   { name: 'noticias_empresa',  description: 'Notícias sobre uma empresa armazenadas no CRM (crm_noticias).',                                                  input_schema: { type: 'object', properties: { empresa: { type: 'string' } }, required: ['empresa'] } },
   { name: 'gerar_fila',        description: 'AÇÃO: Gera rascunhos de prospecção em crm_fila. Requer confirmação do usuário antes de executar.',              input_schema: { type: 'object', properties: { n: { type: 'number', description: 'Quantidade (máx 20)' }, agencia_id: { type: 'string', description: 'UUID da agência' }, setor: { type: 'string', description: 'Setor das empresas (ex: varejo, cosméticos, automotivo)' } }, required: ['n'] } },
-  { name: 'registrar_resultado', description: 'AÇÃO: Registra toque/resultado em crm_toques. Requer confirmação.',                                           input_schema: { type: 'object', properties: { empresa: { type: 'string' }, decisor: { type: 'string' }, resultado: { type: 'string', enum: ['sem_resposta','resposta','reuniao_marcada','nao_interesse','outro'] }, nota: { type: 'string' }, data: { type: 'string', description: 'ISO 8601, opcional' } }, required: ['empresa','resultado'] } },
+  { name: 'registrar_resultado', description: 'AÇÃO: Registra toque/resultado em crm_toques. Requer confirmação.',                                           input_schema: { type: 'object', properties: { empresa: { type: 'string' }, decisor: { type: 'string' }, resultado: { type: 'string', enum: ['sem_resposta','respondeu','reuniao_marcada','resposta','reuniao','bounce','visualizado','atendeu','nao_atendeu','caixa_postal'] }, nota: { type: 'string' }, data: { type: 'string', description: 'ISO 8601, opcional' } }, required: ['empresa','resultado'] } },
   { name: 'abordar',               description: 'AÇÃO: Abre o painel Abordar preenchido para um decisor. Requer confirmação.',                                   input_schema: { type: 'object', properties: { decisor_id: { type: 'string' }, decisor_nome: { type: 'string' }, empresa: { type: 'string' }, canal: { type: 'string', enum: ['email','whatsapp','linkedin_convite'] }, agencia_id: { type: 'string' } }, required: ['empresa'] } },
   { name: 'listar_oportunidades',  description: 'Lista oportunidades do pipeline. Filtros: estagio, agencia_id (UUID), oferta, limit.',                           input_schema: { type: 'object', properties: { estagio: { type: 'string', enum: ['Prospect','Reunião marcada','Reunião feita','Briefing','Proposta','Negociação','Ganho','Perdido','Pausado'] }, agencia_id: { type: 'string' }, oferta: { type: 'string' }, limit: { type: 'number' } } } },
   { name: 'criar_oportunidade',    description: 'AÇÃO: Cria oportunidade em crm_oportunidades. Requer confirmação.',                                              input_schema: { type: 'object', properties: { empresa: { type: 'string' }, agencia_id: { type: 'string' }, titulo: { type: 'string' }, oferta: { type: 'string' }, estagio: { type: 'string' }, valor_estimado: { type: 'number' }, origem: { type: 'string', enum: ['abordagem_direta','fila','indicação','inbound','upsell'] } }, required: ['empresa'] } },

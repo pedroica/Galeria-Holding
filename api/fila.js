@@ -46,7 +46,7 @@ function inicioSemana() {
   return seg.toISOString();
 }
 async function contadosHoje(canal) {
-  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const hoje = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })); hoje.setHours(0, 0, 0, 0);
   const rows = await sg(`crm_fila?canal=eq.${canal}&status=in.(aprovado,enviado)&enviado_em=gte.${hoje.toISOString()}&select=id`);
   return Array.isArray(rows) ? rows.length : 0;
 }
@@ -195,7 +195,7 @@ export default async function handler(req, res) {
   for (const ag of agencias) {
     if (totalGerado >= limite) break;
     const scoreMap = await estrelasPorEmpresa(ag.id);
-    const decisores = await sg(`crm_decisores?etapa_cadencia=neq.off&status=neq.inativo&select=*,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,sinal_recente_em,cliente_ativo,agencia_atendendo)&limit=100`);
+    const decisores = await sg(`crm_decisores?etapa_cadencia=neq.off&status=neq.inativo&select=*,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,sinal_recente_em,cliente_ativo,agencia_atendendo)&order=ultimo_toque_em.asc.nullsfirst&limit=2000`);
     if (!Array.isArray(decisores)) continue;
     const empresasVistas = new Set();
     const elegiveis = decisores.filter(d => {

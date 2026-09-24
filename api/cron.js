@@ -296,7 +296,7 @@ async function buscarNoticias(empresa) {
   const q = encodeURIComponent('"'+empresa.nome+'"');
   const url = `https://news.google.com/rss/search?q=${q}&hl=pt-BR&gl=BR&ceid=BR:pt-419&num=3`;
   try {
-    const r = await fetch(url, { headers:{'User-Agent':'Mozilla/5.0'} }); if(!r.ok)return[];
+    const r = await fetch(url, { headers:{'User-Agent':'Mozilla/5.0'}, signal: AbortSignal.timeout(4000) }); if(!r.ok)return[];
     const xml = await r.text();
     const items = [...xml.matchAll(/<item>([\s\S]*?)<\/item>/g)];
     return items.slice(0,3).map(m=>{
@@ -346,8 +346,10 @@ async function jobNoticias(req, res) {
   const empresaRows = await sg(`crm_empresas?id=in.(${selecionados.join(',')})&select=id,nome`);
   const empresas = Array.isArray(empresaRows) ? empresaRows : [];
 
+  const LIMITE_NOTICIAS_MS = 45000;
   let inseridas = 0;
   for (const emp of empresas) {
+    if (Date.now() - inicio > LIMITE_NOTICIAS_MS) break;
     const noticias = await buscarNoticias(emp);
     for (const n of noticias) {
       const ok = await sp('crm_noticias', {empresa_id:emp.id,titulo:n.titulo.slice(0,500),url:n.url||null,fonte:n.fonte||'Google News',data:n.publicado_em?new Date(n.publicado_em).toISOString():null});
@@ -445,13 +447,15 @@ async function jobFechamento(req, res) {
     top5Nomes = top5EmpIds.map(id => nomeMap[id]||id);
   }
 
+  const toques = Array.isArray(toquesSem) ? toquesSem : [];
+  const respostasTotal = toques.filter(t=>['respondeu','resposta','reuniao_marcada','reuniao'].includes(t.resultado)).length;
   const byAg = {};
   for (const ag of (Array.isArray(agencias)?agencias:[])) {
     const agFila = fila.filter(f=>f.agencia_id===ag.id);
     byAg[ag.nome||ag.id] = {
       reunioes: reunioesSem.filter(c=>c.agencia_id===ag.id).length,
       enviados: agFila.length,
-      respostas: agFila.filter(f=>f.status==='respondido').length
+      respostas: respostasTotal
     };
   }
 
