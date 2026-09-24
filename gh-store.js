@@ -406,8 +406,9 @@
       if (!sess) return null;
       var res = await supa.from('crm_toques')
         .insert(Object.assign({}, data, { fonte: 'manual' })).select().single();
+      if (res && res.error) { console.warn('[saveToque] DB error:', res.error.message, data); return null; }
       return (res && res.data) ? res.data : null;
-    } catch(e) { return null; }
+    } catch(e) { console.warn('[saveToque] exception:', e.message, data); return null; }
   }
 
   /* ── Bridge global: localStorage ↔ crm_shared / crm_personal ────────────
