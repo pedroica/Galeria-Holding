@@ -20,7 +20,7 @@ async function abrirCopiloto(page) {
   await expect(page.getByText('Copiloto')).toBeVisible({ timeout: 15000 });
   await page.getByText('Copiloto').click();
   await page.waitForTimeout(1500);
-  await expect(page.getByText('COPILOTO')).toBeVisible({ timeout: 8000 });
+  await expect(page.getByText('🤖 COPILOTO')).toBeVisible({ timeout: 8000 });
 }
 
 test.describe('Bloco 5 — Copiloto', () => {
