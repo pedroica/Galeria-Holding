@@ -7761,7 +7761,7 @@ function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
     if (!novoT.resumo.trim() || !empresaId) return;
     setSaving(true);
     const saved = await (window.__saveToque||(async()=>null))({
-      empresa_id: empresaId, canal: novoT.canal, direcao: 'saida',
+      empresa_id: empresaId, canal: novoT.canal, direcao: 'enviado',
       tema: novoT.tema.trim()||null, resumo: novoT.resumo.trim(),
       resultado: novoT.resultado.trim()||null, data: new Date().toISOString()
     });

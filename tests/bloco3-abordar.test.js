@@ -14,8 +14,9 @@ async function sg(path, opts) {
     ...opts
   });
   if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-  if (r.status === 204) return null;
-  return r.json();
+  if (r.status === 204 || r.headers.get('content-length') === '0') return null;
+  const txt = await r.text();
+  return txt ? JSON.parse(txt) : null;
 }
 
 // ── Helpers locais (espelham block2.js) ───────────────────────────────────────
@@ -78,8 +79,8 @@ test('crm_toques: grava abordagem_direta e lê de volta', async () => {
     texto_enviado: 'Texto de teste Bloco 3',
     resultado: 'enviado',
     origem: 'abordagem_direta',
-    direcao: 'saida',
-    fonte: 'crm_abordar',
+    direcao: 'enviado',
+    fonte: 'manual',
     data: now,
     criado_em: now
   };
@@ -87,7 +88,7 @@ test('crm_toques: grava abordagem_direta e lê de volta', async () => {
   await sg('crm_toques', { method: 'POST', body: JSON.stringify(row) });
 
   // Lê de volta
-  const inserted = await sg(`crm_toques?decisor_id=eq.${dec.id}&origem=eq.abordagem_direta&ordem=criado_em.desc&select=canal,etapa,origem,agencia_id&limit=1`);
+  const inserted = await sg(`crm_toques?decisor_id=eq.${dec.id}&origem=eq.abordagem_direta&order=criado_em.desc&select=canal,etapa,origem,agencia_id&limit=1`);
   assert.ok(Array.isArray(inserted) && inserted.length > 0, 'Deve encontrar o toque inserido');
   assert.equal(inserted[0].canal, 'whatsapp');
   assert.equal(inserted[0].etapa, '1');

@@ -559,7 +559,7 @@ function AbordagemModal({
       assunto:assunto||null, nota:notaTxt||null,
       resultado:resultado||null, reuniao_em:reuniaoEmVal||null,
       data:now, criado_em:now, origem:'abordagem_direta',
-      direcao:'saida', fonte:'crm_abordar'
+      direcao:'enviado', fonte:'manual'
     };
     await sjAb('/rest/v1/crm_toques',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(row)});
     if (decisor&&decisor.id) await sjAb('/rest/v1/crm_decisores?id=eq.'+decisor.id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({ultimo_toque_em:now,ultimo_tema:canal})});
