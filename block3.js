@@ -3265,6 +3265,159 @@ function AprovacaoHoje() {
 // ─────────────────────────────────────────────────────────────────────────────
 // FILA DO DIA — disparo de prospecções aprovadas via Outlook / WA / LinkedIn
 // ─────────────────────────────────────────────────────────────────────────────
+// ─── Histórico de Toques ─────────────────────────────────────────────────────
+function HistoricoView() {
+  var mono = 'IBM Plex Mono,monospace';
+  var SUPA = 'https://uetltlnjmobeiunxfsqi.supabase.co';
+  var ANON = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
+  function sjH(path, opts) {
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || ANON;
+    var h = Object.assign({'apikey':ANON,'Authorization':'Bearer '+jwt,'Content-Type':'application/json'}, opts&&opts.headers);
+    return fetch(SUPA+path, Object.assign({},opts,{headers:h})).then(function(r){return r.status===204?null:r.json();});
+  }
+
+  var _toques = useState(null); var toques = _toques[0]; var setToques = _toques[1];
+  var _loading = useState(true); var loading = _loading[0]; var setLoading = _loading[1];
+  var _search = useState(''); var search = _search[0]; var setSearch = _search[1];
+  var _filtCanal = useState(''); var filtCanal = _filtCanal[0]; var setFiltCanal = _filtCanal[1];
+  var _filtAgencia = useState(''); var filtAgencia = _filtAgencia[0]; var setFiltAgencia = _filtAgencia[1];
+  var _filtResultado = useState(''); var filtResultado = _filtResultado[0]; var setFiltResultado = _filtResultado[1];
+  var _filtPeriodo = useState('30'); var filtPeriodo = _filtPeriodo[0]; var setFiltPeriodo = _filtPeriodo[1];
+
+  var AG_MAP = useMemo(function(){
+    var m = {};
+    var ags = (typeof AGENCIAS_GERAR !== 'undefined') ? AGENCIAS_GERAR : [];
+    ags.forEach(function(a){ m[a.id] = a.nome||a.label||a.id; });
+    return m;
+  }, []);
+
+  function spDateStr(iso) {
+    if (!iso) return '—';
+    return new Date(iso).toLocaleString('pt-BR', {timeZone:'America/Sao_Paulo',day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+  }
+
+  function loadToques() {
+    setLoading(true);
+    var days = parseInt(filtPeriodo)||30;
+    var since = new Date(Date.now() - days*86400000).toISOString();
+    sjH('/rest/v1/crm_toques?select=id,criado_em,data,canal,agencia_id,etapa,resultado,nota,origem,decisor_id,empresa_id,crm_decisores!decisor_id(nome,cargo),crm_empresas!empresa_id(nome)'
+      +'&data=gte.'+since+'&order=data.desc&limit=500')
+      .then(function(rows){ setToques(Array.isArray(rows)?rows:[]); setLoading(false); })
+      .catch(function(){ setToques([]); setLoading(false); });
+  }
+
+  useEffect(function(){ loadToques(); }, [filtPeriodo]);
+
+  var filtered = useMemo(function(){
+    if (!toques) return [];
+    var q = (search||'').toLowerCase();
+    return toques.filter(function(t){
+      var empNome = (t.crm_empresas&&t.crm_empresas.nome)||'';
+      var decNome = (t.crm_decisores&&t.crm_decisores.nome)||'';
+      if (q && !empNome.toLowerCase().includes(q) && !decNome.toLowerCase().includes(q)) return false;
+      if (filtCanal && t.canal !== filtCanal) return false;
+      if (filtAgencia && t.agencia_id !== filtAgencia) return false;
+      if (filtResultado && t.resultado !== filtResultado) return false;
+      return true;
+    });
+  }, [toques, search, filtCanal, filtAgencia, filtResultado]);
+
+  function exportCSV() {
+    var headers = ['Data/Hora SP','Empresa','Decisor','Cargo','Canal','Agência','Etapa','Resultado','Nota','Origem'];
+    var rows = filtered.map(function(t){
+      return [
+        spDateStr(t.data||t.criado_em),
+        (t.crm_empresas&&t.crm_empresas.nome)||'',
+        (t.crm_decisores&&t.crm_decisores.nome)||'',
+        (t.crm_decisores&&t.crm_decisores.cargo)||'',
+        t.canal||'',
+        AG_MAP[t.agencia_id]||t.agencia_id||'',
+        t.etapa||'',
+        t.resultado||'',
+        (t.nota||'').replace(/"/g,"'"),
+        t.origem||''
+      ].map(function(v){ return '"'+String(v||'').replace(/"/g,"'")+'"'; }).join(',');
+    });
+    var csv = [headers.join(',')].concat(rows).join('\n');
+    var blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a'); a.href=url; a.download='historico_toques.csv'; a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  var agIds = useMemo(function(){
+    var seen = {};
+    (toques||[]).forEach(function(t){ if (t.agencia_id) seen[t.agencia_id]=1; });
+    return Object.keys(seen);
+  }, [toques]);
+
+  var selStyle = {fontFamily:mono,fontSize:9,background:'#0f1623',border:'.5px solid #2D2D44',color:'#9B9BB4',padding:'4px 8px',borderRadius:3,outline:'none'};
+
+  return React.createElement('div', {style:{padding:'14px 20px',display:'flex',flexDirection:'column',gap:10,height:'100%',overflowY:'auto'}},
+    // Cabeçalho + filtros
+    React.createElement('div', {style:{display:'flex',alignItems:'center',gap:8,flexWrap:'wrap'}},
+      React.createElement('span', {style:{fontFamily:mono,fontSize:11,fontWeight:600,color:'#FBBF24'}},'📋 Histórico de Toques'),
+      React.createElement('button', {onClick:loadToques,style:{fontFamily:mono,fontSize:8,padding:'2px 8px',border:'.5px solid #2D2D44',borderRadius:3,background:'transparent',color:'#555',cursor:'pointer'}},'↺'),
+      React.createElement('button', {onClick:exportCSV,disabled:!filtered.length,style:{fontFamily:mono,fontSize:8,padding:'3px 10px',borderRadius:3,border:'.5px solid rgba(52,211,153,.3)',background:'rgba(52,211,153,.06)',color:'#34D399',cursor:'pointer',marginLeft:'auto'}},'⬇ CSV'),
+      React.createElement('span', {style:{fontFamily:mono,fontSize:8,color:'#555'}},filtered.length+' registros')
+    ),
+    React.createElement('div', {style:{display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}},
+      React.createElement('input', {value:search,onChange:function(e){setSearch(e.target.value);},placeholder:'Buscar empresa ou decisor…',style:{fontFamily:mono,fontSize:9,background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:3,padding:'4px 10px',color:'#F5F5F5',outline:'none',width:200}}),
+      React.createElement('select', {value:filtPeriodo,onChange:function(e){setFiltPeriodo(e.target.value);},style:selStyle},
+        React.createElement('option',{value:'7'},'Últimos 7 dias'),
+        React.createElement('option',{value:'30'},'Últimos 30 dias'),
+        React.createElement('option',{value:'90'},'Últimos 90 dias'),
+        React.createElement('option',{value:'365'},'Últimos 365 dias')
+      ),
+      React.createElement('select', {value:filtCanal,onChange:function(e){setFiltCanal(e.target.value);},style:selStyle},
+        React.createElement('option',{value:''},'Todos canais'),
+        ['email','whatsapp','linkedin','ligacao'].map(function(c){ return React.createElement('option',{key:c,value:c},c); })
+      ),
+      agIds.length>0&&React.createElement('select', {value:filtAgencia,onChange:function(e){setFiltAgencia(e.target.value);},style:selStyle},
+        React.createElement('option',{value:''},'Todas agências'),
+        agIds.map(function(id){ return React.createElement('option',{key:id,value:id},AG_MAP[id]||id); })
+      ),
+      React.createElement('select', {value:filtResultado,onChange:function(e){setFiltResultado(e.target.value);},style:selStyle},
+        React.createElement('option',{value:''},'Todos resultados'),
+        ['sem_resposta','enviado','atendeu','caixa_postal','nao_atendeu','reuniao_marcada','resposta'].map(function(r){ return React.createElement('option',{key:r,value:r},r); })
+      )
+    ),
+    loading
+      ? React.createElement('div',{style:{fontFamily:mono,fontSize:10,color:'#555',padding:'40px 0',textAlign:'center'}},'Carregando…')
+      : filtered.length === 0
+        ? React.createElement('div',{style:{fontFamily:mono,fontSize:10,color:'#555',padding:'40px 0',textAlign:'center'}},'Nenhum toque encontrado.')
+        : React.createElement('div',{style:{overflowX:'auto'}},
+            React.createElement('table',{style:{width:'100%',borderCollapse:'collapse',fontFamily:mono,fontSize:9}},
+              React.createElement('thead',null,
+                React.createElement('tr',{style:{borderBottom:'.5px solid #2D2D44'}},
+                  ['Data/Hora SP','Empresa','Decisor','Canal','Agência','Etapa','Resultado','Nota'].map(function(h){
+                    return React.createElement('th',{key:h,style:{padding:'5px 8px',textAlign:'left',color:'#555',fontWeight:500,whiteSpace:'nowrap'}},h);
+                  })
+                )
+              ),
+              React.createElement('tbody',null,
+                filtered.map(function(t){
+                  var res = t.resultado||'';
+                  var resColor = res==='reuniao_marcada'?'#34D399':res==='atendeu'?'#60A5FA':res==='sem_resposta'?'#555':'#9B9BB4';
+                  return React.createElement('tr',{key:t.id,style:{borderBottom:'.5px solid #111',transition:'background .1s'},
+                    onMouseOver:function(e){e.currentTarget.style.background='rgba(255,255,255,.02)';},
+                    onMouseOut:function(e){e.currentTarget.style.background='transparent';}},
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#9B9BB4',whiteSpace:'nowrap'}},spDateStr(t.data||t.criado_em)),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#F5F5F5',maxWidth:140,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},(t.crm_empresas&&t.crm_empresas.nome)||'—'),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#FF6B2B',maxWidth:120,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},(t.crm_decisores&&t.crm_decisores.nome)||'—'),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#818CF8'}},t.canal||'—'),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#A78BFA',whiteSpace:'nowrap'}},AG_MAP[t.agencia_id]||(t.agencia_id?t.agencia_id.slice(0,8)+'…':'—')),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#555'}},t.etapa||'—'),
+                    React.createElement('td',{style:{padding:'5px 8px',color:resColor,whiteSpace:'nowrap'}},res||'—'),
+                    React.createElement('td',{style:{padding:'5px 8px',color:'#555',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}},t.nota||'')
+                  );
+                })
+              )
+            )
+          )
+  );
+}
+
 function FilaDoDia() {
   const mono = "'IBM Plex Mono',monospace";
   const SUPA  = 'https://uetltlnjmobeiunxfsqi.supabase.co';
@@ -3643,13 +3796,21 @@ function FilaDoDia() {
       .then(function(){
         sj('/rest/v1/crm_toques',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({
           decisor_id:item.decisor_id, empresa_id:item.empresa_id,
+          agencia_id:item.agencia_id||null,
           canal:item.canal, direcao:'enviado',
+          etapa:item.etapa||item.etapa_cadencia||null,
+          template_id:item.template_id||null,
+          texto_enviado:(item.corpo||'').slice(0,2000),
           assunto:(item.assunto||'').slice(0,500),
           resumo:(item.contexto_para_aprovacao||'').slice(0,500),
-          data:now, fonte:'manual', resultado:'sem_resposta'
+          data:now, fonte:'manual', resultado:'sem_resposta',
+          origem:'fila', criado_em:now
         })});
         if (item.decisor_id) {
           sj('/rest/v1/crm_decisores?id=eq.'+item.decisor_id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({ultimo_toque_em:now})});
+        }
+        if (item.empresa_id) {
+          sj('/rest/v1/crm_empresas?id=eq.'+item.empresa_id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({ultimo_toque_em:now})});
         }
         setFila(function(p){return (p||[]).filter(function(x){return x.id!==item.id;});});
         setTail(function(p){return [Object.assign({},item,{status:'enviado',enviado_em:now})].concat(p);});
@@ -3844,9 +4005,9 @@ function FilaDoDia() {
       ),
       // Abas de canal + botão de sequência (WA/LinkedIn)
       React.createElement('div',{style:{display:'flex',gap:0,alignItems:'center',marginTop:2}},
-        [['email','Email','#60A5FA'],['whatsapp','WhatsApp','#34D399'],['linkedin','LinkedIn','#818CF8']].map(function(x){
+        [['email','Email','#60A5FA'],['whatsapp','WhatsApp','#34D399'],['linkedin','LinkedIn','#818CF8'],['historico','Histórico','#FBBF24']].map(function(x){
           var k=x[0],lbl=x[1],cor=x[2];
-          var cnt = (fila||[]).filter(function(i){return i.canal===k;}).length;
+          var cnt = k!=='historico' ? (fila||[]).filter(function(i){return i.canal===k;}).length : 0;
           var ativo = aba===k;
           return React.createElement('button',{key:k,onClick:function(){setAba(k);setFocused(0);setSeqAtivo(false);},
             style:{fontFamily:mono,fontSize:9,padding:'5px 14px',border:'none',background:'transparent',
@@ -3873,14 +4034,16 @@ function FilaDoDia() {
       )
     ),
     // Conteúdo
-    React.createElement('div',{style:{flex:1,overflowY:'auto',padding:'10px 20px'}},
-      abaItems.length===0&&tailItems.length===0
-        ? React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',padding:'60px 0',gap:8,opacity:.3}},
-            React.createElement('div',{style:{fontSize:28}},'✅'),
-            React.createElement('div',{style:{fontFamily:mono,fontSize:10,color:'#F5F5F5'}},'Fila vazia para esta aba')
-          )
-        : React.createElement(React.Fragment,null,
-            // Itens aprovados
+    React.createElement('div',{style:{flex:1,overflowY:'auto',padding:aba==='historico'?'0':'10px 20px'}},
+      aba==='historico'
+        ? React.createElement(HistoricoView, null)
+        : abaItems.length===0&&tailItems.length===0
+          ? React.createElement('div',{style:{display:'flex',flexDirection:'column',alignItems:'center',padding:'60px 0',gap:8,opacity:.3}},
+              React.createElement('div',{style:{fontSize:28}},'✅'),
+              React.createElement('div',{style:{fontFamily:mono,fontSize:10,color:'#F5F5F5'}},'Fila vazia para esta aba')
+            )
+          : React.createElement(React.Fragment,null,
+              // Itens aprovados
             abaItems.map(function(item,idx){
               var d    = item.crm_decisores||{};
               var emp  = item.crm_empresas||{};
