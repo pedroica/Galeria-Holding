@@ -197,18 +197,17 @@ async function jobEnriquecimento(req, res) {
     if (k.empresa_id) reunioesPorEmpresa[k.empresa_id] = (reunioesPorEmpresa[k.empresa_id] || 0) + 1;
   }
   // Empresas com decisores sem email, ordenadas por prioridade
-  const semEmail = await sg('crm_decisores?email=is.null&select=id,nome,empresa_id,linkedin_url&order=ultimo_toque_em.desc.nullslast&limit=200');
+  const semEmail = await sg('crm_decisores?email=is.null&select=id,nome,empresa_id,linkedin_url&order=ultimo_toque_em.desc.nullslast&limit=50');
   const decisoresSemEmail = Array.isArray(semEmail) ? semEmail : [];
   if (decisoresSemEmail.length === 0) {
-    const creditos = await lushaCreditsV3();
-    const ctx = { revelados: 0, teto, motivo: 'nenhum_decisor_sem_email', creditos_restantes: creditos?.credits?.balance ?? null, ms: Date.now()-inicio };
+    const ctx = { revelados: 0, teto, motivo: 'nenhum_decisor_sem_email', ms: Date.now()-inicio };
     await logCron('enriquecimento-diario', 'info', 'fim', ctx);
     return res.status(200).json({ ok: true, ...ctx });
   }
 
   // Buscar nomes das empresas
-  const empIds = [...new Set(decisoresSemEmail.map(d => d.empresa_id).filter(Boolean))].slice(0, 100);
-  const empRows = empIds.length > 0 ? await sg(`crm_empresas?id=in.(${empIds.join(',')})&select=id,nome,dominio,setor&limit=100`) : [];
+  const empIds = [...new Set(decisoresSemEmail.map(d => d.empresa_id).filter(Boolean))].slice(0, 50);
+  const empRows = empIds.length > 0 ? await sg(`crm_empresas?id=in.(${empIds.join(',')})&select=id,nome,dominio,setor&limit=50`) : [];
   const empMap  = {};
   for (const e of (Array.isArray(empRows) ? empRows : [])) empMap[e.id] = e;
 
@@ -222,9 +221,11 @@ async function jobEnriquecimento(req, res) {
   let revelados = 0;
   let creditosUsados = 0;
   const reveladosPorEmpresa = {};
+  const LIMITE_MS = 45000; // para com 45s para deixar margem para logs
 
   for (const dec of decisoresSemEmail) {
     if (revelados >= teto) break;
+    if (Date.now() - inicio > LIMITE_MS) break;
 
     // Máximo 2 revelações por empresa
     const empRev = reveladosPorEmpresa[dec.empresa_id] || 0;
@@ -235,14 +236,14 @@ async function jobEnriquecimento(req, res) {
 
     // Buscar contato no Lusha V3
     const contacts = await lushaSearchV3(dominio, emp.nome || '');
-    await new Promise(r => setTimeout(r, 400));
+    await new Promise(r => setTimeout(r, 200));
 
     if (!contacts.length) continue;
 
     // Revelar email/telefone
     const results = await lushaRevealV3(contacts);
-    await new Promise(r => setTimeout(r, 400));
-    creditosUsados += results.length * 2; // revealEmail + revealPhone por contato
+    await new Promise(r => setTimeout(r, 200));
+    creditosUsados += results.length * 2;
 
     for (const result of results) {
       const email = result.email || result.emailAddresses?.[0]?.emailAddress || null;
@@ -251,12 +252,11 @@ async function jobEnriquecimento(req, res) {
 
       if (!email && !tel) continue;
 
-      // Tenta casar com decisor existente ou cria um novo
-      const [fn, ...ln] = (result.firstName || '').split(' ');
       const nomeCompleto = [result.firstName, result.lastName].filter(Boolean).join(' ');
       const decCorrespondente = decisoresSemEmail.find(d =>
         d.empresa_id === dec.empresa_id &&
-        nomeCompleto && d.nome && d.nome.toLowerCase().includes(result.lastName?.toLowerCase())
+        nomeCompleto && d.nome && result.lastName &&
+        d.nome.toLowerCase().includes(result.lastName.toLowerCase())
       ) || dec;
 
       const patch = { atualizado_em: new Date().toISOString(), fonte: 'lusha_v3' };
