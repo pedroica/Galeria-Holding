@@ -2,7 +2,7 @@
 // Execução: npx playwright test tests/bloco4-playwright.spec.js
 // Requer: APP_URL no ambiente (ex: https://galeria-holding-sage.vercel.app ou preview Vercel)
 
-const { test, expect } = require('@playwright/test');
+import { test, expect } from '@playwright/test';
 
 const APP_URL = process.env.APP_URL || 'https://galeria-holding-sage.vercel.app';
 

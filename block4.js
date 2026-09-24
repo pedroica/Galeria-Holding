@@ -2054,7 +2054,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       var utStr = new Date(ut).toLocaleDateString('pt-BR');
       return React.createElement('div',{style:{fontSize:8,color:dias>10?'#EF9F27':'#4B4B6A',fontFamily:'IBM Plex Mono,monospace',marginTop:2}},
         'último toque: '+utStr+' ('+dias+'d)');
-    })()), (e.website || e.site) && /*#__PURE__*/React.createElement("a", {
+    })(), (e.website || e.site) && /*#__PURE__*/React.createElement("a", {
       href: ("https://" + (e.website || e.site)).replace("https://https://", "https://"),
       target: "_blank",
       rel: "noopener noreferrer",
