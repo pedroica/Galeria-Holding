@@ -176,7 +176,9 @@ export default async function handler(req, res) {
   if (!isCron && !isJWT) return res.status(401).json({ error: 'Não autenticado' });
 
   const { agencia_slug, canais = ['email', 'whatsapp'], limite = 30, sem_ia = false } = req.body || {};
-  const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
+  const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY, timeout: 20000 });
+  const LIMITE_FILA_MS = 50000;
+  const inicioFila = Date.now();
   const semana = inicioSemana();
   const gerados = []; const erros = []; const bloqueados = [];
 
@@ -215,6 +217,7 @@ export default async function handler(req, res) {
     const cases = await sg(`crm_cases?agencia_id=eq.${ag.id}&ativo=eq.true&permitido_em_prospeccao=eq.true&destaque=eq.true&select=id,titulo,marca,resumo,url_pagina&limit=5`);
     for (const d of elegiveis) {
       if (totalGerado >= limite) break;
+      if (Date.now() - inicioFila > LIMITE_FILA_MS) { erros.push({empresa:'timeout',decisor:'',err:'wall-clock 50s atingido'}); break; }
       const emp = d.crm_empresas || {};
       const canalList = canaisDisponiveis(d).filter(c => canais.includes(c) && (restante[c] || 0) > 0);
       if (canalList.length === 0) continue;
@@ -234,7 +237,7 @@ export default async function handler(req, res) {
         } else {
           txt = await gerarTexto(anthropic, prompt, canal);
         }
-        const row = await sp('crm_fila', { agencia_id:ag.id, agencia_slug:ag.nome, empresa_id:d.empresa_id, decisor_id:d.id, canal, etapa, status:'rascunho', assunto:txt.assunto||null, corpo:txt.corpo, case_id:caso?.id||null, template_id:tpl?.id||null, tokens_prompt:txt.tokens_prompt, tokens_resposta:txt.tokens_resposta, custo_usd:txt.custo_usd, modelo:sem_ia?'template':'claude-sonnet-4-6', contexto_para_aprovacao:`${emp.nome||''} · ${d.nome} · ${d.cargo||''} · ${estrelas}★` });
+        const row = await sp('crm_fila', { agencia_id:ag.id, agencia_slug:ag.slug||ag.nome, empresa_id:d.empresa_id, decisor_id:d.id, canal, etapa, status:'rascunho', assunto:txt.assunto||null, corpo:txt.corpo, case_id:caso?.id||null, template_id:tpl?.id||null, tokens_prompt:txt.tokens_prompt, tokens_resposta:txt.tokens_resposta, custo_usd:txt.custo_usd, modelo:sem_ia?'template':'claude-sonnet-4-6', contexto_para_aprovacao:`${emp.nome||''} · ${d.nome} · ${d.cargo||''} · ${estrelas}★` });
         if (row) { restante[canal]=(restante[canal]||0)-1; totalGerado++; gerados.push({id:row[0]?.id,empresa:emp.nome,decisor:d.nome,canal,estrelas}); await sp(`crm_decisores?id=eq.${d.id}`, {ultimo_toque_em:new Date().toISOString()}, 'PATCH'); }
       } catch(e) { erros.push({empresa:emp.nome,decisor:d.nome,err:e.message}); }
     }
