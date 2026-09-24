@@ -36,7 +36,7 @@ test.describe('Bloco 6 — Tela Atividade', () => {
 
   test('nav item Atividade existe e abre a tela', async ({ page }) => {
     await abrirAtividade(page);
-    await expect(page.getByText('ATIVIDADE')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText(/ATIVIDADE/)).toBeVisible({ timeout: 8000 });
   });
 
   test('tela Atividade exibe seção de crons', async ({ page }) => {
@@ -52,7 +52,7 @@ test.describe('Bloco 6 — Tela Atividade', () => {
 
   test('tela Atividade exibe tabela canal/agência', async ({ page }) => {
     await abrirAtividade(page);
-    await expect(page.getByText('Por canal e agência', { exact: true })).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText(/Por canal e agência/)).toBeVisible({ timeout: 8000 });
   });
 
 });
@@ -123,7 +123,7 @@ test.describe('Bloco 6 — Cron gerar-fila-diario', () => {
 
     // Check crm_logs has entries
     await new Promise(resolve => setTimeout(resolve, 1000));
-    const logs = await supaGet('crm_logs?origem=eq.cron:gerar-fila-diario&criado_em=gte=' + antes + '&order=criado_em.desc&limit=10');
+    const logs = await supaGet('crm_logs?origem=eq.cron:gerar-fila-diario&criado_em=gte.' + antes + '&order=criado_em.desc&limit=10');
     const logsArr = Array.isArray(logs) ? logs : [];
     expect(logsArr.length).toBeGreaterThan(0);
     // Should have both início and fim
@@ -172,7 +172,7 @@ test.describe('Bloco 6 — Cron fechamento-sexta', () => {
     if (data.token) {
       // Query crm_relatorios for this week's entry
       const semana = data.semana_inicio;
-      const rels = await supaGet('crm_relatorios?tipo=eq.semanal&semana_inicio=eq.' + semana + '&select=dados&limit=1');
+      const rels = await supaGet('crm_relatorios?tipo=eq.semanal&semana_inicio=eq.' + semana + '&select=id,dados&order=criado_em.desc&limit=1');
       const rel = Array.isArray(rels) && rels[0] ? rels[0] : null;
       expect(rel).not.toBeNull();
       expect(rel.dados?.resumo_texto).toBeTruthy();

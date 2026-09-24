@@ -469,13 +469,25 @@ async function jobFechamento(req, res) {
   };
   dados.resumo_texto = gerarResumoTexto(dados);
 
-  const upsertRes = await fetch(SUPA_URL+'/rest/v1/crm_relatorios', {
-    method:'POST',
-    headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=representation'},
-    body:JSON.stringify({tipo:'semanal', semana_inicio:semSeg.toISOString().slice(0,10), gerado_em:now.toISOString(), dados})
-  });
+  const semanaStr = semSeg.toISOString().slice(0,10);
+  const existentes = await sg(`crm_relatorios?tipo=eq.semanal&semana_inicio=eq.${semanaStr}&select=id,token&order=criado_em.desc&limit=1`);
+  const existente = Array.isArray(existentes) && existentes[0] ? existentes[0] : null;
   let token = null;
-  if (upsertRes.ok) { const rows=await upsertRes.json(); token=Array.isArray(rows)&&rows[0]?rows[0].token:null; }
+  if (existente) {
+    const patchRes = await fetch(SUPA_URL+'/rest/v1/crm_relatorios?id=eq.'+existente.id, {
+      method:'PATCH',
+      headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'return=minimal'},
+      body:JSON.stringify({gerado_em:now.toISOString(), dados})
+    });
+    token = existente.token;
+  } else {
+    const insertRes = await fetch(SUPA_URL+'/rest/v1/crm_relatorios', {
+      method:'POST',
+      headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'return=representation'},
+      body:JSON.stringify({tipo:'semanal', semana_inicio:semanaStr, gerado_em:now.toISOString(), dados})
+    });
+    if (insertRes.ok) { const rows=await insertRes.json(); token=Array.isArray(rows)&&rows[0]?rows[0].token:null; }
+  }
   const linkRelatorio = token ? `${BASE_URL}/api/relatorio/${token}` : null;
   const ctx_fech = {reunioes:dados.reunioes_total,enviados:dados.enviados_total,respostas:dados.respostas_total,top5:top5Nomes,token,ms:Date.now()-inicio};
   console.log('[cron:fechamento-sexta]', ctx_fech);
