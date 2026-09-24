@@ -314,7 +314,7 @@ function EmpresasView({
     }
     if (!empId) { setSupaDecisores([]); return; }
     setSupaDecLoading(true);
-    supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&status=eq.ativo&select=id,nome,cargo,email,wa,wa2,wa3,wa4,linkedin_url,criado_em&order=criado_em.desc')
+    supaJwtFig('/rest/v1/crm_decisores?empresa_id=eq.'+empId+'&status=eq.ativo&select=id,nome,cargo,email,wa,wa2,wa3,wa4,linkedin_url,criado_em,ultimo_toque_em&order=criado_em.desc')
       .then(function(rows) {
         var list = Array.isArray(rows) ? rows : [];
         setSupaDecisores(list);
@@ -920,7 +920,9 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
     }, abordagemDec && /*#__PURE__*/React.createElement(AbordagemModal, {
       decisor: abordagemDec,
       empresa: selEmpresa.nome,
+      empresaId: selEmpresa.empresa_id || (supaEmpMap && supaEmpMap[(selEmpresa.nome||'').toLowerCase().trim()] && supaEmpMap[(selEmpresa.nome||'').toLowerCase().trim()].id) || null,
       setor: selEmpresa.setor,
+      clienteAtivo: selEmpresa.cliente_ativo || false,
       onClose: () => setAbordagemDec(null),
       onKanbanAdd: onKanbanAdd
     }), showAdd && /*#__PURE__*/React.createElement("div", {
@@ -1354,6 +1356,9 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         d.email&&/*#__PURE__*/React.createElement("a",{href:"https://mail.google.com/mail/?view=cm&to="+encodeURIComponent(d.email),target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:`rgba(${acRgb},.18)`,border:`1px solid rgba(${acRgb},.28)`,color:acBase,fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"✉ Email"),
         phones.map((p,pi)=>{var n=(p||"").replace(/[^0-9]/g,"");var num=n.startsWith("55")&&n.length>=12?n:"55"+n;return /*#__PURE__*/React.createElement("a",{key:pi,href:"https://wa.me/"+num,target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:"rgba(37,211,102,.12)",border:"1px solid rgba(37,211,102,.22)",color:"#25D366",fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"💬 WA"+(phones.length>1?" "+(pi+1):""));}),
         (d.linkedin_url||d.linkedin)&&/*#__PURE__*/React.createElement("a",{href:(d.linkedin_url||d.linkedin).startsWith("http")?(d.linkedin_url||d.linkedin):"https://"+(d.linkedin_url||d.linkedin),target:"_blank",style:{padding:"5px 10px",borderRadius:7,background:"rgba(10,102,194,.12)",border:"1px solid rgba(10,102,194,.22)",color:"#0A66C2",fontSize:9,fontWeight:700,textDecoration:"none",cursor:"pointer"}},"💼 LI")
+      ),
+      d.ultimo_toque_em&&/*#__PURE__*/React.createElement("div",{style:{fontSize:8,color:"#4B4B6A",fontFamily:"'IBM Plex Mono',monospace",textAlign:"center",paddingInline:8,marginBottom:4,marginTop:-4}},
+        'Último toque: '+new Date(d.ultimo_toque_em).toLocaleDateString('pt-BR')
       ),
       /*#__PURE__*/React.createElement("div", {style:{display:"flex",gap:5,paddingInline:8,borderTop:"1px solid rgba(255,255,255,.04)",paddingTop:8,width:"100%",boxSizing:"border-box",justifyContent:"center"}},
         /*#__PURE__*/React.createElement("button",{onClick:()=>setAbordagemDec(d),style:{flex:2,padding:"5px 0",borderRadius:7,border:".5px solid rgba(255,107,43,.4)",background:"rgba(255,107,43,.1)",color:"#FF6B2B",cursor:"pointer",fontSize:9,fontWeight:700}},"📨 Abordar"),

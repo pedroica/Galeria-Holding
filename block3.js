@@ -436,9 +436,7 @@ Mínimo 5 pessoas. Retorne SOMENTE o JSON, sem texto adicional.`;
       decisor: abordagemDecidor,
       empresa: selEmpresa.nome,
       setor: selEmpresa.setor,
-      onClose: function () {
-        setAbordagemDecidor(null);
-      },
+      onClose: function () { setAbordagemDecidor(null); },
       onKanbanAdd: onKanbanAdd
     }), showAdd && /*#__PURE__*/React.createElement("div", {
       style: {
@@ -7562,6 +7560,7 @@ function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
   const [novoT, setNovoT] = React.useState({canal:'email',tema:'',resumo:'',resultado:''});
   const [saving,  setSaving]        = React.useState(false);
   const [copied,  setCopied]        = React.useState(false);
+  const [abordandoDec, setAbordandoDec] = React.useState(null);
 
   React.useEffect(() => {
     let cancelled = false;
@@ -7636,7 +7635,16 @@ function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
     tabBtn:  (active) => ({padding:'5px 14px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:600,background:active?'#7C3AED':'#1A1A2E',color:active?'#fff':'#9B9BB4'})
   };
 
-  return /*#__PURE__*/React.createElement("div", {style:S.overlay, onClick:onClose},
+  return /*#__PURE__*/React.createElement("div", null,
+    abordandoDec && /*#__PURE__*/React.createElement(AbordagemModal, {
+      decisor: abordandoDec,
+      empresa: nome,
+      empresaId: empresaId,
+      setor: '',
+      onClose: function(){ setAbordandoDec(null); },
+      onKanbanAdd: null
+    }),
+    /*#__PURE__*/React.createElement("div", {style:S.overlay, onClick:onClose},
     /*#__PURE__*/React.createElement("div", {style:S.drawer, onClick:e=>e.stopPropagation()},
       // ── Header
       /*#__PURE__*/React.createElement("div", {style:S.hdr},
@@ -7667,10 +7675,14 @@ function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
               d.linkedin_url && /*#__PURE__*/React.createElement("a", {href:d.linkedin_url,target:'_blank',rel:'noopener',style:{fontSize:11,color:'#9B9BB4',textDecoration:'none'}}, 'in')
             ),
             d.ultimo_toque_em && /*#__PURE__*/React.createElement("div", {style:{fontSize:10,color:'#4B4B6A',fontFamily:'IBM Plex Mono,monospace',marginTop:6}},
-              'Último contato: '+new Date(d.ultimo_toque_em).toLocaleDateString('pt-BR')+(d.ultimo_tema?' — '+d.ultimo_tema:'')
+              'Último toque: '+new Date(d.ultimo_toque_em).toLocaleDateString('pt-BR')+(d.ultimo_tema?' · '+d.ultimo_tema:'')
             ),
             d.gancho && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#fbbf24',marginTop:4,fontStyle:'italic'}}, '💡 '+d.gancho),
-            d.observacoes && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#9B9BB4',marginTop:4}}, d.observacoes)
+            d.observacoes && /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:'#9B9BB4',marginTop:4}}, d.observacoes),
+            /*#__PURE__*/React.createElement("button", {
+              onClick: function(){ setAbordandoDec(d); },
+              style:{marginTop:8,width:'100%',padding:'5px 0',borderRadius:6,border:'.5px solid rgba(255,107,43,.4)',background:'rgba(255,107,43,.08)',color:'#FF6B2B',cursor:'pointer',fontSize:10,fontWeight:700}
+            }, '📨 Abordar')
           )),
           // Add decisor form
           !showAddD && /*#__PURE__*/React.createElement("button", {
@@ -7759,6 +7771,7 @@ function EmpresaDrawer({ card, tab, onClose, onDescartar, onDeletar }) {
           }, '🗑 Deletar')
         )
       )
+    )
     )
   );
 }

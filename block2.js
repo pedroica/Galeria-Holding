@@ -401,545 +401,338 @@ function Top10View({
 function AbordagemModal({
   decisor,
   empresa,
+  empresaId,
   setor,
+  clienteAtivo,
+  agenciaAtendendo,
   onClose,
   onKanbanAdd
 }) {
-  const [loading, setLoading] = useState(false);
-  const [aba, setAba] = useState("whatsapp");
-  const [contexto, setContexto] = useState("");
-  const [empresaFoco, setEmpresaFoco] = useState("CR.IA");
-  const [copiado, setCopiado] = useState("");
-  const [erro, setErro] = useState("");
+  // ── state ──────────────────────────────────────────────────────────────────
+  var _agId = useState(null); var agId = _agId[0]; var setAgId = _agId[1];
+  var _canal = useState('whatsapp'); var canal = _canal[0]; var setCanal = _canal[1];
+  var _etapa = useState('1'); var etapa = _etapa[0]; var setEtapa = _etapa[1];
+  var _texto = useState(''); var texto = _texto[0]; var setTexto = _texto[1];
+  var _assunto = useState(''); var assunto = _assunto[0]; var setAssunto = _assunto[1];
+  var _templateId = useState(null); var templateId = _templateId[0]; var setTemplateId = _templateId[1];
+  var _toques = useState([]); var toques = _toques[0]; var setToques = _toques[1];
+  var _loading = useState(true); var loading = _loading[0]; var setLoading = _loading[1];
+  var _tplLoading = useState(false); var tplLoading = _tplLoading[0]; var setTplLoading = _tplLoading[1];
+  var _saving = useState(false); var saving = _saving[0]; var setSaving = _saving[1];
+  var _avisos = useState([]); var avisos = _avisos[0]; var setAvisos = _avisos[1];
+  var _eid = useState(empresaId || null); var eid = _eid[0]; var setEid = _eid[1];
+  var _ligResultado = useState(''); var ligResultado = _ligResultado[0]; var setLigResultado = _ligResultado[1];
+  var _nota = useState(''); var nota = _nota[0]; var setNota = _nota[1];
+  var _reuniaoEm = useState(''); var reuniaoEm = _reuniaoEm[0]; var setReuniaoEm = _reuniaoEm[1];
+  var _showReuniao = useState(false); var showReuniao = _showReuniao[0]; var setShowReuniao = _showReuniao[1];
+  var _gravado = useState(false); var gravado = _gravado[0]; var setGravado = _gravado[1];
+  var _copiado = useState(false); var copiado = _copiado[0]; var setCopiado = _copiado[1];
+  // ── Supabase fetch helper (JWT auth) ───────────────────────────────────────
+  function sjAb(path, opts) {
+    var ANON = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
+    var BASE = 'https://uetltlnjmobeiunxfsqi.supabase.co';
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || ANON;
+    var h = Object.assign({'Content-Type':'application/json','Authorization':'Bearer '+jwt,'apikey':ANON}, opts&&opts.headers);
+    return fetch(BASE+path, Object.assign({},opts,{headers:h}))
+      .then(function(r){ return (r.status===204||r.status===200&&r.headers.get('content-length')==='0')?null:r.json(); })
+      .catch(function(){ return null; });
+  }
 
-  // Textos padrão — usados imediatamente, substituídos pela IA se gerar
-  const [textos, setTextos] = useState(() => {
-    const pnome = (decisor.nome || "").split(" ")[0];
-    const emp = empresaFoco;
-    return {
-      whatsapp: `Oi ${pnome}, tudo bem? Sou Pedro Ica, Head of Growth da Galeria Holding.
-Vi o trabalho da ${empresa} e acredito que temos algo relevante pra vocês — posso te contar em 2 minutos?`,
-      linkedin: `Oi ${pnome}, vi sua trajetória na ${empresa} e fiz a conexão.
-Sou Pedro Ica, da Galeria Holding — trabalho com os maiores anunciantes do Brasil. Teria 15 min essa semana pra trocar uma ideia?`,
-      email_assunto: `${empresa} · uma troca de 15 min`,
-      email_corpo: `${pnome},
+  // ── São Paulo Monday 00:00 UTC ──────────────────────────────────────────────
+  function semanaInicio() {
+    var now = new Date();
+    var sp = new Date(now.toLocaleString('en-US', {timeZone:'America/Sao_Paulo'}));
+    var day = sp.getDay();
+    var diff = day===0 ? -6 : 1-day;
+    var mon = new Date(sp); mon.setDate(sp.getDate()+diff); mon.setHours(0,0,0,0);
+    var offset = now.getTime() - sp.getTime();
+    return new Date(mon.getTime()+offset).toISOString();
+  }
 
-Acompanho a ${empresa} há algum tempo e identifiquei algo que pode ser relevante para ${setor || "o seu setor"}.
+  // ── Interpolate template ────────────────────────────────────────────────────
+  function interpolarAb(tpl, ag) {
+    if (!tpl) return '';
+    var pn = ((decisor&&decisor.nome)||'').split(' ')[0];
+    var st = (typeof setorGerar === 'function') ? setorGerar({setor:setor||''}) : (setor||'marketing').toLowerCase()||'marketing';
+    return tpl
+      .replace(/\{primeiro_nome\}/g, pn)
+      .replace(/\{empresa\}/g, empresa||'')
+      .replace(/\{cargo\}/g, (decisor&&decisor.cargo)||'')
+      .replace(/\{agencia\}/g, ag||'Galeria Holding')
+      .replace(/\{setor\}/g, st);
+  }
 
-Sou Pedro Ica, Head of Growth da Galeria Holding — grupo com 10 empresas especializadas em comunicação, performance e produção criativa.
+  // ── Load data on mount ──────────────────────────────────────────────────────
+  useEffect(function() {
+    var AG = (typeof AGENCIAS_GERAR!=='undefined') ? AGENCIAS_GERAR : [{id:'3409ab82-f0cd-4d95-b6e2-398995425411',nome:'Galeria Holding'}];
+    setAgId(AG[0].id);
+    var cancelled = false;
+    (async function() {
+      setLoading(true);
+      // 1. Resolve empresa
+      var resolvedEid = eid;
+      var empRow = null;
+      if (!resolvedEid && empresa) {
+        var er = await sjAb('/rest/v1/crm_empresas?nome=eq.'+encodeURIComponent(empresa)+'&select=id,cliente_ativo,agencia_atendendo&limit=1');
+        if (er&&er[0]) { resolvedEid=er[0].id; empRow=er[0]; }
+      }
+      if (!cancelled && resolvedEid) setEid(resolvedEid);
+      // 2. Last 5 toques
+      var tqs = [];
+      if (decisor&&decisor.id) {
+        var dt = await sjAb('/rest/v1/crm_toques?decisor_id=eq.'+decisor.id+'&select=id,data,canal,agencia_id,resultado,resumo,decisor_id&order=data.desc&limit=5');
+        tqs = Array.isArray(dt)?dt:[];
+      }
+      if (resolvedEid) {
+        var et = await sjAb('/rest/v1/crm_toques?empresa_id=eq.'+resolvedEid+'&select=id,data,canal,agencia_id,resultado,resumo,decisor_id&order=data.desc&limit=5');
+        var etA = Array.isArray(et)?et:[];
+        var ids = new Set(tqs.map(function(t){return t.id;}));
+        etA.forEach(function(t){if(!ids.has(t.id))tqs.push(t);});
+        tqs.sort(function(a,b){return (b.data||'').localeCompare(a.data||'');});
+        tqs = tqs.slice(0,5);
+      }
+      if (!cancelled) setToques(tqs);
+      // 3. Suggest etapa
+      var decTqs = tqs.filter(function(t){return t.decisor_id===(decisor&&decisor.id);});
+      var sugEtapa = '1';
+      if (decTqs.length>0) {
+        var last = decTqs[0];
+        var days = (Date.now()-new Date(last.data).getTime())/86400000;
+        if (days>=5&&days<=10&&!['resposta','reuniao_marcada','reuniao'].includes(last.resultado||'')) sugEtapa='2';
+      }
+      if (!cancelled) setEtapa(sugEtapa);
+      // 4. Rule warnings
+      var warns = [];
+      var isAtivo = clienteAtivo||(empRow&&empRow.cliente_ativo);
+      var atendendo = agenciaAtendendo||(empRow&&empRow.agencia_atendendo);
+      if (isAtivo) warns.push('Cliente ativo'+(atendendo?' de '+atendendo:'')+'  — considerar fluxo de upsell');
+      if (resolvedEid) {
+        var wk = await sjAb('/rest/v1/crm_toques?empresa_id=eq.'+resolvedEid+'&data=gte.'+encodeURIComponent(semanaInicio())+'&select=agencia_id,decisor_id');
+        var wkA = Array.isArray(wk)?wk:[];
+        var agSel = AG[0].id;
+        if (wkA.find(function(t){return t.agencia_id&&t.agencia_id!==agSel;})) warns.push('Empresa já abordada por outra agência nesta semana');
+        var decIdsW = new Set(wkA.filter(function(t){return t.decisor_id;}).map(function(t){return t.decisor_id;}));
+        if (decIdsW.size>=2) warns.push('Já 2 decisores desta empresa abordados nesta semana');
+      }
+      if (decisor&&decisor.id&&decTqs.length>0) {
+        var daysSince = (Date.now()-new Date(decTqs[0].data).getTime())/86400000;
+        if (daysSince<5) warns.push('Mesmo decisor abordado há '+Math.floor(daysSince)+' dia(s) — aguardar 5 dias');
+      }
+      if (!cancelled) setAvisos(warns);
+      setLoading(false);
+    })();
+    return function(){cancelled=true;};
+  }, []);
 
-Valeria 15 minutos para eu compartilhar um insight que geramos com anunciantes do mesmo segmento?
-
-Abraço,`
-    };
-  });
-  const EMPRESAS_GALERIA = ["CR.IA", "Galeria", "404", "Milà", "ccCaramelo", "BrandSync", "Vitrine", "Mantiqueira", "A.gente", "Catalyst"];
-
-  // Recalcular textos padrão quando muda empresa foco
-  const resetTextos = emp => {
-    const pnome = (decisor.nome || "").split(" ")[0];
-    setTextos({
-      whatsapp: `Oi ${pnome}, tudo bem? Sou Pedro Ica, Head of Growth da Galeria Holding.
-Vi o trabalho da ${empresa} e acredito que temos algo relevante pra vocês — posso te contar em 2 minutos?`,
-      linkedin: `Oi ${pnome}, vi sua trajetória na ${empresa} e fiz a conexão.
-Sou Pedro Ica, da Galeria Holding — trabalho com os maiores anunciantes do Brasil. Teria 15 min essa semana pra trocar uma ideia?`,
-      email_assunto: `${empresa} · uma troca de 15 min`,
-      email_corpo: `${pnome},
-
-Acompanho a ${empresa} há algum tempo e identifiquei algo que pode ser relevante para ${setor || "o seu setor"}.
-
-Sou Pedro Ica, Head of Growth da Galeria Holding — grupo com 10 empresas especializadas em comunicação, performance e produção criativa com ${emp}.
-
-Valeria 15 minutos para eu compartilhar um insight que geramos com anunciantes do mesmo segmento?
-
-Abraço,`
-    });
-  };
-  const gerarComIA = async () => {
-    if (!getClaudeKey()) {
-      setErro("⚠ Claude API Key não configurada. Vá em ⚙ Configurações e insira sua chave sk-ant-...");
-      return;
-    }
-    setLoading(true);
-    setErro("");
-    const prompt = `Você é especialista em vendas B2B consultivas para comunicação brasileira.
-REMETENTE: Pedro Ica, Head of Growth, Galeria Holding — 10 empresas: Galeria, 404, Milà, ccCaramelo, CR.IA (produção criativa com IA -70% custo), BrandSync, Vitrine (OOH/DOOH), Mantiqueira, A.gente, Catalyst.
-EMPRESA GALERIA FOCO: ${empresaFoco}
-DECISOR: ${decisor.nome || ""}, ${decisor.cargo || ""}, ${empresa}, setor ${setor || ""}
-CONTEXTO: ${contexto || "nenhum"}
-REGRAS: 1) Abra com fato real sobre a empresa/pessoa. 2) Entregue insight, não proposta. 3) Peça "15 minutos". 4) Tom par a par. 5) PROIBIDO: "espero que esteja bem","gostaria de apresentar","temos uma solução".
-LIMITES: Email corpo 5 linhas. LinkedIn DM 3 linhas. WhatsApp 2 linhas + pergunta.
-Retorne SOMENTE JSON sem markdown: {"email_assunto":"","email_corpo":"","linkedin_dm":"","whatsapp":""}`;
-    const txt = await claudeAsk(prompt, 900);
-    const obj = parseJSON(txt);
-    if (obj && (obj.email_assunto || obj.whatsapp)) {
-      setTextos({
-        whatsapp: obj.whatsapp || textos.whatsapp,
-        linkedin: obj.linkedin_dm || textos.linkedin,
-        email_assunto: obj.email_assunto || textos.email_assunto,
-        email_corpo: obj.email_corpo || textos.email_corpo
+  // ── Load template when agência/canal/etapa changes ──────────────────────────
+  useEffect(function() {
+    if (!agId) return;
+    var AG = (typeof AGENCIAS_GERAR!=='undefined')?AGENCIAS_GERAR:[{id:'3409ab82-f0cd-4d95-b6e2-398995425411',nome:'Galeria Holding'}];
+    var agObj = AG.find(function(a){return a.id===agId;})||AG[0]||{nome:'Galeria Holding'};
+    setTplLoading(true);
+    sjAb('/rest/v1/crm_templates?agencia_id=eq.'+agId+'&canal=eq.'+canal+'&etapa=eq.'+etapa+'&tipo=eq.prospeccao&ativo=eq.true&select=id,assunto,corpo&limit=1')
+      .then(function(rows) {
+        setTplLoading(false);
+        if (rows&&rows[0]) {
+          setTemplateId(rows[0].id);
+          setTexto(interpolarAb(rows[0].corpo, agObj.nome));
+          setAssunto(interpolarAb(rows[0].assunto, agObj.nome));
+        } else {
+          setTemplateId(null);
+          var pn = ((decisor&&decisor.nome)||'').split(' ')[0];
+          if (canal==='email') { setTexto(pn+',\n\nAcompanho o trabalho da '+empresa+'.\n\nAbraço,'); setAssunto(empresa+' · uma conversa'); }
+          else if (canal==='ligacao') { setTexto('Olá '+pn+', aqui é Pedro da '+agObj.nome+'.\nGostaria de conversar sobre uma oportunidade para '+empresa+'.\nA empresa atua em '+(setor||'marketing')+'.\nValeria 15 minutos?\nPosso ligar em outro momento?\nObrigado.'); setAssunto(''); }
+          else { setTexto(pn+', sou Pedro, da '+agObj.nome+'. Vi o trabalho da '+empresa+'.'); setAssunto(''); }
+        }
       });
-      setErro("");
-      const key = normalizarNome(decisor.nome || "") + "_" + normalizarNome(empresa || "");
-      const saved = lsGet("gh_abordagens_v1", {});
-      saved[key] = {
-        ...obj,
-        decisor: decisor.nome,
-        empresa,
-        geradoEm: new Date().toLocaleDateString("pt-BR")
-      };
-      lsSet("gh_abordagens_v1", saved);
-    } else {
-      setErro("IA não retornou texto. Os textos padrão continuam disponíveis.");
-    }
-    setLoading(false);
+  }, [agId, canal, etapa]);
+
+  // ── Gravar toque ────────────────────────────────────────────────────────────
+  async function gravarToque(resultado, notaTxt, reuniaoEmVal) {
+    if (saving) return;
+    setSaving(true);
+    var now = new Date().toISOString();
+    var row = {
+      decisor_id:(decisor&&decisor.id)||null, empresa_id:eid||null,
+      agencia_id:agId||null, canal:canal, etapa:etapa,
+      template_id:templateId||null, texto_enviado:texto||null,
+      assunto:assunto||null, nota:notaTxt||null,
+      resultado:resultado||null, reuniao_em:reuniaoEmVal||null,
+      data:now, criado_em:now, origem:'abordagem_direta',
+      direcao:'saida', fonte:'crm_abordar'
+    };
+    await sjAb('/rest/v1/crm_toques',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(row)});
+    if (decisor&&decisor.id) await sjAb('/rest/v1/crm_decisores?id=eq.'+decisor.id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({ultimo_toque_em:now,ultimo_tema:canal})});
+    if (eid) await sjAb('/rest/v1/crm_empresas?id=eq.'+eid,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({ultimo_toque_em:now})});
+    setSaving(false); setGravado(true);
+    setToques(function(p){return [{...row,id:'new'+Date.now(),data:now}].concat(p).slice(0,5);});
+  }
+
+  // ── Actions by canal ────────────────────────────────────────────────────────
+  function acaoEmail() {
+    var dest=(decisor&&decisor.email)||'';
+    var url='https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(dest)+'&subject='+encodeURIComponent(assunto)+'&body='+encodeURIComponent(texto);
+    window.open(url,'_blank'); gravarToque('enviado',null,null);
+  }
+  function acaoWhatsApp() {
+    var n=((decisor&&decisor.wa)||'').replace(/\D/g,'');
+    var num=(n.startsWith('55')&&n.length>=12)?n:'55'+n;
+    window.open('https://wa.me/'+num+'?text='+encodeURIComponent(texto),'_blank');
+    gravarToque('enviado',null,null);
+  }
+  function acaoLinkedIn() {
+    try{navigator.clipboard.writeText(texto);}catch(e){}
+    setCopiado(true); setTimeout(function(){setCopiado(false);},2500);
+    var li=(decisor&&(decisor.linkedin_url||decisor.linkedin))||'';
+    if(!li) li='https://www.linkedin.com/search/results/people/?keywords='+encodeURIComponent((decisor&&decisor.nome)||'');
+    else if(!li.startsWith('http')) li='https://'+li;
+    window.open(li,'_blank'); gravarToque('enviado',null,null);
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
+  var AGENCIAS = (typeof AGENCIAS_GERAR!=='undefined')?AGENCIAS_GERAR:[{id:'3409ab82-f0cd-4d95-b6e2-398995425411',nome:'Galeria Holding'}];
+  var CANAIS = [{id:'whatsapp',label:'WhatsApp'},{id:'email',label:'E-mail'},{id:'linkedin',label:'LinkedIn'},{id:'ligacao',label:'Ligação'}];
+  var ETAPAS = [{id:'1',label:'Etapa 1'},{id:'2',label:'Etapa 2'},{id:'3',label:'Etapa 3'}];
+
+  function canalLabel(c){return {email:'E-mail',whatsapp:'WhatsApp',linkedin:'LinkedIn',ligacao:'Ligação',reuniao:'Reunião'}[c]||c||'—';}
+  function agNomeById(id){if(!id)return '—';var a=(AGENCIAS_GERAR||AGENCIAS).find(function(x){return x.id===id;});return a?a.nome:id.slice(0,8)+'…';}
+
+  var S = {
+    overlay:{position:'fixed',inset:0,zIndex:1200,background:'rgba(0,0,0,.65)',display:'flex',justifyContent:'flex-end'},
+    drawer:{width:500,maxWidth:'96vw',background:'#0a0a14',borderLeft:'.5px solid #2D2D44',display:'flex',flexDirection:'column',height:'100%',overflowY:'auto'},
+    hdr:{padding:'16px 18px 12px',borderBottom:'.5px solid #2D2D44',display:'flex',alignItems:'flex-start',justifyContent:'space-between',flexShrink:0},
+    body:{flex:1,padding:'12px 18px 28px',overflowY:'auto'},
+    sec:{marginTop:16},
+    secH:{fontSize:9,fontWeight:700,letterSpacing:.8,textTransform:'uppercase',color:'#9B9BB4',fontFamily:"'IBM Plex Mono',monospace",marginBottom:7},
+    card:{background:'#111827',border:'.5px solid #2D2D44',borderRadius:7,padding:'9px 11px',marginBottom:6},
+    inp:{width:'100%',background:'#080810',border:'.5px solid #2D2D44',borderRadius:6,padding:'7px 10px',color:'#F5F5F5',fontSize:12,outline:'none',boxSizing:'border-box',fontFamily:"'IBM Plex Mono',monospace"},
+    btn:{padding:'7px 14px',borderRadius:6,border:'none',cursor:'pointer',fontSize:11,fontWeight:600},
+    aviso:{background:'rgba(251,191,36,.07)',border:'.5px solid rgba(251,191,36,.4)',borderRadius:6,padding:'7px 10px',fontSize:11,color:'#FBBF24',marginBottom:5,fontFamily:"'IBM Plex Mono',monospace"},
   };
-  const copiar = txt => {
-    navigator.clipboard.writeText(txt).catch(() => {});
-    setCopiado(aba);
-    setTimeout(() => setCopiado(""), 2500);
-  };
-  const registrarKanban = canal => {
-    if (onKanbanAdd) onKanbanAdd(decisor.nome, decisor.cargo, empresa, canal);
-  };
-  const waNro = decisor.wa ? (() => {
-    const n = (decisor.wa || "").replace(/[^0-9]/g, "");
-    return n.startsWith("55") && n.length >= 12 ? n : "55" + n;
-  })() : "";
-  const waTextoEnc = encodeURIComponent(textos.whatsapp + "\n\n" + ASSINATURA_TEXTO);
-  const liUrl = decisor.linkedin ? decisor.linkedin.startsWith("http") ? decisor.linkedin : "https://" + decisor.linkedin : "https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(decisor.nome || "");
-  const emailCorpoFull = textos.email_corpo + ASSINATURA_TEXTO;
-  const ABAS = [{
-    id: "whatsapp",
-    icon: "💬",
-    label: "WhatsApp"
-  }, {
-    id: "linkedin",
-    icon: "💼",
-    label: "LinkedIn"
-  }, {
-    id: "email",
-    icon: "✉️",
-    label: "Email"
-  }];
-  const inpStyle = {
-    width: "100%",
-    background: "#0D0D0D",
-    border: ".5px solid #2D2D44",
-    borderRadius: 8,
-    padding: "10px 12px",
-    color: "#F5F5F5",
-    fontSize: 12,
-    fontFamily: "IBM Plex Mono,monospace",
-    outline: "none",
-    resize: "vertical",
-    boxSizing: "border-box",
-    lineHeight: 1.6
-  };
-  return /*#__PURE__*/React.createElement("div", {
-    className: "modov",
-    style: {
-      zIndex: 1100
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    className: "mod mod-wide",
-    style: {
-      maxWidth: 660,
-      maxHeight: "92vh",
-      display: "flex",
-      flexDirection: "column"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "space-between",
-      marginBottom: 14,
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 15,
-      fontWeight: 700,
-      color: "#F5F5F5"
-    }
-  }, "📨 Abordagem"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      fontFamily: "IBM Plex Mono,monospace",
-      color: "#9B9BB4",
-      marginTop: 2
-    }
-  }, decisor.nome || "Decisor", " · ", empresa)), /*#__PURE__*/React.createElement("button", {
-    onClick: onClose,
-    style: {
-      background: "none",
-      border: "none",
-      color: "#555",
-      cursor: "pointer",
-      fontSize: 22,
-      lineHeight: 1
-    }
-  }, "×")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 6,
-      marginBottom: 14,
-      flexShrink: 0
-    }
-  }, ABAS.map(a => /*#__PURE__*/React.createElement("button", {
-    key: a.id,
-    onClick: () => setAba(a.id),
-    style: {
-      flex: 1,
-      padding: "10px 0",
-      borderRadius: 8,
-      border: ".5px solid",
-      cursor: "pointer",
-      fontWeight: 600,
-      fontSize: 12,
-      transition: "all .15s",
-      borderColor: aba === a.id ? "#FF6B2B" : "#2D2D44",
-      background: aba === a.id ? "rgba(255,107,43,.1)" : "transparent",
-      color: aba === a.id ? "#FF6B2B" : "#9B9BB4"
-    }
-  }, a.icon, " ", a.label))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      overflowY: "auto",
-      marginBottom: 12
-    }
-  }, aba === "whatsapp" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "#9B9BB4",
-      fontFamily: "IBM Plex Mono,monospace",
-      marginBottom: 6,
-      textTransform: "uppercase",
-      letterSpacing: .5
-    }
-  }, "Mensagem WhatsApp"), /*#__PURE__*/React.createElement("textarea", {
-    rows: 4,
-    value: textos.whatsapp,
-    onChange: e => setTextos({
-      ...textos,
-      whatsapp: e.target.value
-    }),
-    style: inpStyle
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "#555",
-      fontFamily: "IBM Plex Mono,monospace",
-      marginTop: 4,
-      marginBottom: 14
-    }
-  }, "Assinatura será adicionada automaticamente ao enviar."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      flexWrap: "wrap"
-    }
-  }, waNro ? /*#__PURE__*/React.createElement("a", {
-    href: "https://wa.me/" + waNro + "?text=" + waTextoEnc,
-    target: "_blank",
-    onClick: () => registrarKanban("whatsapp"),
-    style: {
-      flex: 2,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      padding: "11px 0",
-      borderRadius: 8,
-      border: "none",
-      background: "#25D366",
-      color: "#fff",
-      fontSize: 13,
-      fontWeight: 700,
-      textDecoration: "none",
-      cursor: "pointer"
-    }
-  }, "💬 Abrir WhatsApp com texto pronto") : /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 2,
-      padding: "11px 12px",
-      borderRadius: 8,
-      border: ".5px solid #2D2D44",
-      fontSize: 11,
-      color: "#555",
-      fontFamily: "IBM Plex Mono,monospace",
-      textAlign: "center"
-    }
-  }, "Número de WhatsApp não cadastrado para este decisor"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      copiar(textos.whatsapp + "\n\n" + ASSINATURA_TEXTO);
-      registrarKanban("whatsapp");
-    },
-    style: {
-      flex: 1,
-      padding: "11px 0",
-      borderRadius: 8,
-      border: ".5px solid #2D2D44",
-      background: "transparent",
-      color: "#9B9BB4",
-      fontSize: 12,
-      cursor: "pointer"
-    }
-  }, copiado === "whatsapp" ? "✓ Copiado!" : "📋 Copiar"))), aba === "linkedin" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "#9B9BB4",
-      fontFamily: "IBM Plex Mono,monospace",
-      marginBottom: 6,
-      textTransform: "uppercase",
-      letterSpacing: .5
-    }
-  }, "Mensagem LinkedIn DM"), /*#__PURE__*/React.createElement("textarea", {
-    rows: 4,
-    value: textos.linkedin,
-    onChange: e => setTextos({
-      ...textos,
-      linkedin: e.target.value
-    }),
-    style: inpStyle
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "#555",
-      fontFamily: "IBM Plex Mono,monospace",
-      marginTop: 4,
-      marginBottom: 14
-    }
-  }, "Copie o texto e cole no LinkedIn após abrir o perfil."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement("a", {
-    href: liUrl,
-    target: "_blank",
-    onClick: () => {
-      copiar(textos.linkedin);
-      registrarKanban("linkedin");
-    },
-    style: {
-      flex: 2,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 8,
-      padding: "11px 0",
-      borderRadius: 8,
-      border: "none",
-      background: "#0A66C2",
-      color: "#fff",
-      fontSize: 13,
-      fontWeight: 700,
-      textDecoration: "none",
-      cursor: "pointer"
-    }
-  }, "💼 Abrir perfil + copiar texto"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      copiar(textos.linkedin);
-      registrarKanban("linkedin");
-    },
-    style: {
-      flex: 1,
-      padding: "11px 0",
-      borderRadius: 8,
-      border: ".5px solid #2D2D44",
-      background: "transparent",
-      color: "#9B9BB4",
-      fontSize: 12,
-      cursor: "pointer"
-    }
-  }, copiado === "linkedin" ? "✓ Copiado!" : "📋 Copiar"))), aba === "email" && /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "#9B9BB4",
-      fontFamily: "IBM Plex Mono,monospace",
-      marginBottom: 4,
-      textTransform: "uppercase",
-      letterSpacing: .5
-    }
-  }, "Assunto"), /*#__PURE__*/React.createElement("input", {
-    value: textos.email_assunto,
-    onChange: e => setTextos({
-      ...textos,
-      email_assunto: e.target.value
-    }),
-    style: {
-      ...inpStyle,
-      resize: "none",
-      marginBottom: 10,
-      padding: "8px 12px"
-    }
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "#9B9BB4",
-      fontFamily: "IBM Plex Mono,monospace",
-      marginBottom: 4,
-      textTransform: "uppercase",
-      letterSpacing: .5
-    }
-  }, "Corpo"), /*#__PURE__*/React.createElement("textarea", {
-    rows: 7,
-    value: textos.email_corpo,
-    onChange: e => setTextos({
-      ...textos,
-      email_corpo: e.target.value
-    }),
-    style: {
-      ...inpStyle,
-      marginBottom: 4
-    }
-  }), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "#555",
-      fontFamily: "IBM Plex Mono,monospace",
-      marginBottom: 14
-    }
-  }, "Assinatura Galeria Holding será adicionada automaticamente."), /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement("a", {
-    href: "https://mail.google.com/mail/?view=cm&su=" + encodeURIComponent(textos.email_assunto) + "&body=" + encodeURIComponent(emailCorpoFull),
-    target: "_blank",
-    onClick: () => registrarKanban("email"),
-    style: {
-      flex: 1,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6,
-      padding: "11px 0",
-      borderRadius: 8,
-      border: "none",
-      background: "#EA4335",
-      color: "#fff",
-      fontSize: 12,
-      fontWeight: 700,
-      textDecoration: "none",
-      cursor: "pointer"
-    }
-  }, "✉️ Abrir no Gmail"), /*#__PURE__*/React.createElement("a", {
-    href: "https://outlook.office.com/mail/deeplink/compose?subject=" + encodeURIComponent(textos.email_assunto) + "&body=" + encodeURIComponent(emailCorpoFull),
-    target: "_blank",
-    onClick: () => registrarKanban("email"),
-    style: {
-      flex: 1,
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      gap: 6,
-      padding: "11px 0",
-      borderRadius: 8,
-      border: "none",
-      background: "#0078D4",
-      color: "#fff",
-      fontSize: 12,
-      fontWeight: 700,
-      textDecoration: "none",
-      cursor: "pointer"
-    }
-  }, "✉️ Abrir no Outlook"), /*#__PURE__*/React.createElement("button", {
-    onClick: () => {
-      copiar(emailCorpoFull);
-      registrarKanban("email");
-    },
-    style: {
-      flex: 1,
-      padding: "11px 0",
-      borderRadius: 8,
-      border: ".5px solid #2D2D44",
-      background: "transparent",
-      color: "#9B9BB4",
-      fontSize: 12,
-      cursor: "pointer"
-    }
-  }, copiado === "email" ? "✓ Copiado!" : "📋 Copiar")))), /*#__PURE__*/React.createElement("div", {
-    style: {
-      borderTop: ".5px solid #2D2D44",
-      paddingTop: 12,
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      gap: 8,
-      alignItems: "center",
-      marginBottom: erro ? 8 : 0,
-      flexWrap: "wrap"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 9,
-      color: "#555",
-      fontFamily: "IBM Plex Mono,monospace",
-      whiteSpace: "nowrap"
-    }
-  }, "EMPRESA FOCO"), /*#__PURE__*/React.createElement("select", {
-    value: empresaFoco,
-    onChange: e => {
-      setEmpresaFoco(e.target.value);
-      resetTextos(e.target.value);
-    },
-    style: {
-      background: "#0D0D0D",
-      border: ".5px solid #2D2D44",
-      borderRadius: 6,
-      padding: "5px 10px",
-      color: "#9B9BB4",
-      fontSize: 11,
-      outline: "none",
-      cursor: "pointer"
-    }
-  }, EMPRESAS_GALERIA.map(eg => /*#__PURE__*/React.createElement("option", {
-    key: eg
-  }, eg))), /*#__PURE__*/React.createElement("input", {
-    value: contexto,
-    onChange: e => setContexto(e.target.value),
-    placeholder: "contexto extra (opcional)",
-    style: {
-      flex: 1,
-      background: "#0D0D0D",
-      border: ".5px solid #2D2D44",
-      borderRadius: 6,
-      padding: "5px 10px",
-      color: "#F5F5F5",
-      fontSize: 11,
-      outline: "none",
-      minWidth: 100
-    }
-  }), /*#__PURE__*/React.createElement("button", {
-    onClick: gerarComIA,
-    disabled: loading,
-    style: {
-      padding: "6px 14px",
-      borderRadius: 6,
-      border: ".5px solid rgba(255,107,43,.4)",
-      background: "rgba(255,107,43,.08)",
-      color: loading ? "#555" : "#FF6B2B",
-      fontSize: 11,
-      cursor: loading ? "not-allowed" : "pointer",
-      fontWeight: 600,
-      whiteSpace: "nowrap"
-    }
-  }, loading ? "Gerando..." : "⚡ Melhorar com IA")), erro && /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "8px 12px",
-      background: "rgba(226,75,74,.08)",
-      border: ".5px solid rgba(226,75,74,.3)",
-      borderRadius: 6,
-      fontSize: 11,
-      color: "#E24B4A"
-    }
-  }, erro))));
+
+  function ChipSel(p) {
+    return React.createElement('div',{style:{display:'flex',gap:5,flexWrap:'wrap'}},
+      p.options.map(function(o){
+        var act=o.id===p.value;
+        return React.createElement('button',{key:o.id,onClick:function(){p.onChange(o.id);},style:{padding:'4px 12px',borderRadius:20,border:'.5px solid '+(act?'#FF6B2B':'#2D2D44'),background:act?'rgba(255,107,43,.15)':'transparent',color:act?'#FF6B2B':'#9B9BB4',fontSize:11,cursor:'pointer',fontWeight:act?700:400}},o.label);
+      })
+    );
+  }
+
+  // ── Render ───────────────────────────────────────────────────────────────────
+  return React.createElement('div',{style:S.overlay,onClick:onClose},
+    React.createElement('div',{style:S.drawer,onClick:function(e){e.stopPropagation();}},
+      // Header
+      React.createElement('div',{style:S.hdr},
+        React.createElement('div',null,
+          React.createElement('div',{style:{fontSize:14,fontWeight:700,color:'#F5F5F5',lineHeight:1.2}},'📨 Abordar '+((decisor&&decisor.nome)||'')),
+          React.createElement('div',{style:{fontSize:10,color:'#9B9BB4',fontFamily:"'IBM Plex Mono',monospace",marginTop:3}},empresa+(setor?' · '+setor:''))
+        ),
+        React.createElement('button',{onClick:onClose,style:{background:'none',border:'none',color:'#9B9BB4',cursor:'pointer',fontSize:18,padding:'0 4px',lineHeight:1}},'✕')
+      ),
+      // Body
+      React.createElement('div',{style:S.body},
+        loading&&React.createElement('div',{style:{color:'#9B9BB4',fontSize:12,marginTop:24,textAlign:'center'}},'Carregando…'),
+        !loading&&React.createElement('div',null,
+          // Agência
+          React.createElement('div',{style:S.sec},
+            React.createElement('div',{style:S.secH},'AGÊNCIA'),
+            React.createElement(ChipSel,{options:AGENCIAS.map(function(a){return {id:a.id,label:a.nome};}),value:agId||'',onChange:setAgId})
+          ),
+          // Canal
+          React.createElement('div',{style:S.sec},
+            React.createElement('div',{style:S.secH},'CANAL'),
+            React.createElement(ChipSel,{options:CANAIS,value:canal,onChange:setCanal})
+          ),
+          // Etapa
+          React.createElement('div',{style:S.sec},
+            React.createElement('div',{style:S.secH},'ETAPA (sugerida pelo histórico)'),
+            React.createElement(ChipSel,{options:ETAPAS,value:etapa,onChange:setEtapa})
+          ),
+          // Avisos
+          avisos.length>0&&React.createElement('div',{style:{marginTop:14}},
+            avisos.map(function(av,i){return React.createElement('div',{key:i,style:S.aviso},'⚠ '+av);})
+          ),
+          // Histórico últimos 5 toques
+          toques.length>0&&React.createElement('div',{style:S.sec},
+            React.createElement('div',{style:S.secH},'ÚLTIMOS 5 TOQUES'),
+            toques.map(function(t){
+              return React.createElement('div',{key:t.id,style:{...S.card,padding:'8px 10px',marginBottom:4}},
+                React.createElement('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center'}},
+                  React.createElement('span',{style:{fontSize:10,fontFamily:"'IBM Plex Mono',monospace",color:'#9B9BB4'}},
+                    (t.data?new Date(t.data).toLocaleDateString('pt-BR'):'—')+' · '+canalLabel(t.canal)
+                  ),
+                  React.createElement('span',{style:{fontSize:9,color:'#555',fontFamily:"'IBM Plex Mono',monospace"}},agNomeById(t.agencia_id))
+                ),
+                t.resultado&&React.createElement('span',{style:{fontSize:9,background:'rgba(52,211,153,.12)',color:'#34D399',padding:'1px 6px',borderRadius:100,display:'inline-block',marginTop:3}},t.resultado),
+                t.resumo&&React.createElement('div',{style:{fontSize:11,color:'#9B9BB4',marginTop:4,whiteSpace:'pre-wrap',maxHeight:36,overflow:'hidden'}},t.resumo)
+              );
+            })
+          ),
+          // Gravado feedback
+          gravado&&React.createElement('div',{style:{marginTop:16,padding:'10px 12px',background:'rgba(52,211,153,.08)',border:'.5px solid rgba(52,211,153,.3)',borderRadius:8,textAlign:'center',color:'#34D399',fontSize:12}},'✅ Toque gravado em crm_toques'),
+          // Template + Action
+          !gravado&&React.createElement('div',null,
+            tplLoading&&React.createElement('div',{style:{color:'#555',fontSize:11,marginTop:16,textAlign:'center'}},'Carregando template…'),
+            !tplLoading&&canal==='email'&&React.createElement('div',{style:{marginTop:16}},
+              React.createElement('div',{style:S.secH},'ASSUNTO'),
+              React.createElement('input',{style:{...S.inp,marginBottom:10},value:assunto,onChange:function(e){setAssunto(e.target.value);}}),
+              React.createElement('div',{style:S.secH},'CORPO'),
+              React.createElement('textarea',{style:{...S.inp,minHeight:130,resize:'vertical',lineHeight:1.6},value:texto,onChange:function(e){setTexto(e.target.value);}}),
+              !(decisor&&decisor.email)&&React.createElement('div',{style:{marginTop:7,fontSize:11,color:'#FBBF24'}},'⚠ E-mail não cadastrado para este decisor'),
+              React.createElement('div',{style:{display:'flex',gap:8,marginTop:12}},
+                React.createElement('button',{onClick:acaoEmail,disabled:saving||!(decisor&&decisor.email),style:{...S.btn,flex:1,background:'#0078D4',color:'#fff',opacity:(decisor&&decisor.email)?1:.4}},saving?'Abrindo…':'✉ Abrir no Outlook Web'),
+                React.createElement('button',{onClick:function(){try{navigator.clipboard.writeText((assunto?assunto+'\n\n':'')+texto);}catch(e){}},style:{...S.btn,background:'#1A1A2E',color:'#9B9BB4'}},'📋')
+              )
+            ),
+            !tplLoading&&canal==='whatsapp'&&React.createElement('div',{style:{marginTop:16}},
+              React.createElement('div',{style:S.secH},'MENSAGEM'),
+              React.createElement('textarea',{style:{...S.inp,minHeight:110,resize:'vertical',lineHeight:1.6},value:texto,onChange:function(e){setTexto(e.target.value);}}),
+              !(decisor&&decisor.wa)&&React.createElement('div',{style:{marginTop:7,fontSize:11,color:'#FBBF24'}},'⚠ WhatsApp não cadastrado para este decisor'),
+              React.createElement('div',{style:{display:'flex',gap:8,marginTop:12}},
+                React.createElement('button',{onClick:acaoWhatsApp,disabled:saving||!(decisor&&decisor.wa),style:{...S.btn,flex:1,background:'#25D366',color:'#fff',opacity:(decisor&&decisor.wa)?1:.4}},saving?'Abrindo…':'💬 Abrir no WhatsApp'),
+                React.createElement('button',{onClick:function(){try{navigator.clipboard.writeText(texto);}catch(e){}},style:{...S.btn,background:'#1A1A2E',color:'#9B9BB4'}},'📋')
+              )
+            ),
+            !tplLoading&&canal==='linkedin'&&React.createElement('div',{style:{marginTop:16}},
+              React.createElement('div',{style:S.secH},'NOTA / MENSAGEM'),
+              React.createElement('textarea',{style:{...S.inp,minHeight:110,resize:'vertical',lineHeight:1.6},value:texto,onChange:function(e){setTexto(e.target.value);}}),
+              React.createElement('div',{style:{display:'flex',gap:8,marginTop:12}},
+                React.createElement('button',{onClick:acaoLinkedIn,disabled:saving,style:{...S.btn,flex:1,background:'#0A66C2',color:'#fff'}},
+                  copiado?'✓ Copiado! Abrindo perfil…':'💼 Copiar e abrir perfil LinkedIn')
+              )
+            ),
+            !tplLoading&&canal==='ligacao'&&React.createElement('div',{style:{marginTop:16}},
+              React.createElement('div',{style:S.secH},'ROTEIRO (6 LINHAS)'),
+              React.createElement('textarea',{style:{...S.inp,minHeight:130,resize:'vertical',lineHeight:1.7},value:texto,onChange:function(e){setTexto(e.target.value);}}),
+              React.createElement('div',{style:{...S.secH,marginTop:14}},'RESULTADO'),
+              React.createElement('div',{style:{display:'flex',gap:6,flexWrap:'wrap',marginBottom:10}},
+                [['atendeu','✅ Atendeu'],['caixa_postal','📭 Caixa postal'],['nao_atendeu','❌ Não atendeu']].map(function(pair){
+                  var r=pair[0],l=pair[1],act=ligResultado===r;
+                  return React.createElement('button',{key:r,onClick:function(){setLigResultado(r);},style:{...S.btn,background:act?'rgba(52,211,153,.15)':'#1A1A2E',border:'.5px solid '+(act?'#34D399':'#2D2D44'),color:act?'#34D399':'#9B9BB4'}},l);
+                })
+              ),
+              ligResultado&&React.createElement('div',{style:{marginBottom:10}},
+                React.createElement('div',{style:S.secH},'NOTA'),
+                React.createElement('textarea',{style:{...S.inp,minHeight:55,resize:'vertical'},value:nota,onChange:function(e){setNota(e.target.value);}})
+              ),
+              ligResultado==='atendeu'&&React.createElement('div',{style:{marginBottom:10}},
+                !showReuniao&&React.createElement('button',{onClick:function(){setShowReuniao(true);},style:{...S.btn,background:'rgba(96,165,250,.1)',color:'#60A5FA',border:'.5px solid rgba(96,165,250,.3)'}},'📅 Reunião marcada'),
+                showReuniao&&React.createElement('div',null,
+                  React.createElement('div',{style:S.secH},'DATA E HORA DA REUNIÃO'),
+                  React.createElement('input',{type:'datetime-local',style:S.inp,value:reuniaoEm,onChange:function(e){setReuniaoEm(e.target.value);}})
+                )
+              ),
+              ligResultado&&React.createElement('button',{
+                onClick:function(){gravarToque(ligResultado,nota,reuniaoEm?new Date(reuniaoEm).toISOString():null);},
+                disabled:saving,
+                style:{...S.btn,background:'#7C3AED',color:'#fff',width:'100%',marginTop:4}
+              },saving?'Gravando…':'Gravar resultado')
+            )
+          )
+        )
+      )
+    )
+  );
 }
+
