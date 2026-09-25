@@ -3750,10 +3750,12 @@ function FilaDoDia() {
     var subj = encodeURIComponent(assunto);
     if (outlookMode==='mailto') {
       var bodyEncMail = corpo.replace(/\r?\n/g,'%0D%0A');
+      if (bodyEncMail.length > 1800) return null;
       return 'mailto:'+encodeURIComponent(email)+'?subject='+subj+'&body='+bodyEncMail;
     }
     // Outlook Web deeplink: encode body fully including newlines
     var bodyEnc = encodeURIComponent(corpo);
+    if (bodyEnc.length > 1800) return null;
     return 'https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(email)+'&subject='+subj+'&body='+bodyEnc;
   }
 
@@ -3792,13 +3794,13 @@ function FilaDoDia() {
       }
       var link = buildLink(d.email, assunto, corpo);
       markAberto(item);
-      if (link.length>2000) {
+      if (!link) {
         if (navigator.clipboard) navigator.clipboard.writeText(corpo);
         var shortLink = outlookMode==='mailto'
           ? 'mailto:'+encodeURIComponent(d.email)+'?subject='+encodeURIComponent(assunto)
           : 'https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(d.email)+'&subject='+encodeURIComponent(assunto);
         window.open(shortLink,'_blank','noopener,noreferrer');
-        notify('📋 Corpo copiado (link longo). Cole no Outlook.','#EF9F27');
+        notify('📋 Corpo copiado — cole no e-mail.','#EF9F27');
       } else {
         window.open(link,'_blank','noopener,noreferrer');
       }

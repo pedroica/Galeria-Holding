@@ -82,17 +82,68 @@ const FALLBACK_TEMPLATES = {
   linkedin_mensagem: { assunto:null, corpo:'{primeiro_nome}, queria continuar nossa conversa sobre uma parceria entre {agencia} e {empresa}.' },
 };
 
-async function gerarTexto(anthropic, prompt, canal) {
-  const maxWords = canal === 'linkedin_convite' ? 40 : canal === 'whatsapp' ? 60 : 120;
+// Parse JSON from LLM output — handles code fences and literal newlines in string values
+function parseAIJson(txt) {
+  const clean = txt.replace(/^```(?:json)?\s*/im, '').replace(/```\s*$/m, '').trim();
+  // Strategy 1: standard parse after extracting JSON object
+  try { const m = clean.match(/\{[\s\S]+\}/); if (m) return JSON.parse(m[0]); } catch(_) {}
+  // Strategy 2: escape literal newlines inside JSON strings then parse
+  try {
+    const m = clean.match(/\{[\s\S]+\}/);
+    if (m) {
+      const fixed = m[0].replace(/"(?:[^"\\]|\\.|\n)*"/g, s => s.replace(/\n/g, '\\n').replace(/\r/g, ''));
+      return JSON.parse(fixed);
+    }
+  } catch(_) {}
+  // Strategy 3: manual extraction
+  try {
+    const mA = clean.match(/"assunto"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+    const ci = clean.indexOf('"corpo"');
+    if (ci >= 0) {
+      const after = clean.slice(ci);
+      const qi = after.indexOf('"', after.indexOf(':') + 1);
+      if (qi >= 0) {
+        const em = after.slice(qi + 1).match(/([\s\S]*?)"\s*\n?\s*\}/);
+        if (em) return { assunto: mA ? mA[1] : '', corpo: em[1].replace(/\\n/g, '\n') };
+      }
+    }
+  } catch(_) {}
+  return null;
+}
+
+async function logWarn(msg, ctx, empresa_id, decisor_id) {
+  try {
+    await fetch(SUPA_URL + '/rest/v1/crm_logs', {
+      method: 'POST',
+      headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ origem: 'fila/ia', nivel: 'warn', mensagem: msg, contexto: ctx, empresa_id: empresa_id || null, decisor_id: decisor_id || null })
+    });
+  } catch(_) {}
+}
+
+// Returns { assunto, corpo, ... } or null if extraction/validation fails
+async function gerarTexto(anthropic, prompt, canal, opts = {}) {
+  const maxWords = opts.maxWords || (canal === 'linkedin_convite' ? 40 : canal === 'whatsapp' ? 60 : 90);
+  const caseNames = opts.caseNames || [];
   const r = await anthropic.messages.create({
-    model: 'claude-sonnet-4-6', max_tokens: 400,
+    model: 'claude-sonnet-4-6', max_tokens: 800,
     messages: [{ role: 'user', content: prompt }],
-    system: `Você gera mensagens de prospecção B2B em português para Pedro Ica, sócio da Galeria Holding.\nRegras absolutas:\n- Máximo ${maxWords} palavras no corpo\n- Assunto (se email): máximo 8 palavras\n- Sem travessão (—), sem lista, sem jargão corporativo\n- Exatamente 1 pergunta clara no final\n- Tom: direto, humano, sem bajulação\n- Nunca inventar dado, case ou resultado\nFormato de resposta (JSON):\n{"assunto":"...","corpo":"..."}`
+    system: `Você gera mensagens de prospecção B2B em português.\nRegras absolutas:\n- Máximo ${maxWords} palavras no corpo\n- Assunto (se email): máximo 8 palavras\n- Sem travessão (—), sem lista, sem jargão corporativo\n- Exatamente 1 pergunta direta no final\n- Tom: direto, humano, sem bajulação, sem pitch\n- Nunca citar cases, clientes, resultados ou números\n- Email termina com "Abraço,"\nFormato: JSON compacto em linha única, sem cercas de código:\n{"assunto":"...","corpo":"..."}\nUse \\n para quebras de linha dentro do campo corpo.`
   });
-  const txt = r.content[0]?.text || '';
-  let obj = {};
-  try { const clean = txt.replace(/^```(?:json)?\s*/i,'').replace(/\s*```\s*$/,''); const m = clean.match(/\{[\s\S]+\}/); if (m) obj = JSON.parse(m[0]); } catch(e) {}
-  return { assunto: obj.assunto || '', corpo: obj.corpo || txt.slice(0, 600), tokens_prompt: r.usage?.input_tokens || 0, tokens_resposta: r.usage?.output_tokens || 0, custo_usd: ((r.usage?.input_tokens||0)*3+(r.usage?.output_tokens||0)*15)/1_000_000 };
+  const raw = r.content[0]?.text || '';
+  const usage = { tokens_prompt: r.usage?.input_tokens || 0, tokens_resposta: r.usage?.output_tokens || 0, custo_usd: ((r.usage?.input_tokens||0)*3+(r.usage?.output_tokens||0)*15)/1_000_000 };
+  const obj = parseAIJson(raw);
+  if (!obj) return null;
+  const assunto = (obj.assunto || '').trim();
+  const corpo = (obj.corpo || '').trim();
+  // Structural: corpo must not be raw JSON or markdown
+  if (!corpo || corpo.startsWith('{') || corpo.includes('```')) return null;
+  // Word count
+  if (corpo.split(/\s+/).filter(Boolean).length > maxWords) return null;
+  // No case or client names in body
+  const bodyLow = corpo.toLowerCase();
+  if (caseNames.some(n => n && bodyLow.includes(n.toLowerCase()))) return null;
+  return { assunto, corpo, ...usage };
 }
 async function estrelasPorEmpresa(agenciaId) {
   const rows = await sg(`crm_empresa_agencia_estrelas?agencia_id=eq.${agenciaId}&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=500`);
@@ -226,16 +277,26 @@ export default async function handler(req, res) {
       const tpl = (templates || []).find(t => t.canal === canal && t.etapa === etapaStr);
       const caso = cases && cases.length > 0 ? cases[Math.floor(Math.random() * cases.length)] : null;
       const estrelas = scoreMap[d.empresa_id] || 0;
-      const prompt = `Gere uma mensagem de prospecção.\nAgência: ${ag.nome}\nEmpresa-alvo: ${emp.nome||d.empresa_id}\nSetor: ${emp.setor||emp.segmento_detalhe||'não especificado'}\nDecisores: ${d.nome}, ${d.cargo||'cargo desconhecido'}\nCanal: ${canal}\nEtapa: ${etapa}\nRelevância: ${estrelas}/5 estrelas\n${tpl?'Template base: '+tpl.corpo.slice(0,300):''}\n${caso?'Case: '+caso.titulo+' ('+caso.marca+') — '+caso.resumo:''}`;
+      const etapaN = Number(etapa.replace('etapa','')) || 1;
+      const isEtapa1 = etapaN === 1;
+      const etapaInstr = isEtapa1 ? 'OBJETIVO etapa 1: pedir 20 minutos para entender o marketing da empresa. NÃO mencione cases, clientes, resultados nem faça pitch.' : '';
+      const casoStr = (!isEtapa1 && caso) ? `Case disponível (mencionar se relevante): ${caso.titulo} (${caso.marca}) — ${caso.resumo}` : '';
+      const prompt = [`Gere uma mensagem de prospecção.`,`Agência: ${ag.nome}`,`Empresa-alvo: ${emp.nome||d.empresa_id}`,`Setor: ${emp.setor||emp.segmento_detalhe||'não especificado'}`,`Decisor: ${d.nome}, ${d.cargo||'cargo desconhecido'}`,`Canal: ${canal}`,`Etapa: ${etapa}`,tpl?`Template base (usar como estrutura, personalizar apenas primeira frase): ${tpl.corpo.slice(0,300)}`:'',etapaInstr,casoStr].filter(Boolean).join('\n');
+      const setor = setorStr(emp);
+      const vars = {primeiro_nome:(d.nome||'').split(' ')[0],nome:d.nome||'',cargo:d.cargo||'',empresa:emp.nome||'',setor,agencia:ag.nome||'',nome_decisor:d.nome||'',nome_empresa:emp.nome||''};
       try {
         let txt;
         if (sem_ia) {
-          const setor = setorStr(emp);
-          const vars = {primeiro_nome:(d.nome||'').split(' ')[0],nome:d.nome||'',cargo:d.cargo||'',empresa:emp.nome||'',setor,agencia:ag.nome||'',nome_decisor:d.nome||'',nome_empresa:emp.nome||''};
           const base = tpl || FALLBACK_TEMPLATES[canal] || FALLBACK_TEMPLATES.email;
           txt = {assunto:interpolar(base.assunto||'',vars),corpo:interpolar(base.corpo||'',vars),tokens_prompt:0,tokens_resposta:0,custo_usd:0};
         } else {
-          txt = await gerarTexto(anthropic, prompt, canal);
+          const caseNames = caso ? [caso.titulo, caso.marca].filter(Boolean) : [];
+          txt = await gerarTexto(anthropic, prompt, canal, { caseNames });
+          if (!txt) {
+            await logWarn('texto IA rejeitado, usando template', { empresa: emp.nome, decisor: d.nome, canal, etapa }, d.empresa_id, d.id);
+            const base = tpl || FALLBACK_TEMPLATES[canal] || FALLBACK_TEMPLATES.email;
+            txt = {assunto:interpolar(base.assunto||'',vars),corpo:interpolar(base.corpo||'',vars),tokens_prompt:0,tokens_resposta:0,custo_usd:0};
+          }
         }
         const row = await sp('crm_fila', { agencia_id:ag.id, agencia_slug:ag.slug||ag.nome, empresa_id:d.empresa_id, decisor_id:d.id, canal, etapa, status:'rascunho', assunto:txt.assunto||null, corpo:txt.corpo, case_id:caso?.id||null, template_id:tpl?.id||null, tokens_prompt:txt.tokens_prompt, tokens_resposta:txt.tokens_resposta, custo_usd:txt.custo_usd, modelo:sem_ia?'template':'claude-sonnet-4-6', contexto_para_aprovacao:`${emp.nome||''} · ${d.nome} · ${d.cargo||''} · ${estrelas}★` });
         if (row) { restante[canal]=(restante[canal]||0)-1; totalGerado++; gerados.push({id:row[0]?.id,empresa:emp.nome,decisor:d.nome,canal,estrelas}); await sp(`crm_decisores?id=eq.${d.id}`, {ultimo_toque_em:new Date().toISOString()}, 'PATCH'); }
