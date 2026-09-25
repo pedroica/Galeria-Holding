@@ -136,8 +136,10 @@ Cada merge na main está autorizado assim que os testes reais passarem (saída c
 
 - **Sem JSX** — React.createElement direto, igual ao resto do codebase.
 - **Sem build** — nenhum npm run build; o deploy é o próprio source.
-- **Branch por feature** — `feature/nome-da-feature`. Merge na main só com ok do usuário, exceto telas autônomas explicitamente aprovadas.
+- **Branches que disparam CI** — `fix/**`, `feature/**`, `chore/**` no push; `pull_request` para main. Merge na main só com CI verde.
 - **Commit a cada alteração** testada; push ao mesmo tempo.
+- **Mudanças em `.github/workflows/`** — o token local não tem escopo `workflow`; editar pelo editor web do GitHub e depois `git pull` para sincronizar.
+- **Testes de integração** (suite "Bloco 8 — crm_oportunidades_visao isolamento") requerem `SUPABASE_SERVICE_ROLE_KEY` no ambiente; em CI vem do secret homônimo no GitHub Actions; localmente lê `SUPA_CRM_SERVICE_KEY` ou `SUPABASE_SERVICE_ROLE_KEY` do `.env`.
 - **Commits de docs/correções pequenas** → podem ir direto na main.
 - Fontes: `'IBM Plex Mono',monospace` para texto funcional, `'Syne',sans-serif` para títulos.
 - Paleta dark: fundo `#060606`, card `#0d0d1a` / `#1A1A2E`, border `#1A1A2E` / `#2D2D44`.
