@@ -578,7 +578,7 @@ function AbordagemModal({
           body:JSON.stringify({
             empresa_id:eid, agencia_id:agId||null,
             titulo:(empresa||'Empresa')+' — '+agNome,
-            estagio:'Reunião marcada', origem:'fila',
+            estagio:'Reunião marcada', origem:'abordagem_direta',
             aberta_em:now, criado_em:now, atualizado_em:now
           })
         });
