@@ -350,7 +350,7 @@ test.describe('Bloco 8 — crm_oportunidades_visao isolamento', () => {
     if (!SUPA_SVC) return;
     // Service key = acesso total (bypassa RLS via oport_service_all)
     // Usa supaGet com service key para confirmar que os dados estão lá
-    const rows = await supaGet('crm_oportunidades?agencia_id=eq.' + AG_OUTRA + '&select=titulo,valor_estimado,proximo_passo&not.valor_estimado.is.null&limit=5');
+    const rows = await supaGet('crm_oportunidades?agencia_id=eq.' + AG_OUTRA + '&select=titulo,valor_estimado,proximo_passo&valor_estimado=not.is.null&limit=5');
     expect(Array.isArray(rows) && rows.length > 0).toBe(true);
     for (const r of rows) {
       expect(r.valor_estimado).not.toBeNull();
