@@ -389,3 +389,106 @@ test.describe('Bloco 7 — Copiloto oportunidades', () => {
   });
 
 });
+
+// ── Bloco 9 — fila JSON parse e validação de tom ───────────────────────────────
+test.describe('Bloco 9 — fila JSON parse e validação de tom', () => {
+
+  // Inline copy of parseAIJson from api/fila.js (pure function, no deps)
+  function parseAIJson(txt) {
+    const clean = txt.replace(/^```(?:json)?\s*/im, '').replace(/```\s*$/m, '').trim();
+    try { const m = clean.match(/\{[\s\S]+\}/); if (m) return JSON.parse(m[0]); } catch(_) {}
+    try {
+      const m = clean.match(/\{[\s\S]+\}/);
+      if (m) {
+        const fixed = m[0].replace(/"(?:[^"\\]|\\.|\n)*"/g, s => s.replace(/\n/g, '\\n').replace(/\r/g, ''));
+        return JSON.parse(fixed);
+      }
+    } catch(_) {}
+    try {
+      const mA = clean.match(/"assunto"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      const ci = clean.indexOf('"corpo"');
+      if (ci >= 0) {
+        const after = clean.slice(ci);
+        const qi = after.indexOf('"', after.indexOf(':') + 1);
+        if (qi >= 0) {
+          const em = after.slice(qi + 1).match(/([\s\S]*?)"\s*\n?\s*\}/);
+          if (em) return { assunto: mA ? mA[1] : '', corpo: em[1].replace(/\\n/g, '\n') };
+        }
+      }
+    } catch(_) {}
+    return null;
+  }
+
+  // Inline copy of tone validation logic from gerarTexto in api/fila.js
+  function validarTom(corpo, maxWords, caseNames) {
+    if (!corpo || corpo.startsWith('{') || corpo.includes('```')) return false;
+    if (corpo.split(/\s+/).filter(Boolean).length > maxWords) return false;
+    const bodyLow = corpo.toLowerCase();
+    if (caseNames.some(n => n && bodyLow.includes(n.toLowerCase()))) return false;
+    return true;
+  }
+
+  test('parseAIJson: JSON válido com marcadores de código → extrai assunto e corpo', () => {
+    const raw = '```json\n{"assunto":"Reunião rápida","corpo":"Olá Felipe.\\n\\nPodemos conversar 20 minutos?\\n\\nAbraço,"}\n```';
+    const r = parseAIJson(raw);
+    expect(r).not.toBeNull();
+    expect(r.assunto).toBe('Reunião rápida');
+    expect(r.corpo).toContain('Olá Felipe');
+  });
+
+  test('parseAIJson: JSON com newlines literais dentro da string → extrai via estratégia 2', () => {
+    // Simulate what Claude returns: literal newline inside the JSON string value
+    const raw = '{"assunto":"Oportunidade","corpo":"Felipe,\n\nAcompanho o trabalho da Magazine Luiza.\n\nAbraço,"}';
+    const r = parseAIJson(raw);
+    expect(r).not.toBeNull();
+    expect(r.corpo).toContain('Felipe,');
+    expect(r.corpo).toContain('Abraço,');
+  });
+
+  test('parseAIJson: JSON inválido / truncado → retorna null', () => {
+    const r = parseAIJson('{"assunto":"Olá","corpo":"Texto cortado no m');
+    expect(r).toBeNull();
+  });
+
+  test('parseAIJson: resposta sem JSON → retorna null', () => {
+    expect(parseAIJson('Não entendi a solicitação.')).toBeNull();
+  });
+
+  test('validarTom: corpo limpo dentro do limite → aceito', () => {
+    const corpo = 'Felipe,\n\nAcompanho o trabalho da Magazine Luiza e gostaria de entender melhor o marketing de vocês.\n\nPoderíamos conversar 20 minutos esta semana?\n\nAbraço,';
+    expect(validarTom(corpo, 90, [])).toBe(true);
+  });
+
+  test('validarTom: corpo com mais de 90 palavras → rejeitado', () => {
+    const palavras = Array.from({ length: 95 }, (_, i) => 'palavra' + i).join(' ');
+    expect(validarTom(palavras, 90, [])).toBe(false);
+  });
+
+  test('validarTom: corpo com nome de case → rejeitado', () => {
+    const corpo = 'Felipe, trabalhamos com Natura e Itaú e acredito que podemos ajudar a Magazine Luiza. Abraço,';
+    expect(validarTom(corpo, 90, ['Natura', 'Itaú'])).toBe(false);
+  });
+
+  test('validarTom: corpo começa com { (JSON cru) → rejeitado', () => {
+    expect(validarTom('{"assunto":"a","corpo":"b"}', 90, [])).toBe(false);
+  });
+
+  test('validarTom: corpo com marcadores de código → rejeitado', () => {
+    expect(validarTom('```json\n{"assunto":"a"}\n```', 90, [])).toBe(false);
+  });
+
+  test('DB: nenhum item ativo em crm_fila tem corpo com JSON cru ou cercas de código', async () => {
+    if (!SUPA_SVC) return;
+    // PostgREST filter: corpo starts with { or contains ```json
+    const rows = await supaGet(
+      'crm_fila?select=id,corpo&status=in.(rascunho,aprovado,conferido)&or=(corpo.like.{*,corpo.like.*%60%60%60json*)'
+    );
+    const arr = Array.isArray(rows) ? rows : [];
+    // Filter client-side as belt-and-suspenders (PostgREST LIKE is case-sensitive)
+    const corrupted = arr.filter(r =>
+      r.corpo && (r.corpo.startsWith('{') || r.corpo.includes('```json'))
+    );
+    expect(corrupted.length).toBe(0);
+  });
+
+});
