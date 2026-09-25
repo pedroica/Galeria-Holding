@@ -552,18 +552,50 @@ function AbordagemModal({
     if (saving) return;
     setSaving(true);
     var now = new Date().toISOString();
+    // Quando reunião foi agendada, o resultado mais específico é reuniao_marcada
+    var resFinal = (reuniaoEmVal && resultado === 'atendeu') ? 'reuniao_marcada' : (resultado || null);
     var row = {
       decisor_id:(decisor&&decisor.id)||null, empresa_id:eid||null,
       agencia_id:agId||null, canal:canal, etapa:etapa,
       template_id:templateId||null, texto_enviado:texto||null,
       assunto:assunto||null, nota:notaTxt||null,
-      resultado:resultado||null, reuniao_em:reuniaoEmVal||null,
+      resultado:resFinal, reuniao_em:reuniaoEmVal||null,
       data:now, criado_em:now, origem:'abordagem_direta',
       direcao:'enviado', fonte:'manual'
     };
     await sjAb('/rest/v1/crm_toques',{method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify(row)});
     if (decisor&&decisor.id) await sjAb('/rest/v1/crm_decisores?id=eq.'+decisor.id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({ultimo_toque_em:now,ultimo_tema:canal})});
     if (eid) await sjAb('/rest/v1/crm_empresas?id=eq.'+eid,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({ultimo_toque_em:now})});
+    // Criar oportunidade automaticamente quando reunião marcada via Abordar
+    if (reuniaoEmVal && eid) {
+      var desde30 = new Date(Date.now() - 30*86400000).toISOString();
+      var existing = await sjAb('/rest/v1/crm_oportunidades?empresa_id=eq.'+eid+'&agencia_id=eq.'+agId+'&aberta_em=gte.'+encodeURIComponent(desde30)+'&select=id&limit=1');
+      if (!existing || !Array.isArray(existing) || !existing.length) {
+        var AG_LOC = (typeof AGENCIAS_GERAR !== 'undefined') ? AGENCIAS_GERAR : [];
+        var agNome = (AG_LOC.find(function(a){return a.id===agId;}) || {}).nome || '';
+        var oport = await sjAb('/rest/v1/crm_oportunidades', {
+          method:'POST', headers:{'Prefer':'return=representation'},
+          body:JSON.stringify({
+            empresa_id:eid, agencia_id:agId||null,
+            titulo:(empresa||'Empresa')+' — '+agNome,
+            estagio:'Reunião marcada', origem:'abordagem_direta',
+            aberta_em:now, criado_em:now, atualizado_em:now
+          })
+        });
+        if (oport && Array.isArray(oport) && oport[0]) {
+          await sjAb('/rest/v1/crm_oportunidade_eventos', {
+            method:'POST', headers:{'Prefer':'return=minimal'},
+            body:JSON.stringify({oportunidade_id:oport[0].id, tipo:'criada', para:'Reunião marcada', texto:'Criada automaticamente via Abordar — reunião marcada'})
+          });
+          if (decisor&&decisor.id) {
+            await sjAb('/rest/v1/crm_decisores?id=eq.'+decisor.id, {
+              method:'PATCH', headers:{'Prefer':'return=minimal'},
+              body:JSON.stringify({reuniao_marcada_em:now, agencia_prospectando:agId})
+            });
+          }
+        }
+      }
+    }
     setSaving(false); setGravado(true);
     setToques(function(p){return [{...row,id:'new'+Date.now(),data:now}].concat(p).slice(0,5);});
   }
