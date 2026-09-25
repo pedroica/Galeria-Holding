@@ -2,7 +2,7 @@ name: Playwright E2E
 
 on:
   push:
-    branches: [main, "feature/**", "chore/**"]
+    branches: [main, "feature/**", "chore/**", "fix/**"]
   pull_request:
     branches: [main]
 
@@ -31,6 +31,7 @@ jobs:
           APP_URL: https://galeria-holding-sage.vercel.app
           PLAYWRIGHT_TEST_EMAIL: ${{ secrets.PLAYWRIGHT_TEST_EMAIL }}
           PLAYWRIGHT_TEST_PASSWORD: ${{ secrets.PLAYWRIGHT_TEST_PASSWORD }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
 
       - name: Upload report on failure
         if: failure()
