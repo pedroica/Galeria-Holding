@@ -1069,7 +1069,16 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
             var sr = supaEmpMap[(selEmpresa.nome||'').toLowerCase().trim()];
             if (sr) empId = sr.id;
           }
-          if (!empId) { alert('Empresa não encontrada no banco. Verifique a conexão e tente novamente.'); return; }
+          if (!empId) {
+            // Empresa só existe no cache local — cadastrá-la no banco antes de inserir o decisor
+            var nowEmp = new Date().toISOString();
+            var empPayload = { nome: selEmpresa.nome, setor: selEmpresa.setor || null, fonte: 'manual', criado_em: nowEmp, atualizado_em: nowEmp };
+            var newEmpRes = await supaJwtFig('/rest/v1/crm_empresas', { method: 'POST', headers: { 'Prefer': 'return=representation' }, body: JSON.stringify(empPayload) }).catch(function(e) { alert('Erro ao cadastrar empresa: ' + e.message); return null; });
+            if (!Array.isArray(newEmpRes) || !newEmpRes[0]) { alert('Erro ao cadastrar empresa no banco.'); return; }
+            empId = newEmpRes[0].id;
+            setSupaEmpMap(function(prev) { var m = Object.assign({}, prev); m[(selEmpresa.nome||'').toLowerCase().trim()] = newEmpRes[0]; return m; });
+            setSelEmpresa(function(prev) { return Object.assign({}, prev, { empresa_id: empId }); });
+          }
           var emailVal = fEmail.trim();
           var liVal = fLi.trim();
           // Dedup por email
