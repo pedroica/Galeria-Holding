@@ -5250,22 +5250,18 @@ function App() {
     {id:'studioga', name:'Studio GA', color:'#A3E635', rgb:'163,230,53'}
   ];
   const curAgencia = ALL_AGENCIAS.find(a => a.id === agenciaId) || ALL_AGENCIAS[0];
-  const AGENCIA_UUIDS = {
-    '404':        '14a057af-31c6-4606-8236-4c97d8067335',
-    'agente':     '910f125d-82f7-4fbc-889d-2eb9b33d8198',
-    'atelie':     '32e8bd8a-d698-4781-b9f4-7b9855132942',
-    'catalyst':   '74886b76-2650-41e1-8d46-3c742681fadd',
-    'cccaramelo': 'e8d734ba-b3e9-425b-942e-b8b56c98f56b',
-    'frame':      'e26e3106-33e8-43de-95c5-546477573186',
-    'gaia':       'a8aecdac-1001-4643-bcd4-e818307b6d92',
-    'galeria':    '960142b5-a688-41f8-8719-d516eeb843c6',
-    'holding':    '3409ab82-f0cd-4d95-b6e2-398995425411',
-    'gux':        'ac8b92de-ab48-4153-bf18-c23b5ea19bfe',
-    'mantiqueira':'1a67ab05-e42e-4975-be11-b6bf7f23ce03',
-    'mila':       'b0473d79-afd9-404e-8784-04b4556a5a2c',
-    'studioga':   'd1d6bc56-ee70-4b5c-bb2e-3a7e428ea70f',
-    'vitrine':    '2bb87ce9-b175-43d0-9213-1e1021661e54',
-  };
+  const [agenciaUuids, setAgenciaUuids] = useState({});
+  useEffect(() => {
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
+    fetch(SUPA_URL + '/rest/v1/crm_agencias?select=id,slug', {
+      headers: { apikey: SUPA_ANON, Authorization: 'Bearer ' + jwt }
+    }).then(function(r) { return r.ok ? r.json() : []; }).then(function(rows) {
+      if (!Array.isArray(rows)) return;
+      var m = {};
+      rows.forEach(function(row) { if (row.slug) m[row.slug] = row.id; });
+      setAgenciaUuids(m);
+    }).catch(function() {});
+  }, []);
   const navTo = (section, agId, tab) => {
     setNavSection(section);
     if (agId) { setAgenciaId(agId); setCurGrupo(GRUPO.find(g => g.id === agId) || GRUPO[0]); }
@@ -5698,7 +5694,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: AGENCIA_UUIDS }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -7782,7 +7778,7 @@ function AgenciaHome({ agencia, tab, navTo, agenciaUuids }) {
   return React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden'}},
     tab === 'pipeline' ? React.createElement("div",{style:{flex:1,overflow:'hidden'}},
       typeof PipelineGlobalView !== 'undefined'
-        ? React.createElement(PipelineGlobalView, { meuPapel: 'admin', minhaAgenciaId: agencia && agencia.id, agenciaFiltro: agencia && AGENCIA_UUIDS[agencia.id] || null })
+        ? React.createElement(PipelineGlobalView, { meuPapel: 'admin', minhaAgenciaId: agencia && agencia.id, agenciaFiltro: agencia && agenciaUuids && agenciaUuids[agencia.id] || null })
         : React.createElement("div",{style:{padding:20,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11}},'Pipeline carregando...')
     ) :
     tab === 'noticias'    ? React.createElement(AgNoticiasTab,   {agencia:agencia, agenciaUuids:agenciaUuids}) :
