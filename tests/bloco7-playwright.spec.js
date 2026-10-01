@@ -260,7 +260,7 @@ test.describe('Bloco 7 — Leitor: pedido_atualizacao', () => {
 
     // Leitor (using service key as proxy) inserts pedido_atualizacao — uses test table
     const evRow = await supaPostTest('oportunidade_eventos', {
-      oportunidade_id: op.id, tipo: 'pedido_atualizacao', texto: 'Leitor solicitando atualização', autor_email: leitorEmail
+      oportunidade_id: op.id, tipo: 'pedido_atualizacao', texto: 'Leitor solicitando atualização', usuario_email: leitorEmail
     });
     const ev = Array.isArray(evRow) ? evRow[0] : null;
     expect(ev).not.toBeNull();
