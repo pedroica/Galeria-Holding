@@ -85,9 +85,28 @@ export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const auth = (req.headers.authorization || '').replace('Bearer ', '');
-  const isValid = (CRON_SECRET && auth === CRON_SECRET) || (SUPA_SVC && auth === SUPA_SVC);
-  if (!isValid) return res.status(401).json({ error: 'unauthorized' });
   if (!SUPA_SVC) return res.status(500).json({ error: 'SUPA_CRM_SERVICE_KEY not set' });
+  let isValid = (CRON_SECRET && auth === CRON_SECRET) || auth === SUPA_SVC;
+  if (!isValid && auth && auth !== SUPA_SVC) {
+    // Accept Supabase JWT from admin users
+    try {
+      const uRes = await fetch(SUPA_URL + '/auth/v1/user', {
+        headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + auth }
+      });
+      if (uRes.ok) {
+        const uData = await uRes.json();
+        const email = uData?.email;
+        if (email) {
+          const uDb = await fetch(SUPA_URL + '/rest/v1/crm_usuarios?email=eq.' + encodeURIComponent(email) + '&papel=eq.admin&ativo=eq.true&select=email&limit=1', {
+            headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC }
+          });
+          const uRows = uDb.ok ? await uDb.json() : [];
+          isValid = Array.isArray(uRows) && uRows.length > 0;
+        }
+      }
+    } catch (_) {}
+  }
+  if (!isValid) return res.status(401).json({ error: 'unauthorized' });
 
   const now = new Date();
   const ts  = now.toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
