@@ -64,6 +64,49 @@ Cada item `[slug, label]` aparece na topbar. Para adicionar uma tela nova:
 
 ---
 
+## Backup automático (api/crm-backup.js)
+
+Cron diário às 23h BRT (02h UTC) exporta todas as tabelas `crm_` como CSV e JSON para o Google Drive.
+
+### Variáveis de ambiente necessárias
+Nenhuma variável adicional — usa `SUPA_CRM_SERVICE_KEY` (já configurada) para escrever no Storage.
+
+### Onde ficam os backups
+Supabase Storage, bucket **`backups`** (privado), projeto `uetltlnjmobeiunxfsqi`.  
+Estrutura: `backups/<YYYY-MM-DD>/<tabela>.csv` e `<tabela>.json`.  
+Acesso: Storage → Buckets → backups → navegar pasta pelo dia desejado, ou via API com service key.
+
+### Variáveis de ambiente necessárias
+Nenhuma variável nova. `SUPA_CRM_SERVICE_KEY` (já existente) é usado como credencial de escrita no Storage.
+
+### Como restaurar a partir de um backup
+
+1. Abra o Supabase Dashboard → Storage → Buckets → `backups`
+2. Navegue até a pasta `YYYY-MM-DD` do dia desejado
+3. Faça download do arquivo `<tabela>.json` da tabela a restaurar
+4. Abra o Supabase Dashboard → SQL Editor
+5. Para recuperar registros apagados por soft-delete (opção preferencial):
+   - Use a tela Admin → Lixeira → Restaurar (funciona dentro de 30 dias)
+6. Para restauração a partir do JSON (emergência):
+   ```sql
+   -- Exemplo para crm_oportunidades (adaptar para cada tabela)
+   INSERT INTO crm_oportunidades (id, titulo, estagio, ...)
+   SELECT (j->>'id')::uuid, j->>'titulo', j->>'estagio', ...
+   FROM jsonb_array_elements('<cole o JSON aqui>'::jsonb) AS j
+   ON CONFLICT (id) DO UPDATE SET
+     titulo = EXCLUDED.titulo, estagio = EXCLUDED.estagio,
+     atualizado_em = now(), apagado_em = EXCLUDED.apagado_em;
+   ```
+7. Verificar contagens: `SELECT count(*) FROM <tabela> WHERE apagado_em IS NULL;`
+
+### Botão "Exportar tudo agora"
+Disponível na tela Admin. Chama `POST /api/crm-backup` — o backend usa `SUPA_CRM_SERVICE_KEY` (server-side only) para escrever no Storage. O frontend envia apenas o JWT de sessão.
+
+### Retenção
+30 dias. Pastas mais antigas são removidas automaticamente na execução do cron.
+
+---
+
 ## Tabelas principais (Supabase)
 
 | Tabela | Uso |
@@ -73,9 +116,17 @@ Cada item `[slug, label]` aparece na topbar. Para adicionar uma tela nova:
 | `crm_empresas` | Empresas (nome, setor, dominio, site) — `estrelas` não usar, está zerado |
 | `crm_empresa_agencia_estrelas` | `max(coalesce(estrelas_manual, estrelas_calculadas))` por empresa_id |
 | `crm_toques` | Histórico de toques (direcao, canal, assunto, resumo, data, fonte, resultado) |
-| `crm_kanban` | Cards por pipeline de agência |
+| `crm_kanban` | Cards por pipeline de agência (legado) |
+| `crm_oportunidades` | Pipeline CRM — estágios: Wishlist, Primeira reunião, Contato direto, Negociando direto, Concorrências, Negociação, Cliente ativo, Perdido, Pausado |
+| `crm_oportunidade_eventos` | Histórico de eventos por oportunidade (estagio, criada, apagado, pedido_atualizacao…) |
+| `crm_agencias` | Agências do grupo (id, nome, slug, cor) |
+| `crm_usuarios` | Usuários do CRM (email, papel: admin|leitor, agencia_id, ativo) |
+| `crm_auditoria` | Trilha de auditoria: toda alteração em oportunidades/empresas/decisores (tabela, registro_id, campo, valor_de, valor_para, usuario_email, criado_em) |
+| `crm_logs` | Log de execuções de crons e backups |
 | `crm_shared` | localStorage partilhado (key/value JSONB) |
 | `crm_configuracoes` | Config global (chave/valor) — `email_daily_max`, `whatsapp_daily_max` |
+| `crm_test_oportunidades` | Cópia de estrutura para testes CI — nunca contém dados de produção |
+| `crm_test_oportunidade_eventos` | Cópia de estrutura para testes CI |
 
 Todas têm RLS `autenticado_tudo` (ALL para `authenticated`). Use sempre a sessão JWT de `window.__supaSession.access_token`.
 
@@ -122,7 +173,7 @@ Cada merge na main está autorizado assim que os testes reais passarem (saída c
 
 ## Regras de segurança (não negociáveis)
 
-1. **Nunca apague dados** — UPDATE/INSERT sempre. DELETE só em cleanup de testes, confirmado explicitamente.
+1. **Nunca apague dados** — UPDATE/INSERT sempre. DELETE só em cleanup de testes, confirmado explicitamente. Use soft-delete: `UPDATE ... SET apagado_em = now()` para remover da visão ativa; lixeira na tela Admin permite restaurar em 30 dias.
 2. **Migrações só aditivas** — `ADD COLUMN IF NOT EXISTS`, nunca DROP/ALTER TYPE destrutivo.
 3. **Nunca envie e-mails automaticamente** — a tela Fila do dia abre o Outlook; quem clica é o usuário.
 4. **SUPA_CRM_SERVICE_KEY / SUPA_AGENTE_SERVICE_KEY** — server-side only, nunca no frontend.

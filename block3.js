@@ -2216,7 +2216,7 @@ function LLMBoxV2({
   useEffect(() => {
     if (histRef.current) histRef.current.scrollTop = histRef.current.scrollHeight;
   }, [history]);
-  const CHIPS = ["Quais concorrências estão abertas na Holding?", "Quem está em negociação e qual o valor?", "Resumo do pipeline GAIA — CR.IA e BrandSync", "Quais clientes ativos e seus valores?", "Quem está em Contato Direto na Holding?", "Próximas ações prioritárias no comercial", "Qual o valor total do pipeline da Holding?", "Quais oportunidades estão paradas há mais tempo?"];
+  const CHIPS = ["Quais concorrências estão abertas na Holding?", "Quem está em negociação e qual o valor?", "Resumo do pipeline GAIA — CR.IA e BrandSync", "Quais clientes ativos e seus valores?", "Quem está em Negociando direto na Holding?", "Próximas ações prioritárias no comercial", "Qual o valor total do pipeline da Holding?", "Quais oportunidades estão paradas há mais tempo?"];
   const buildCtx = () => {
     // ── Kanban GAIA + Holding ──────────────────────────────────
     const kbRaw = lsGet("gh_kanban_v3", {});
@@ -2564,10 +2564,10 @@ function TemplatesView() {
     supaFetch('/rest/v1/crm_templates?tipo=eq.prospeccao&order=agencia_id.asc,canal.asc,etapa.asc').then(function(d) {
       setTemplates(Array.isArray(d)?d:[]); setLoading(false);
     }).catch(function(){setLoading(false);});
-    supaFetch('/rest/v1/crm_empresas?select=id,nome,setor&order=nome.asc&limit=1').then(function(d) {
+    supaFetch('/rest/v1/crm_empresas?apagado_em=is.null&select=id,nome,setor&order=nome.asc&limit=1').then(function(d) {
       if (Array.isArray(d) && d.length > 0) {
         setPrevEmp(d[0]);
-        supaFetch('/rest/v1/crm_decisores?empresa_id=eq.'+d[0].id+'&status=eq.ativo&limit=1').then(function(ds) {
+        supaFetch('/rest/v1/crm_decisores?empresa_id=eq.'+d[0].id+'&status=eq.ativo&apagado_em=is.null&limit=1').then(function(ds) {
           if (Array.isArray(ds) && ds.length > 0) setPrevDec(ds[0]);
         });
       }
@@ -2772,7 +2772,7 @@ function GerarFilaModal(props) {
       if (Array.isArray(filaSem)) filaSem.forEach(function(r){ empNaFila[r.empresa_id]=(empNaFila[r.empresa_id]||0)+1; if(r.decisor_id) decNaFila.add(r.decisor_id); });
 
       setProg('Carregando decisores…');
-      var decs = await sj('/rest/v1/crm_decisores?status=eq.ativo&email=not.is.null&select=id,nome,cargo,cargo_categoria,email,wa,empresa_id,ultimo_toque_em,respondeu&limit=3000');
+      var decs = await sj('/rest/v1/crm_decisores?status=eq.ativo&apagado_em=is.null&email=not.is.null&select=id,nome,cargo,cargo_categoria,email,wa,empresa_id,ultimo_toque_em,respondeu&limit=3000');
       if (!Array.isArray(decs)) throw new Error('Falha ao carregar decisores: '+((decs&&decs.message)||'erro'));
 
       setProg('Carregando empresas…');
@@ -5812,26 +5812,6 @@ function App() {
     curGrupo: curGrupo,
     alertas: lsGet("gh_alertas_v2", []),
     onKanbanAdd: d => switchView("ka2")
-  })) : viewMode === "pipeline_gaia" ? /*#__PURE__*/React.createElement("div", {
-    className: "ws",
-    style: {
-      flex: 1,
-      overflow: "hidden",
-      display: "flex",
-      flexDirection: "column"
-    }
-  }, /*#__PURE__*/React.createElement(PipelineView, {
-    tipo: "gaia"
-  })) : viewMode === "pipeline_holding" ? /*#__PURE__*/React.createElement("div", {
-    className: "ws",
-    style: {
-      flex: 1,
-      overflow: "hidden",
-      display: "flex",
-      flexDirection: "column"
-    }
-  }, /*#__PURE__*/React.createElement(PipelineView, {
-    tipo: "holding"
   })) : viewMode === "estrategico" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
@@ -7801,7 +7781,9 @@ function AgEnviarTab({ agencia, agenciaUuids }) {
 function AgenciaHome({ agencia, tab, navTo, agenciaUuids }) {
   return React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden'}},
     tab === 'pipeline' ? React.createElement("div",{style:{flex:1,overflow:'hidden'}},
-      React.createElement(PipelineView, { tipo: agencia && agencia.id === 'gaia' ? 'gaia' : 'holding', agenciaFiltro: agencia && agencia.id !== 'gaia' ? agencia.id : null })
+      typeof PipelineGlobalView !== 'undefined'
+        ? React.createElement(PipelineGlobalView, { meuPapel: 'admin', minhaAgenciaId: agencia && agencia.id, agenciaFiltro: agencia && AGENCIA_UUIDS[agencia.id] || null })
+        : React.createElement("div",{style:{padding:20,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11}},'Pipeline carregando...')
     ) :
     tab === 'noticias'    ? React.createElement(AgNoticiasTab,   {agencia:agencia, agenciaUuids:agenciaUuids}) :
     tab === 'servicos'    ? React.createElement(AgServicosTab,   {agencia:agencia, agenciaUuids:agenciaUuids}) :
