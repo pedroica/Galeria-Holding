@@ -656,13 +656,23 @@
     async function exportarTudo() {
       setExportando(true);
       try {
-        const r = await fetch('/api/crm-backup', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getJwt() } });
-        const data = r.ok ? await r.json() : null;
-        if (data && data.ok) {
-          alert('Backup gerado com sucesso! ' + (data.message || ''));
-        } else {
-          alert('Erro ao gerar backup: ' + (data && data.error ? data.error : 'falha na requisição'));
+        const hoje = new Date().toISOString().slice(0, 10);
+        const r = await fetch('/api/crm-backup?zip=1', { headers: { Authorization: 'Bearer ' + getJwt() } });
+        if (!r.ok) {
+          const ct = r.headers.get('content-type') || '';
+          const msg = ct.includes('json') ? (await r.json()).error : r.status;
+          alert('Erro ao exportar: ' + msg);
+          return;
         }
+        const blob = await r.blob();
+        const url  = URL.createObjectURL(blob);
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = 'crm-backup-' + hoje + '.zip';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
       } catch(e) { alert('Erro: ' + e.message); }
       setExportando(false);
     }

@@ -1,9 +1,11 @@
 // api/crm-backup.js — exporta tabelas crm_ para Supabase Storage (bucket "backups")
-// Cron: 02h UTC (23h BRT) via vercel.json
-// Manual: POST /api/crm-backup  Authorization: Bearer <CRON_SECRET ou SUPA_CRM_SERVICE_KEY>
-// Retorno: { ok, ts, pasta, tabelas:[{tabela,linhas}], erros, deletados }
+// POST: cron 02h UTC (23h BRT) via vercel.json — grava backup diário no bucket
+// GET ?zip=1           : baixa ZIP com dados atuais do banco (autenticação admin JWT)
+// GET ?zip=1&dia=AAAA-MM-DD : baixa ZIP de um dia já salvo no bucket (autenticação admin JWT)
 
 export const config = { maxDuration: 60 };
+
+import { deflateRawSync } from 'node:zlib';
 
 const SUPA_URL  = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
 const SUPA_SVC  = process.env.SUPA_CRM_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -16,6 +18,99 @@ const CRM_TABLES = [
   'crm_usuarios','crm_toques','crm_fila','crm_oportunidade_eventos',
   'crm_auditoria','crm_logs'
 ];
+
+// ── ZIP builder (sem dependências externas) ───────────────────────────────────
+
+function _crc32Table() {
+  const t = new Uint32Array(256);
+  for (let i = 0; i < 256; i++) {
+    let c = i;
+    for (let j = 0; j < 8; j++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[i] = c;
+  }
+  return t;
+}
+const CRC_TABLE = _crc32Table();
+
+function crc32(buf) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) c = (CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8));
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function dosDateTime() {
+  const d = new Date();
+  const date = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  const time = (d.getHours() << 11) | (d.getMinutes() << 5) | Math.floor(d.getSeconds() / 2);
+  return { date, time };
+}
+
+function buildZip(entries) {
+  // entries: [{name: string, data: Buffer|string}]
+  const { date, time } = dosDateTime();
+  const locals   = [];
+  const centrals = [];
+  let offset = 0;
+
+  for (const { name, data } of entries) {
+    const raw  = Buffer.isBuffer(data) ? data : Buffer.from(data, 'utf8');
+    const comp = deflateRawSync(raw, { level: 6 });
+    const crc  = crc32(raw);
+    const nb   = Buffer.from(name, 'utf8');
+
+    const lhdr = Buffer.alloc(30 + nb.length);
+    lhdr.writeUInt32LE(0x04034b50, 0);
+    lhdr.writeUInt16LE(20, 4);
+    lhdr.writeUInt16LE(0, 6);
+    lhdr.writeUInt16LE(8, 8);  // deflate
+    lhdr.writeUInt16LE(time, 10);
+    lhdr.writeUInt16LE(date, 12);
+    lhdr.writeUInt32LE(crc, 14);
+    lhdr.writeUInt32LE(comp.length, 18);
+    lhdr.writeUInt32LE(raw.length, 22);
+    lhdr.writeUInt16LE(nb.length, 26);
+    lhdr.writeUInt16LE(0, 28);
+    nb.copy(lhdr, 30);
+
+    locals.push(lhdr, comp);
+
+    const chdr = Buffer.alloc(46 + nb.length);
+    chdr.writeUInt32LE(0x02014b50, 0);
+    chdr.writeUInt16LE(20, 4);
+    chdr.writeUInt16LE(20, 6);
+    chdr.writeUInt16LE(0, 8);
+    chdr.writeUInt16LE(8, 10);
+    chdr.writeUInt16LE(time, 12);
+    chdr.writeUInt16LE(date, 14);
+    chdr.writeUInt32LE(crc, 16);
+    chdr.writeUInt32LE(comp.length, 20);
+    chdr.writeUInt32LE(raw.length, 24);
+    chdr.writeUInt16LE(nb.length, 28);
+    chdr.writeUInt16LE(0, 30);
+    chdr.writeUInt16LE(0, 32);
+    chdr.writeUInt16LE(0, 34);
+    chdr.writeUInt16LE(0, 36);
+    chdr.writeUInt32LE(0, 38);
+    chdr.writeUInt32LE(offset, 42);
+    nb.copy(chdr, 46);
+    centrals.push(chdr);
+
+    offset += lhdr.length + comp.length;
+  }
+
+  const cd  = Buffer.concat(centrals);
+  const eod = Buffer.alloc(22);
+  eod.writeUInt32LE(0x06054b50, 0);
+  eod.writeUInt16LE(0, 4);
+  eod.writeUInt16LE(0, 6);
+  eod.writeUInt16LE(entries.length, 8);
+  eod.writeUInt16LE(entries.length, 10);
+  eod.writeUInt32LE(cd.length, 12);
+  eod.writeUInt32LE(offset, 16);
+  eod.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...locals, cd, eod]);
+}
 
 // ── Supabase Storage helpers ───────────────────────────────────────────────────
 
@@ -39,6 +134,13 @@ async function storageList(prefix) {
     body: JSON.stringify({ prefix, limit: 1000, offset: 0 })
   });
   return r.ok ? r.json() : [];
+}
+
+async function storageDownload(path) {
+  const r = await fetch(SUPA_URL + '/storage/v1/object/' + BUCKET + '/' + path, {
+    headers: storageHeaders()
+  });
+  return r.ok ? r.text() : null;
 }
 
 async function storageDelete(paths) {
@@ -71,6 +173,32 @@ function toCSV(rows) {
   return [cols.join(','), ...rows.map(r => cols.map(c => esc(r[c])).join(','))].join('\n');
 }
 
+// ── Auth helper ────────────────────────────────────────────────────────────────
+
+async function resolveAuth(req) {
+  const auth = (req.headers.authorization || '').replace('Bearer ', '');
+  if (!auth) return false;
+  if ((CRON_SECRET && auth === CRON_SECRET) || auth === SUPA_SVC) return true;
+  // Aceita JWT de admin
+  try {
+    const uRes = await fetch(SUPA_URL + '/auth/v1/user', {
+      headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + auth }
+    });
+    if (uRes.ok) {
+      const { email } = await uRes.json();
+      if (email) {
+        const uDb = await fetch(
+          SUPA_URL + '/rest/v1/crm_usuarios?email=eq.' + encodeURIComponent(email) + '&papel=eq.admin&ativo=eq.true&select=email&limit=1',
+          { headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC } }
+        );
+        const rows = uDb.ok ? await uDb.json() : [];
+        return Array.isArray(rows) && rows.length > 0;
+      }
+    }
+  } catch (_) {}
+  return false;
+}
+
 async function logRun(descricao, detalhes) {
   await fetch(SUPA_URL + '/rest/v1/crm_logs', {
     method: 'POST',
@@ -82,29 +210,55 @@ async function logRun(descricao, detalhes) {
 // ── Handler ───────────────────────────────────────────────────────────────────
 
 export default async function handler(req, res) {
-  if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+  if (!SUPA_SVC) return res.status(500).json({ error: 'SUPA_CRM_SERVICE_KEY not set' });
+
+  // ── GET ?zip=1[&dia=AAAA-MM-DD] ──────────────────────────────────────────
+  if (req.method === 'GET') {
+    const { zip, dia } = req.query || {};
+    if (zip !== '1') return res.status(400).json({ error: 'use ?zip=1' });
+
+    const ok = await resolveAuth(req);
+    if (!ok) return res.status(401).json({ error: 'unauthorized' });
+
+    const entries = [];
+
+    if (dia) {
+      // Busca arquivos já salvos no bucket para aquele dia
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return res.status(400).json({ error: 'dia inválido' });
+      const files = await storageList(dia);
+      if (!Array.isArray(files) || files.length === 0) {
+        return res.status(404).json({ error: `Pasta ${dia} não encontrada no bucket` });
+      }
+      for (const f of files) {
+        if (!f.name) continue;
+        const content = await storageDownload(dia + '/' + f.name);
+        if (content !== null) entries.push({ name: dia + '/' + f.name, data: content });
+      }
+    } else {
+      // Gera snapshot ao vivo do banco
+      const hoje = new Date().toISOString().slice(0, 10);
+      for (const table of CRM_TABLES) {
+        const rows = await fetchTable(table);
+        entries.push({ name: hoje + '/' + table + '.json', data: JSON.stringify(rows) });
+        entries.push({ name: hoje + '/' + table + '.csv',  data: toCSV(rows) });
+      }
+    }
+
+    const zipBuf = buildZip(entries);
+    const label  = dia || new Date().toISOString().slice(0, 10);
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="crm-backup-${label}.zip"`);
+    res.setHeader('Content-Length', zipBuf.length);
+    return res.status(200).end(zipBuf);
+  }
+
+  // ── POST: backup diário para o bucket ────────────────────────────────────
+  if (req.method !== 'POST') return res.status(405).json({ error: 'GET ou POST apenas' });
 
   const auth = (req.headers.authorization || '').replace('Bearer ', '');
-  if (!SUPA_SVC) return res.status(500).json({ error: 'SUPA_CRM_SERVICE_KEY not set' });
   let isValid = (CRON_SECRET && auth === CRON_SECRET) || auth === SUPA_SVC;
   if (!isValid && auth && auth !== SUPA_SVC) {
-    // Accept Supabase JWT from admin users
-    try {
-      const uRes = await fetch(SUPA_URL + '/auth/v1/user', {
-        headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + auth }
-      });
-      if (uRes.ok) {
-        const uData = await uRes.json();
-        const email = uData?.email;
-        if (email) {
-          const uDb = await fetch(SUPA_URL + '/rest/v1/crm_usuarios?email=eq.' + encodeURIComponent(email) + '&papel=eq.admin&ativo=eq.true&select=email&limit=1', {
-            headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC }
-          });
-          const uRows = uDb.ok ? await uDb.json() : [];
-          isValid = Array.isArray(uRows) && uRows.length > 0;
-        }
-      }
-    } catch (_) {}
+    isValid = await resolveAuth(req);
   }
   if (!isValid) return res.status(401).json({ error: 'unauthorized' });
 
@@ -139,7 +293,6 @@ export default async function handler(req, res) {
       .filter(f => f.name && /^\d{4}-\d{2}-\d{2}$/.test(f.name) && new Date(f.name) < cutoff)
       .map(f => f.name + '/');
     if (toDelete.length > 0) {
-      // list files inside each old folder then delete
       for (const folder of toDelete) {
         const files = await storageList(folder.replace('/', ''));
         const paths = (Array.isArray(files) ? files : []).map(f => folder + f.name);
