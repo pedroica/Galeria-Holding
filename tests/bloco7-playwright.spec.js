@@ -7,20 +7,36 @@ const SUPA_URL = 'https://uetltlnjmobeiunxfsqi.supabase.co';
 const SUPA_SVC = process.env.SUPA_CRM_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 // ── helpers ───────────────────────────────────────────────────────────────────
+// Production read (service key, read-only in tests)
 async function supaGet(path) {
   const r = await fetch(SUPA_URL + '/rest/v1/' + path, {
     headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC }
   });
   return r.ok ? r.json() : [];
 }
-async function supaPost(path, body, prefer) {
-  const r = await fetch(SUPA_URL + '/rest/v1/' + path, {
+
+// Test-schema writes — use crm_test_ tables so production is never polluted
+async function supaPostTest(table, body, prefer) {
+  const r = await fetch(SUPA_URL + '/rest/v1/crm_test_' + table, {
     method: 'POST',
     headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json', Prefer: prefer || 'return=representation' },
     body: JSON.stringify(body)
   });
   return r.ok ? r.json() : null;
 }
+async function supaDelTest(table, id) {
+  await fetch(SUPA_URL + '/rest/v1/crm_test_' + table + '?id=eq.' + id, {
+    method: 'DELETE',
+    headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC }
+  });
+}
+async function supaGetTest(path) {
+  const r = await fetch(SUPA_URL + '/rest/v1/crm_test_' + path, {
+    headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC }
+  });
+  return r.ok ? r.json() : [];
+}
+// Legacy alias kept for patch calls on non-test tables (stage restore only)
 async function supaPatch(path, body) {
   const r = await fetch(SUPA_URL + '/rest/v1/' + path, {
     method: 'PATCH',
@@ -92,8 +108,8 @@ test.describe('Bloco 7 — Migração crm_kanban → crm_oportunidades', () => {
 
   test('estágios migrados são válidos', async () => {
     if (!SUPA_SVC) return;
-    const ESTAGIOS_VALIDOS = ['Prospect','Reunião marcada','Reunião feita','Briefing','Proposta','Negociação','Ganho','Perdido','Pausado'];
-    const rows = await supaGet('crm_oportunidades?select=estagio&limit=200');
+    const ESTAGIOS_VALIDOS = ['Wishlist','Primeira reunião','Contato direto','Negociando direto','Concorrências','Negociação','Cliente ativo','Perdido','Pausado'];
+    const rows = await supaGet('crm_oportunidades?apagado_em=is.null&select=estagio&limit=200');
     const arr = Array.isArray(rows) ? rows : [];
     for (const r of arr) {
       expect(ESTAGIOS_VALIDOS).toContain(r.estagio);
@@ -116,40 +132,35 @@ test.describe('Bloco 7 — Migração crm_kanban → crm_oportunidades', () => {
 // ── Integration: Automação reuniao_marcada ─────────────────────────────────────
 test.describe('Bloco 7 — Automação reuniao_marcada', () => {
 
-  test('registrarReuniao cria oportunidade em crm_oportunidades', async () => {
+  test('registrarReuniao cria oportunidade no schema de teste (não produção)', async () => {
     if (!SUPA_SVC) return;
-    // Pick a real empresa and agencia from DB
-    const emps = await supaGet('crm_empresas?select=id,nome&limit=1');
-    const emp = Array.isArray(emps) && emps[0] ? emps[0] : null;
-    if (!emp) return;
-    const ags = await supaGet('crm_agencias?select=id,nome&limit=1');
-    const ag = Array.isArray(ags) && ags[0] ? ags[0] : null;
-    if (!ag) return;
-
-    const since30 = new Date(Date.now() + 60000).toISOString(); // future: ensure no existing
-    // Simulate the automação: create directly via service key
+    // Creates in crm_test_oportunidades — production crm_oportunidades stays unchanged
     const now = new Date().toISOString();
     const body = {
-      empresa_id: emp.id, agencia_id: ag.id,
       titulo: 'Teste bloco7 auto ' + Date.now(),
-      estagio: 'Reunião marcada', origem: 'fila',
+      estagio: 'Primeira reunião', origem: 'fila',
       aberta_em: now, criado_em: now, atualizado_em: now
     };
-    const rows = await supaPost('crm_oportunidades', body);
+    const rows = await supaPostTest('oportunidades', body);
     const nova = Array.isArray(rows) ? rows[0] : null;
     expect(nova).not.toBeNull();
-    expect(nova.estagio).toBe('Reunião marcada');
+    expect(nova.estagio).toBe('Primeira reunião');
     expect(nova.origem).toBe('fila');
 
-    // Create evento criada
-    const evRow = await supaPost('crm_oportunidade_eventos', {
-      oportunidade_id: nova.id, tipo: 'criada', para: 'Reunião marcada', texto: 'teste automação'
+    // Create evento criada in test table
+    const evRow = await supaPostTest('oportunidade_eventos', {
+      oportunidade_id: nova.id, tipo: 'criada', para: 'Primeira reunião', texto: 'teste automação'
     });
     expect(Array.isArray(evRow) ? evRow[0] : null).not.toBeNull();
 
-    // Verify in DB
-    const check = await supaGet('crm_oportunidades?id=eq.' + nova.id + '&select=id,estagio&limit=1');
-    expect(Array.isArray(check) && check[0]).not.toBeNull();
+    // Cleanup test records
+    const evArr = Array.isArray(evRow) ? evRow : [];
+    for (const ev of evArr) { await supaDelTest('oportunidade_eventos', ev.id); }
+    await supaDelTest('oportunidades', nova.id);
+
+    // Verify production table was NOT touched
+    const prodCheck = await supaGet('crm_oportunidades?titulo=eq.' + encodeURIComponent(body.titulo) + '&select=id&limit=1');
+    expect(Array.isArray(prodCheck) ? prodCheck.length : 0).toBe(0);
   });
 
 });
@@ -157,27 +168,40 @@ test.describe('Bloco 7 — Automação reuniao_marcada', () => {
 // ── Integration: Eventos e estagio ────────────────────────────────────────────
 test.describe('Bloco 7 — Eventos e movimentação de estágio', () => {
 
-  test('arrastar entre estágios cria evento do tipo estagio', async () => {
+  test('arrastar entre estágios cria evento do tipo estagio (schema de teste)', async () => {
     if (!SUPA_SVC) return;
-    // Get an existing opportunity
-    const ops = await supaGet('crm_oportunidades?select=id,estagio&limit=1');
-    const op = Array.isArray(ops) ? ops[0] : null;
+    // Create a test record to move between stages — never touches production
+    const now = new Date().toISOString();
+    const created = await supaPostTest('oportunidades', {
+      titulo: 'Teste estagio drag ' + Date.now(),
+      estagio: 'Wishlist', origem: 'fila',
+      aberta_em: now, criado_em: now, atualizado_em: now
+    });
+    const op = Array.isArray(created) ? created[0] : null;
     if (!op) return;
 
-    const novoEstagio = op.estagio === 'Proposta' ? 'Negociação' : 'Proposta';
-    await supaPatch('crm_oportunidades?id=eq.' + op.id, { estagio: novoEstagio, atualizado_em: new Date().toISOString() });
+    const novoEstagio = 'Primeira reunião';
+    await supaDelTest('oportunidade_eventos', null); // no-op placeholder
+    const patchUrl = SUPA_URL + '/rest/v1/crm_test_oportunidades?id=eq.' + op.id;
+    await fetch(patchUrl, {
+      method: 'PATCH',
+      headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+      body: JSON.stringify({ estagio: novoEstagio, atualizado_em: new Date().toISOString() })
+    });
 
-    const evRow = await supaPost('crm_oportunidade_eventos', {
+    const evRow = await supaPostTest('oportunidade_eventos', {
       oportunidade_id: op.id, tipo: 'estagio', de: op.estagio, para: novoEstagio, texto: 'test'
     });
     const ev = Array.isArray(evRow) ? evRow[0] : null;
     expect(ev).not.toBeNull();
     expect(ev.tipo).toBe('estagio');
-    expect(ev.de).toBe(op.estagio);
+    expect(ev.de).toBe('Wishlist');
     expect(ev.para).toBe(novoEstagio);
 
-    // Restore
-    await supaPatch('crm_oportunidades?id=eq.' + op.id, { estagio: op.estagio, atualizado_em: new Date().toISOString() });
+    // Cleanup
+    const evArr = Array.isArray(evRow) ? evRow : [];
+    for (const e of evArr) { await supaDelTest('oportunidade_eventos', e.id); }
+    await supaDelTest('oportunidades', op.id);
   });
 
 });
@@ -201,7 +225,7 @@ test.describe('Bloco 7 — Tela Pipeline Global', () => {
     await page.goto(APP_URL);
     await page.getByText('Pipeline', { exact: true }).first().click();
     await page.waitForTimeout(2500);
-    await expect(page.getByText(/PROSPECT|PROPOSTA|NEGOCIAÇÃO/).first()).toBeVisible({ timeout: 10000 });
+    await expect(page.getByText(/WISHLIST|PRIMEIRA REUNIÃO|NEGOCIANDO DIRETO|NEGOCIAÇÃO/).first()).toBeVisible({ timeout: 10000 });
   });
 
   test('nav item Admin existe na topbar', async ({ page }) => {
@@ -224,18 +248,28 @@ test.describe('Bloco 7 — Leitor: pedido_atualizacao', () => {
       body: JSON.stringify({ email: leitorEmail, nome: 'Leitor Teste', papel: 'leitor', ativo: true })
     });
 
-    // Get an opportunity to test with
-    const ops = await supaGet('crm_oportunidades?select=id&limit=1');
-    const op = Array.isArray(ops) ? ops[0] : null;
+    // Create a test opportunity so FK constraint on crm_test_oportunidade_eventos is satisfied
+    const now = new Date().toISOString();
+    const testOp = await supaPostTest('oportunidades', {
+      titulo: 'Teste leitor pedido_atualizacao ' + Date.now(),
+      estagio: 'Wishlist', origem: 'fila',
+      aberta_em: now, criado_em: now, atualizado_em: now
+    });
+    const op = Array.isArray(testOp) ? testOp[0] : null;
     if (!op) return;
 
-    // Leitor (using service key as proxy) inserts pedido_atualizacao
-    const evRow = await supaPost('crm_oportunidade_eventos', {
+    // Leitor (using service key as proxy) inserts pedido_atualizacao — uses test table
+    const evRow = await supaPostTest('oportunidade_eventos', {
       oportunidade_id: op.id, tipo: 'pedido_atualizacao', texto: 'Leitor solicitando atualização', autor_email: leitorEmail
     });
     const ev = Array.isArray(evRow) ? evRow[0] : null;
     expect(ev).not.toBeNull();
     expect(ev.tipo).toBe('pedido_atualizacao');
+
+    // Cleanup test records
+    const evArr = Array.isArray(evRow) ? evRow : [];
+    for (const e of evArr) { await supaDelTest('oportunidade_eventos', e.id); }
+    await supaDelTest('oportunidades', op.id);
 
     // Cleanup test user
     await fetch(SUPA_URL + '/rest/v1/crm_usuarios?email=eq.' + encodeURIComponent(leitorEmail), {
