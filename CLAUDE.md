@@ -69,27 +69,41 @@ Cada item `[slug, label]` aparece na topbar. Para adicionar uma tela nova:
 Cron diário às 23h BRT (02h UTC) exporta todas as tabelas `crm_` como CSV e JSON para o Google Drive.
 
 ### Variáveis de ambiente necessárias
-| Variável | Conteúdo |
-|---|---|
-| `GOOGLE_SERVICE_ACCOUNT_JSON` | JSON completo da service account com Drive API habilitada |
-| `GOOGLE_DRIVE_FOLDER_ID` | ID da pasta raiz no Drive onde criar "CRM Galeria/backups" (opcional; usa raiz se ausente) |
+Nenhuma variável adicional — usa `SUPA_CRM_SERVICE_KEY` (já configurada) para escrever no Storage.
+
+### Onde ficam os backups
+Supabase Storage, bucket **`backups`** (privado), projeto `uetltlnjmobeiunxfsqi`.  
+Estrutura: `backups/<YYYY-MM-DD>/<tabela>.csv` e `<tabela>.json`.  
+Acesso: Storage → Buckets → backups → navegar pasta pelo dia desejado, ou via API com service key.
+
+### Variáveis de ambiente necessárias
+Nenhuma variável nova. `SUPA_CRM_SERVICE_KEY` (já existente) é usado como credencial de escrita no Storage.
 
 ### Como restaurar a partir de um backup
 
-1. Acesse o Google Drive → pasta "CRM Galeria/backups"
-2. Localize o arquivo `YYYY-MM-DD_HH-MM-SS_<tabela>.json` da data desejada
-3. Abra o Supabase Dashboard → SQL Editor para o projeto `uetltlnjmobeiunxfsqi`
-4. Para cada tabela a restaurar:
-   a. Se for recuperar linhas apagadas: copie os objetos JSON desejados e insira via `INSERT INTO <tabela> (...) VALUES (...) ON CONFLICT (id) DO UPDATE SET ...`
-   b. Para restauração total: truncar a tabela (APENAS em emergência; confirmar com Pedro) e inserir todos os registros do JSON
-5. Verificar contagens antes e depois: `SELECT count(*) FROM <tabela>;`
-6. O backup não substitui o soft-delete: use a coluna `apagado_em` para recuperar registros excluídos logicamente sem precisar do backup.
+1. Abra o Supabase Dashboard → Storage → Buckets → `backups`
+2. Navegue até a pasta `YYYY-MM-DD` do dia desejado
+3. Faça download do arquivo `<tabela>.json` da tabela a restaurar
+4. Abra o Supabase Dashboard → SQL Editor
+5. Para recuperar registros apagados por soft-delete (opção preferencial):
+   - Use a tela Admin → Lixeira → Restaurar (funciona dentro de 30 dias)
+6. Para restauração a partir do JSON (emergência):
+   ```sql
+   -- Exemplo para crm_oportunidades (adaptar para cada tabela)
+   INSERT INTO crm_oportunidades (id, titulo, estagio, ...)
+   SELECT (j->>'id')::uuid, j->>'titulo', j->>'estagio', ...
+   FROM jsonb_array_elements('<cole o JSON aqui>'::jsonb) AS j
+   ON CONFLICT (id) DO UPDATE SET
+     titulo = EXCLUDED.titulo, estagio = EXCLUDED.estagio,
+     atualizado_em = now(), apagado_em = EXCLUDED.apagado_em;
+   ```
+7. Verificar contagens: `SELECT count(*) FROM <tabela> WHERE apagado_em IS NULL;`
 
 ### Botão "Exportar tudo agora"
-Disponível na tela Admin (bloco pipeline). Chama `POST /api/crm-backup` com o service key do frontend (configurado em `SUPA_CRM_SERVICE_KEY`). Não expõe credenciais — a chamada é do servidor para o servidor.
+Disponível na tela Admin. Chama `POST /api/crm-backup` — o backend usa `SUPA_CRM_SERVICE_KEY` (server-side only) para escrever no Storage. O frontend envia apenas o JWT de sessão.
 
 ### Retenção
-30 dias. Arquivos mais antigos são deletados automaticamente na execução do cron.
+30 dias. Pastas mais antigas são removidas automaticamente na execução do cron.
 
 ---
 

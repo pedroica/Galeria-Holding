@@ -597,27 +597,37 @@
   function AdminView() {
     const [usuarios, setUsuarios] = useState([]);
     const [agencias, setAgencias] = useState([]);
-    const [lixeira, setLixeira] = useState([]);
+    const [lixeira, setLixeira] = useState([]);          // oportunidades apagadas
+    const [lixeiraEmps, setLixeiraEmps] = useState([]);  // empresas apagadas
+    const [lixeiraDecs, setLixeiraDecs] = useState([]);  // decisores apagados
     const [lixeiraEmpresas, setLixeiraEmpresas] = useState({});
     const [exportando, setExportando] = useState(false);
+    const [lixeiraTab, setLixeiraTab] = useState('oportunidades');
     const [form, setForm] = useState({ email: '', nome: '', agencia_id: '', papel: 'leitor' });
     const [editEmail, setEditEmail] = useState(null);
     const [salvando, setSalvando] = useState(false);
     const s = { fontFamily: 'IBM Plex Mono,monospace' };
 
     async function carregar() {
-      const [us, ags, lx] = await Promise.all([
+      const [us, ags, lx, lxEmps, lxDecs] = await Promise.all([
         supa('crm_usuarios?order=criado_em.desc&limit=100'),
         supa('crm_agencias?select=id,nome&limit=20'),
-        supa('crm_oportunidades?apagado_em=not.is.null&select=*&order=apagado_em.desc&limit=100')
+        supa('crm_oportunidades?apagado_em=not.is.null&select=*&order=apagado_em.desc&limit=100'),
+        supa('crm_empresas?apagado_em=not.is.null&select=id,nome,setor,apagado_em&order=apagado_em.desc&limit=100'),
+        supa('crm_decisores?apagado_em=not.is.null&select=id,nome,cargo,email,empresa_id,apagado_em&order=apagado_em.desc&limit=100')
       ]);
       setUsuarios(Array.isArray(us) ? us : []);
       setAgencias(Array.isArray(ags) ? ags : []);
       const lxArr = Array.isArray(lx) ? lx : [];
       setLixeira(lxArr);
-      const empIds = [...new Set(lxArr.filter(o => o.empresa_id).map(o => o.empresa_id))];
-      if (empIds.length > 0) {
-        const emps = await supa('crm_empresas?id=in.(' + empIds.join(',') + ')&select=id,nome&limit=200');
+      setLixeiraEmps(Array.isArray(lxEmps) ? lxEmps : []);
+      setLixeiraDecs(Array.isArray(lxDecs) ? lxDecs : []);
+      const allEmpIds = [...new Set([
+        ...lxArr.filter(o => o.empresa_id).map(o => o.empresa_id),
+        ...(Array.isArray(lxDecs) ? lxDecs.filter(d => d.empresa_id).map(d => d.empresa_id) : [])
+      ])];
+      if (allEmpIds.length > 0) {
+        const emps = await supa('crm_empresas?id=in.(' + allEmpIds.join(',') + ')&select=id,nome&limit=200');
         if (Array.isArray(emps)) { const m = {}; emps.forEach(e => { m[e.id] = e.nome; }); setLixeiraEmpresas(m); }
       }
     }
@@ -627,6 +637,19 @@
     async function restaurar(opId) {
       await supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ apagado_em: null }) });
       await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'restaurado', texto: 'Restaurado da lixeira pelo admin' }) });
+      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'apagado_em', valor_de: new Date().toISOString(), valor_para: null }) });
+      carregar();
+    }
+
+    async function restaurarEmpresa(empId) {
+      await supa('crm_empresas?id=eq.' + empId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ apagado_em: null }) });
+      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_empresas', registro_id: empId, campo: 'apagado_em', valor_de: new Date().toISOString(), valor_para: null }) });
+      carregar();
+    }
+
+    async function restaurarDecisor(decId) {
+      await supa('crm_decisores?id=eq.' + decId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ apagado_em: null }) });
+      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_decisores', registro_id: decId, campo: 'apagado_em', valor_de: new Date().toISOString(), valor_para: null }) });
       carregar();
     }
 
@@ -737,36 +760,106 @@
         )
       ),
 
-      // Lixeira
+      // Lixeira — três entidades
       React.createElement('div', { style: { marginTop: 32 } },
-        React.createElement('div', { style: { fontSize: 11, fontWeight: 700, color: '#EF4444', ...s, marginBottom: 12 } }, '🗑 LIXEIRA — Oportunidades apagadas (30 dias)'),
-        lixeira.length === 0 ?
-          React.createElement('div', { style: { fontSize: 9, color: '#555', ...s } }, 'Nenhum item na lixeira.') :
-          React.createElement('table', { style: { width: '100%', borderCollapse: 'collapse', ...s, fontSize: 10 } },
-            React.createElement('thead', null,
-              React.createElement('tr', null,
-                ['Título','Empresa','Agência','Estágio','Apagado em','Ações'].map(h =>
+        React.createElement('div', { style: { fontSize: 11, fontWeight: 700, color: '#EF4444', ...s, marginBottom: 12 } }, '🗑 LIXEIRA (30 dias para restaurar)'),
+        // abas
+        React.createElement('div', { style: { display: 'flex', gap: 4, marginBottom: 12 } },
+          [
+            ['oportunidades', 'Oportunidades', lixeira.length],
+            ['empresas', 'Empresas', lixeiraEmps.length],
+            ['decisores', 'Decisores', lixeiraDecs.length],
+          ].map(([k, label, n]) =>
+            React.createElement('button', {
+              key: k,
+              onClick: () => setLixeiraTab(k),
+              style: { fontSize: 9, padding: '4px 12px', borderRadius: 4, cursor: 'pointer', ...s,
+                background: lixeiraTab === k ? '#1A1A2E' : 'transparent',
+                border: lixeiraTab === k ? '1px solid #EF4444' : '1px solid #2D2D44',
+                color: lixeiraTab === k ? '#EF4444' : '#555'
+              }
+            }, label + (n > 0 ? ' (' + n + ')' : ''))
+          )
+        ),
+
+        // oportunidades
+        lixeiraTab === 'oportunidades' && (lixeira.length === 0
+          ? React.createElement('div', { style: { fontSize: 9, color: '#555', ...s } }, 'Nenhuma oportunidade na lixeira.')
+          : React.createElement('table', { style: { width: '100%', borderCollapse: 'collapse', ...s, fontSize: 10 } },
+              React.createElement('thead', null, React.createElement('tr', null,
+                ['Título','Empresa','Agência','Estágio','Apagado em',''].map(h =>
                   React.createElement('th', { key: h, style: { textAlign: 'left', padding: '5px 8px', borderBottom: '1px solid #2D2D44', color: '#555', fontSize: 8, fontWeight: 700 } }, h)
                 )
+              )),
+              React.createElement('tbody', null,
+                lixeira.map(op => {
+                  const ag = agencias.find(a => a.id === op.agencia_id);
+                  const dias = Math.max(0, 30 - Math.floor((Date.now() - new Date(op.apagado_em)) / 86400000));
+                  return React.createElement('tr', { key: op.id, style: { borderBottom: '1px solid #1A1A2E' } },
+                    React.createElement('td', { style: { padding: '5px 8px', color: '#aaa' } }, op.titulo || '—'),
+                    React.createElement('td', { style: { padding: '5px 8px', color: '#aaa' } }, lixeiraEmpresas[op.empresa_id] || '—'),
+                    React.createElement('td', { style: { padding: '5px 8px', color: '#818CF8' } }, ag ? ag.nome : '—'),
+                    React.createElement('td', { style: { padding: '5px 8px', color: COR_ESTAGIO[op.estagio] || '#aaa' } }, op.estagio || '—'),
+                    React.createElement('td', { style: { padding: '5px 8px', color: dias < 5 ? '#EF4444' : '#555', fontSize: 8 } }, ptDate(op.apagado_em) + ' (' + dias + 'd)'),
+                    React.createElement('td', { style: { padding: '5px 8px' } },
+                      React.createElement('button', { onClick: () => restaurar(op.id), style: { fontSize: 8, padding: '2px 8px', background: '#0f2a1a', border: '1px solid #34D399', color: '#34D399', borderRadius: 3, cursor: 'pointer' } }, 'Restaurar')
+                    )
+                  );
+                })
               )
-            ),
-            React.createElement('tbody', null,
-              lixeira.map(op => {
-                const ag = agencias.find(a => a.id === op.agencia_id);
-                const diasAte30 = Math.max(0, 30 - Math.floor((Date.now() - new Date(op.apagado_em)) / 86400000));
-                return React.createElement('tr', { key: op.id, style: { borderBottom: '1px solid #1A1A2E' } },
-                  React.createElement('td', { style: { padding: '5px 8px', color: '#aaa' } }, op.titulo || '—'),
-                  React.createElement('td', { style: { padding: '5px 8px', color: '#aaa' } }, lixeiraEmpresas[op.empresa_id] || '—'),
-                  React.createElement('td', { style: { padding: '5px 8px', color: '#818CF8' } }, ag ? ag.nome : '—'),
-                  React.createElement('td', { style: { padding: '5px 8px', color: COR_ESTAGIO[op.estagio] || '#aaa' } }, op.estagio || '—'),
-                  React.createElement('td', { style: { padding: '5px 8px', color: diasAte30 < 5 ? '#EF4444' : '#555', fontSize: 8 } }, ptDate(op.apagado_em) + ' (' + diasAte30 + 'd)'),
-                  React.createElement('td', { style: { padding: '5px 8px' } },
-                    React.createElement('button', { onClick: () => restaurar(op.id), style: { fontSize: 8, padding: '2px 8px', background: '#0f2a1a', border: '1px solid #34D399', color: '#34D399', borderRadius: 3, cursor: 'pointer' } }, 'Restaurar')
-                  )
-                );
-              })
             )
-          )
+        ),
+
+        // empresas
+        lixeiraTab === 'empresas' && (lixeiraEmps.length === 0
+          ? React.createElement('div', { style: { fontSize: 9, color: '#555', ...s } }, 'Nenhuma empresa na lixeira.')
+          : React.createElement('table', { style: { width: '100%', borderCollapse: 'collapse', ...s, fontSize: 10 } },
+              React.createElement('thead', null, React.createElement('tr', null,
+                ['Nome','Setor','Apagado em',''].map(h =>
+                  React.createElement('th', { key: h, style: { textAlign: 'left', padding: '5px 8px', borderBottom: '1px solid #2D2D44', color: '#555', fontSize: 8, fontWeight: 700 } }, h)
+                )
+              )),
+              React.createElement('tbody', null,
+                lixeiraEmps.map(emp => {
+                  const dias = Math.max(0, 30 - Math.floor((Date.now() - new Date(emp.apagado_em)) / 86400000));
+                  return React.createElement('tr', { key: emp.id, style: { borderBottom: '1px solid #1A1A2E' } },
+                    React.createElement('td', { style: { padding: '5px 8px', color: '#aaa' } }, emp.nome || '—'),
+                    React.createElement('td', { style: { padding: '5px 8px', color: '#555' } }, emp.setor || '—'),
+                    React.createElement('td', { style: { padding: '5px 8px', color: dias < 5 ? '#EF4444' : '#555', fontSize: 8 } }, ptDate(emp.apagado_em) + ' (' + dias + 'd)'),
+                    React.createElement('td', { style: { padding: '5px 8px' } },
+                      React.createElement('button', { onClick: () => restaurarEmpresa(emp.id), style: { fontSize: 8, padding: '2px 8px', background: '#0f2a1a', border: '1px solid #34D399', color: '#34D399', borderRadius: 3, cursor: 'pointer' } }, 'Restaurar')
+                    )
+                  );
+                })
+              )
+            )
+        ),
+
+        // decisores
+        lixeiraTab === 'decisores' && (lixeiraDecs.length === 0
+          ? React.createElement('div', { style: { fontSize: 9, color: '#555', ...s } }, 'Nenhum decisor na lixeira.')
+          : React.createElement('table', { style: { width: '100%', borderCollapse: 'collapse', ...s, fontSize: 10 } },
+              React.createElement('thead', null, React.createElement('tr', null,
+                ['Nome','Cargo','Empresa','Apagado em',''].map(h =>
+                  React.createElement('th', { key: h, style: { textAlign: 'left', padding: '5px 8px', borderBottom: '1px solid #2D2D44', color: '#555', fontSize: 8, fontWeight: 700 } }, h)
+                )
+              )),
+              React.createElement('tbody', null,
+                lixeiraDecs.map(dec => {
+                  const dias = Math.max(0, 30 - Math.floor((Date.now() - new Date(dec.apagado_em)) / 86400000));
+                  return React.createElement('tr', { key: dec.id, style: { borderBottom: '1px solid #1A1A2E' } },
+                    React.createElement('td', { style: { padding: '5px 8px', color: '#aaa' } }, dec.nome || '—'),
+                    React.createElement('td', { style: { padding: '5px 8px', color: '#555' } }, dec.cargo || '—'),
+                    React.createElement('td', { style: { padding: '5px 8px', color: '#aaa' } }, lixeiraEmpresas[dec.empresa_id] || '—'),
+                    React.createElement('td', { style: { padding: '5px 8px', color: dias < 5 ? '#EF4444' : '#555', fontSize: 8 } }, ptDate(dec.apagado_em) + ' (' + dias + 'd)'),
+                    React.createElement('td', { style: { padding: '5px 8px' } },
+                      React.createElement('button', { onClick: () => restaurarDecisor(dec.id), style: { fontSize: 8, padding: '2px 8px', background: '#0f2a1a', border: '1px solid #34D399', color: '#34D399', borderRadius: 3, cursor: 'pointer' } }, 'Restaurar')
+                    )
+                  );
+                })
+              )
+            )
+        )
       )
     );
   }
