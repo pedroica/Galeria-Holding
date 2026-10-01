@@ -1,17 +1,18 @@
 // api/crm-backup.js — exporta tabelas crm_ para Supabase Storage (bucket "backups")
-// POST: cron 02h UTC (23h BRT) via vercel.json — grava backup diário no bucket
-// GET ?zip=1           : baixa ZIP com dados atuais do banco (autenticação admin JWT)
-// GET ?zip=1&dia=AAAA-MM-DD : baixa ZIP de um dia já salvo no bucket (autenticação admin JWT)
+// GET (sem params)      : cron Vercel 02h UTC — grava CSV, JSON e ZIP no bucket
+// GET ?zip=1            : baixa ZIP do bucket (segundos); se ainda não houver, dispara geração e retorna 202
+// GET ?zip=1&dia=AAAA-MM-DD : baixa ZIP de um dia já salvo no bucket
+// POST                  : alias do cron (trigger manual via CRON_SECRET ou service key)
 
 export const config = { maxDuration: 60 };
 
 import { deflateRawSync } from 'node:zlib';
 
-const SUPA_URL  = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
-const SUPA_SVC  = process.env.SUPA_CRM_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPA_URL    = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
+const SUPA_SVC    = process.env.SUPA_CRM_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const CRON_SECRET = process.env.CRON_SECRET;
-const BUCKET    = 'backups';
-const RETENTION = 30; // dias
+const BUCKET      = 'backups';
+const RETENTION   = 30; // dias
 
 const CRM_TABLES = [
   'crm_oportunidades','crm_empresas','crm_decisores','crm_agencias',
@@ -46,7 +47,6 @@ function dosDateTime() {
 }
 
 function buildZip(entries) {
-  // entries: [{name: string, data: Buffer|string}]
   const { date, time } = dosDateTime();
   const locals   = [];
   const centrals = [];
@@ -62,7 +62,7 @@ function buildZip(entries) {
     lhdr.writeUInt32LE(0x04034b50, 0);
     lhdr.writeUInt16LE(20, 4);
     lhdr.writeUInt16LE(0, 6);
-    lhdr.writeUInt16LE(8, 8);  // deflate
+    lhdr.writeUInt16LE(8, 8);
     lhdr.writeUInt16LE(time, 10);
     lhdr.writeUInt16LE(date, 12);
     lhdr.writeUInt32LE(crc, 14);
@@ -127,6 +127,15 @@ async function storageUpload(path, body, contentType) {
   return r.ok;
 }
 
+async function storageDownloadBinary(path) {
+  const r = await fetch(SUPA_URL + '/storage/v1/object/' + BUCKET + '/' + path, {
+    headers: storageHeaders()
+  });
+  if (!r.ok) return null;
+  const ab = await r.arrayBuffer();
+  return Buffer.from(ab);
+}
+
 async function storageList(prefix) {
   const r = await fetch(SUPA_URL + '/storage/v1/object/list/' + BUCKET, {
     method: 'POST',
@@ -134,13 +143,6 @@ async function storageList(prefix) {
     body: JSON.stringify({ prefix, limit: 1000, offset: 0 })
   });
   return r.ok ? r.json() : [];
-}
-
-async function storageDownload(path) {
-  const r = await fetch(SUPA_URL + '/storage/v1/object/' + BUCKET + '/' + path, {
-    headers: storageHeaders()
-  });
-  return r.ok ? r.text() : null;
 }
 
 async function storageDelete(paths) {
@@ -173,13 +175,17 @@ function toCSV(rows) {
   return [cols.join(','), ...rows.map(r => cols.map(c => esc(r[c])).join(','))].join('\n');
 }
 
-// ── Auth helper ────────────────────────────────────────────────────────────────
+// ── Auth helpers ───────────────────────────────────────────────────────────────
+
+function isCronOrService(req) {
+  const auth = (req.headers.authorization || '').replace('Bearer ', '');
+  return (CRON_SECRET && auth === CRON_SECRET) || auth === SUPA_SVC;
+}
 
 async function resolveAuth(req) {
+  if (isCronOrService(req)) return true;
   const auth = (req.headers.authorization || '').replace('Bearer ', '');
   if (!auth) return false;
-  if ((CRON_SECRET && auth === CRON_SECRET) || auth === SUPA_SVC) return true;
-  // Aceita JWT de admin
   try {
     const uRes = await fetch(SUPA_URL + '/auth/v1/user', {
       headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + auth }
@@ -207,73 +213,23 @@ async function logRun(descricao, detalhes) {
   }).catch(() => {});
 }
 
-// ── Handler ───────────────────────────────────────────────────────────────────
+// ── Backup: busca tabelas, grava CSV/JSON/ZIP no bucket ───────────────────────
 
-export default async function handler(req, res) {
-  if (!SUPA_SVC) return res.status(500).json({ error: 'SUPA_CRM_SERVICE_KEY not set' });
-
-  // ── GET ?zip=1[&dia=AAAA-MM-DD] ──────────────────────────────────────────
-  if (req.method === 'GET') {
-    const { zip, dia } = req.query || {};
-    if (zip !== '1') return res.status(400).json({ error: 'use ?zip=1' });
-
-    const ok = await resolveAuth(req);
-    if (!ok) return res.status(401).json({ error: 'unauthorized' });
-
-    const entries = [];
-
-    if (dia) {
-      // Busca arquivos já salvos no bucket para aquele dia
-      if (!/^\d{4}-\d{2}-\d{2}$/.test(dia)) return res.status(400).json({ error: 'dia inválido' });
-      const files = await storageList(dia);
-      if (!Array.isArray(files) || files.length === 0) {
-        return res.status(404).json({ error: `Pasta ${dia} não encontrada no bucket` });
-      }
-      for (const f of files) {
-        if (!f.name) continue;
-        const content = await storageDownload(dia + '/' + f.name);
-        if (content !== null) entries.push({ name: dia + '/' + f.name, data: content });
-      }
-    } else {
-      // Gera snapshot ao vivo do banco
-      const hoje = new Date().toISOString().slice(0, 10);
-      for (const table of CRM_TABLES) {
-        const rows = await fetchTable(table);
-        entries.push({ name: hoje + '/' + table + '.json', data: JSON.stringify(rows) });
-        entries.push({ name: hoje + '/' + table + '.csv',  data: toCSV(rows) });
-      }
-    }
-
-    const zipBuf = buildZip(entries);
-    const label  = dia || new Date().toISOString().slice(0, 10);
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Disposition', `attachment; filename="crm-backup-${label}.zip"`);
-    res.setHeader('Content-Length', zipBuf.length);
-    return res.status(200).end(zipBuf);
-  }
-
-  // ── POST: backup diário para o bucket ────────────────────────────────────
-  if (req.method !== 'POST') return res.status(405).json({ error: 'GET ou POST apenas' });
-
-  const auth = (req.headers.authorization || '').replace('Bearer ', '');
-  let isValid = (CRON_SECRET && auth === CRON_SECRET) || auth === SUPA_SVC;
-  if (!isValid && auth && auth !== SUPA_SVC) {
-    isValid = await resolveAuth(req);
-  }
-  if (!isValid) return res.status(401).json({ error: 'unauthorized' });
-
-  const now = new Date();
-  const ts  = now.toISOString().slice(0, 19).replace('T', '_').replace(/:/g, '-');
-  const pasta = ts.slice(0, 10); // YYYY-MM-DD
-
+async function runBackup() {
+  const pasta = new Date().toISOString().slice(0, 10);
   const tabelas = [];
   const erros   = [];
+  const entries = [];
 
   for (const table of CRM_TABLES) {
     try {
       const rows = await fetchTable(table);
       const csv  = toCSV(rows);
       const json = JSON.stringify(rows);
+      entries.push(
+        { name: pasta + '/' + table + '.csv',  data: csv  },
+        { name: pasta + '/' + table + '.json', data: json }
+      );
       await Promise.all([
         storageUpload(pasta + '/' + table + '.csv',  csv,  'text/csv'),
         storageUpload(pasta + '/' + table + '.json', json, 'application/json')
@@ -284,6 +240,14 @@ export default async function handler(req, res) {
     }
   }
 
+  // Grava ZIP pronto no bucket
+  try {
+    const zipBuf = buildZip(entries);
+    await storageUpload(pasta + '/backup.zip', zipBuf, 'application/zip');
+  } catch (e) {
+    erros.push({ tabela: '_zip', erro: String(e) });
+  }
+
   // Limpa pastas com mais de RETENTION dias
   let deletados = 0;
   try {
@@ -292,17 +256,64 @@ export default async function handler(req, res) {
     const toDelete = (Array.isArray(allFolders) ? allFolders : [])
       .filter(f => f.name && /^\d{4}-\d{2}-\d{2}$/.test(f.name) && new Date(f.name) < cutoff)
       .map(f => f.name + '/');
-    if (toDelete.length > 0) {
-      for (const folder of toDelete) {
-        const files = await storageList(folder.replace('/', ''));
-        const paths = (Array.isArray(files) ? files : []).map(f => folder + f.name);
-        deletados += await storageDelete(paths);
-      }
+    for (const folder of toDelete) {
+      const files = await storageList(folder.replace('/', ''));
+      const paths = (Array.isArray(files) ? files : []).map(f => folder + f.name);
+      deletados += await storageDelete(paths);
     }
   } catch (_) {}
 
-  const result = { ok: true, ts, pasta, tabelas, erros, deletados };
+  const result = { ok: true, pasta, tabelas, erros, deletados };
   await logRun('crm-backup diario', result);
+  return result;
+}
 
-  return res.status(200).json(result);
+// ── Handler ───────────────────────────────────────────────────────────────────
+
+export default async function handler(req, res) {
+  if (!SUPA_SVC) return res.status(500).json({ error: 'SUPA_CRM_SERVICE_KEY not set' });
+
+  const { zip, dia } = req.query || {};
+
+  // ── GET ?zip=1[&dia=AAAA-MM-DD] — baixa ZIP do bucket ────────────────────
+  if (req.method === 'GET' && zip === '1') {
+    const ok = await resolveAuth(req);
+    if (!ok) return res.status(401).json({ error: 'unauthorized' });
+
+    if (dia && !/^\d{4}-\d{2}-\d{2}$/.test(dia)) {
+      return res.status(400).json({ error: 'dia inválido' });
+    }
+
+    const label  = dia || new Date().toISOString().slice(0, 10);
+    const zipBuf = await storageDownloadBinary(label + '/backup.zip');
+
+    if (zipBuf) {
+      res.setHeader('Content-Type', 'application/zip');
+      res.setHeader('Content-Disposition', `attachment; filename="crm-backup-${label}.zip"`);
+      res.setHeader('Content-Length', zipBuf.length);
+      return res.status(200).end(zipBuf);
+    }
+
+    if (dia) {
+      return res.status(404).json({ error: `Backup de ${dia} não encontrado no bucket` });
+    }
+
+    // ZIP de hoje ainda não existe — dispara geração em segundo plano
+    const host  = req.headers.host || 'galeria-holding-sage.vercel.app';
+    const proto = host.includes('localhost') ? 'http' : 'https';
+    fetch(`${proto}://${host}/api/crm-backup`, {
+      headers: { Authorization: 'Bearer ' + (CRON_SECRET || SUPA_SVC) }
+    }).catch(() => {});
+
+    return res.status(202).json({ message: 'ZIP ainda não gerado. Produção em andamento — tente novamente em 1 minuto.' });
+  }
+
+  // ── GET sem params (cron Vercel) OU POST (trigger manual) — roda backup ──
+  if (req.method === 'GET' || req.method === 'POST') {
+    if (!isCronOrService(req)) return res.status(401).json({ error: 'unauthorized' });
+    const result = await runBackup();
+    return res.status(200).json(result);
+  }
+
+  return res.status(405).json({ error: 'método não suportado' });
 }
