@@ -240,14 +240,6 @@ async function runBackup() {
     }
   }
 
-  // Grava ZIP pronto no bucket
-  try {
-    const zipBuf = buildZip(entries);
-    await storageUpload(pasta + '/backup.zip', zipBuf, 'application/zip');
-  } catch (e) {
-    erros.push({ tabela: '_zip', erro: String(e) });
-  }
-
   // Limpa pastas com mais de RETENTION dias
   let deletados = 0;
   try {
@@ -284,28 +276,39 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'dia inválido' });
     }
 
-    const label  = dia || new Date().toISOString().slice(0, 10);
-    const zipBuf = await storageDownloadBinary(label + '/backup.zip');
+    const label = dia || new Date().toISOString().slice(0, 10);
 
-    if (zipBuf) {
-      res.setHeader('Content-Type', 'application/zip');
-      res.setHeader('Content-Disposition', `attachment; filename="crm-backup-${label}.zip"`);
-      res.setHeader('Content-Length', zipBuf.length);
-      return res.status(200).end(zipBuf);
+    // Lista arquivos já gravados para esta data
+    const files   = await storageList(label);
+    const csvJson = Array.isArray(files)
+      ? files.filter(f => f.name && (f.name.endsWith('.csv') || f.name.endsWith('.json')))
+      : [];
+
+    if (csvJson.length === 0) {
+      if (dia) return res.status(404).json({ error: `Backup de ${dia} não encontrado no bucket` });
+      // Dispara geração em segundo plano
+      const host  = req.headers.host || 'galeria-holding-sage.vercel.app';
+      const proto = host.includes('localhost') ? 'http' : 'https';
+      fetch(`${proto}://${host}/api/crm-backup`, {
+        headers: { Authorization: 'Bearer ' + (CRON_SECRET || SUPA_SVC) }
+      }).catch(() => {});
+      return res.status(202).json({ message: 'Backup ainda não gerado para hoje. Produção em andamento — tente novamente em 1 minuto.' });
     }
 
-    if (dia) {
-      return res.status(404).json({ error: `Backup de ${dia} não encontrado no bucket` });
-    }
+    // Baixa todos os arquivos em paralelo e monta o ZIP
+    const downloads = await Promise.all(
+      csvJson.map(f =>
+        storageDownloadBinary(label + '/' + f.name)
+          .then(data => ({ name: label + '/' + f.name, data }))
+      )
+    );
+    const entries = downloads.filter(e => e.data !== null);
+    const zipBuf  = buildZip(entries);
 
-    // ZIP de hoje ainda não existe — dispara geração em segundo plano
-    const host  = req.headers.host || 'galeria-holding-sage.vercel.app';
-    const proto = host.includes('localhost') ? 'http' : 'https';
-    fetch(`${proto}://${host}/api/crm-backup`, {
-      headers: { Authorization: 'Bearer ' + (CRON_SECRET || SUPA_SVC) }
-    }).catch(() => {});
-
-    return res.status(202).json({ message: 'ZIP ainda não gerado. Produção em andamento — tente novamente em 1 minuto.' });
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="crm-backup-${label}.zip"`);
+    res.setHeader('Content-Length', zipBuf.length);
+    return res.status(200).end(zipBuf);
   }
 
   // ── GET sem params (cron Vercel) OU POST (trigger manual) — roda backup ──

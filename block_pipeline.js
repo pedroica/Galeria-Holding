@@ -602,6 +602,7 @@
     const [lixeiraDecs, setLixeiraDecs] = useState([]);  // decisores apagados
     const [lixeiraEmpresas, setLixeiraEmpresas] = useState({});
     const [exportando, setExportando] = useState(false);
+    const [exportMsg, setExportMsg] = useState('');
     const [lixeiraTab, setLixeiraTab] = useState('oportunidades');
     const [form, setForm] = useState({ email: '', nome: '', agencia_id: '', papel: 'leitor' });
     const [editEmail, setEditEmail] = useState(null);
@@ -655,18 +656,27 @@
 
     async function exportarTudo() {
       setExportando(true);
+      setExportMsg('');
+      const ctrl  = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), 30000);
       try {
         const hoje = new Date().toISOString().slice(0, 10);
-        const r = await fetch('/api/crm-backup?zip=1', { headers: { Authorization: 'Bearer ' + getJwt() } });
+        const r = await fetch('/api/crm-backup?zip=1', {
+          headers: { Authorization: 'Bearer ' + getJwt() },
+          signal: ctrl.signal
+        });
+        clearTimeout(timer);
         if (r.status === 202) {
           const { message } = await r.json();
-          alert(message || 'ZIP sendo gerado. Tente novamente em 1 minuto.');
+          setExportMsg(message || 'Pronto em 1 minuto — tente novamente.');
+          setExportando(false);
           return;
         }
         if (!r.ok) {
-          const ct = r.headers.get('content-type') || '';
-          const msg = ct.includes('json') ? (await r.json()).error : r.status;
-          alert('Erro ao exportar: ' + msg);
+          const ct  = r.headers.get('content-type') || '';
+          const msg = ct.includes('json') ? (await r.json()).error : String(r.status);
+          setExportMsg('Erro: ' + msg);
+          setExportando(false);
           return;
         }
         const blob = await r.blob();
@@ -678,7 +688,11 @@
         a.click();
         document.body.removeChild(a);
         URL.revokeObjectURL(url);
-      } catch(e) { alert('Erro: ' + e.message); }
+        setExportMsg('✓ Baixado (' + (blob.size / 1024).toFixed(0) + ' KB)');
+      } catch(e) {
+        clearTimeout(timer);
+        setExportMsg(e.name === 'AbortError' ? 'Timeout 30s — tente novamente.' : 'Erro: ' + e.message);
+      }
       setExportando(false);
     }
 
@@ -713,10 +727,15 @@
     return React.createElement('div', { style: { flex: 1, overflow: 'auto', padding: 24 } },
       React.createElement('div', { style: { display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 } },
         React.createElement('div', { style: { fontSize: 13, fontWeight: 700, color: '#eee', ...s } }, 'ADMIN — Usuários'),
-        React.createElement('button', {
-          onClick: exportarTudo, disabled: exportando,
-          style: { marginLeft: 'auto', fontSize: 9, padding: '5px 14px', background: exportando ? '#1A1A2E' : '#0f2a1a', border: '1px solid #34D399', color: '#34D399', borderRadius: 4, cursor: 'pointer', ...s }
-        }, exportando ? 'Exportando…' : '⬆ Exportar tudo agora')
+        React.createElement('div', { style: { marginLeft: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 } },
+          React.createElement('button', {
+            onClick: exportarTudo, disabled: exportando,
+            style: { fontSize: 9, padding: '5px 14px', background: exportando ? '#1A1A2E' : '#0f2a1a', border: '1px solid #34D399', color: exportando ? '#2D5E3A' : '#34D399', borderRadius: 4, cursor: exportando ? 'default' : 'pointer', ...s }
+          }, exportando ? '⟳ Gerando…' : '⬆ Exportar tudo agora'),
+          exportMsg ? React.createElement('span', {
+            style: { fontSize: 8, color: exportMsg.startsWith('✓') ? '#34D399' : exportMsg.startsWith('Pronto') ? '#FBBF24' : '#FF6B2B', ...s }
+          }, exportMsg) : null
+        )
       ),
 
       // Form
