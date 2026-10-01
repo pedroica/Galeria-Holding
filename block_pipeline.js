@@ -658,6 +658,11 @@
       try {
         const hoje = new Date().toISOString().slice(0, 10);
         const r = await fetch('/api/crm-backup?zip=1', { headers: { Authorization: 'Bearer ' + getJwt() } });
+        if (r.status === 202) {
+          const { message } = await r.json();
+          alert(message || 'ZIP sendo gerado. Tente novamente em 1 minuto.');
+          return;
+        }
         if (!r.ok) {
           const ct = r.headers.get('content-type') || '';
           const msg = ct.includes('json') ? (await r.json()).error : r.status;
