@@ -140,10 +140,18 @@
 
     async function salvarEdicao() {
       setSalvando(true);
+      const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       const patch = Object.assign({}, form, { atualizado_em: new Date().toISOString() });
-      if (form.estagio && form.estagio !== op.estagio) {
-        await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'estagio', de: op.estagio, para: form.estagio }) });
-        await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: op.id, campo: 'estagio', valor_de: op.estagio, valor_para: form.estagio }) });
+      const auditCampos = ['estagio', 'titulo', 'valor_estimado', 'oferta', 'proximo_passo', 'motivo_perda'];
+      for (const campo of auditCampos) {
+        const vDe = op[campo] !== undefined ? op[campo] : null;
+        const vPara = form[campo] !== undefined ? form[campo] : null;
+        if (JSON.stringify(vDe) !== JSON.stringify(vPara)) {
+          if (campo === 'estagio') {
+            await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'estagio', de: op.estagio, para: form.estagio }) });
+          }
+          await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: op.id, campo, valor_de: vDe, valor_para: vPara, usuario_email: userEmail }) });
+        }
       }
       await supa('crm_oportunidades?id=eq.' + op.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(patch) });
       setSalvando(false);
@@ -155,9 +163,10 @@
       if (!window.confirm('Mover para lixeira? Pode ser restaurado em 30 dias.')) return;
       setSalvando(true);
       const agora = new Date().toISOString();
+      const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       await supa('crm_oportunidades?id=eq.' + op.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ apagado_em: agora }) });
       await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'apagado', texto: 'Movido para lixeira' }) });
-      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: op.id, campo: 'apagado_em', valor_de: null, valor_para: agora }) });
+      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: op.id, campo: 'apagado_em', valor_de: null, valor_para: agora, usuario_email: userEmail }) });
       setSalvando(false);
       onAtualizar();
     }
@@ -481,9 +490,10 @@
       const op = oportunidades.find(o => o.id === opId);
       if (!op || op.estagio === novoEstagio) return;
       const agora = new Date().toISOString();
+      const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       await supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ estagio: novoEstagio, atualizado_em: agora }) });
       await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'estagio', de: op.estagio, para: novoEstagio }) });
-      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'estagio', valor_de: op.estagio, valor_para: novoEstagio }) });
+      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'estagio', valor_de: op.estagio, valor_para: novoEstagio, usuario_email: userEmail }) });
       carregar();
     }
 
@@ -636,21 +646,24 @@
     useEffect(() => { carregar(); }, []);
 
     async function restaurar(opId) {
+      const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       await supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ apagado_em: null }) });
       await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'restaurado', texto: 'Restaurado da lixeira pelo admin' }) });
-      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'apagado_em', valor_de: new Date().toISOString(), valor_para: null }) });
+      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'apagado_em', valor_de: new Date().toISOString(), valor_para: null, usuario_email: userEmail }) });
       carregar();
     }
 
     async function restaurarEmpresa(empId) {
+      const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       await supa('crm_empresas?id=eq.' + empId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ apagado_em: null }) });
-      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_empresas', registro_id: empId, campo: 'apagado_em', valor_de: new Date().toISOString(), valor_para: null }) });
+      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_empresas', registro_id: empId, campo: 'apagado_em', valor_de: new Date().toISOString(), valor_para: null, usuario_email: userEmail }) });
       carregar();
     }
 
     async function restaurarDecisor(decId) {
+      const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       await supa('crm_decisores?id=eq.' + decId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ apagado_em: null }) });
-      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_decisores', registro_id: decId, campo: 'apagado_em', valor_de: new Date().toISOString(), valor_para: null }) });
+      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_decisores', registro_id: decId, campo: 'apagado_em', valor_de: new Date().toISOString(), valor_para: null, usuario_email: userEmail }) });
       carregar();
     }
 

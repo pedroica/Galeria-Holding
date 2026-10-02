@@ -227,6 +227,10 @@ function EmpresasView({
   // ── supaDecisores: fonte única — lê de crm_decisores (Supabase) ──────────
   const [supaDecisores,     setSupaDecisores]     = useState([]);
   const [supaDecLoading,    setSupaDecLoading]    = useState(false);
+  // ── setor inline edit ─────────────────────────────────────────────────────
+  const [editandoSetor,     setEditandoSetor]     = useState(false);
+  const [novoSetor,         setNovoSetor]         = useState('');
+  const [setorSalvando,     setSetorSalvando]     = useState(false);
 
   // ── supaJwtFig: wrapper Supabase com timeout, 4xx log e 204 seguro ────────
   function supaJwtFig(path, opts) {
@@ -951,6 +955,36 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
     }
   };
 
+  // ── salva novo setor para a empresa selecionada ───────────────────────────
+  async function salvarSetor() {
+    if (!selEmpresa || !novoSetor.trim() || novoSetor.trim() === selEmpresa.setor) {
+      setEditandoSetor(false);
+      return;
+    }
+    setSetorSalvando(true);
+    var userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
+    var empId = (selEmpresa && selEmpresa.empresa_id) || null;
+    if (!empId && supaEmpMap) {
+      var sr2 = supaEmpMap[(selEmpresa.nome || '').toLowerCase().trim()];
+      if (sr2) empId = sr2.id;
+    }
+    var setorAnterior = selEmpresa.setor || null;
+    var setorNovo = novoSetor.trim();
+    if (empId) {
+      await supaJwtFig('/rest/v1/crm_empresas?id=eq.' + empId, {
+        method: 'PATCH', headers: { 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ setor: setorNovo, atualizado_em: new Date().toISOString() })
+      }).catch(function(e) { console.warn('[salvarSetor] PATCH erro:', e.message); });
+      await supaJwtFig('/rest/v1/crm_auditoria', {
+        method: 'POST', headers: { 'Prefer': 'return=minimal' },
+        body: JSON.stringify({ tabela: 'crm_empresas', registro_id: empId, campo: 'setor', valor_de: setorAnterior, valor_para: setorNovo, usuario_email: userEmail })
+      }).catch(function(e) { console.warn('[salvarSetor] auditoria erro:', e.message); });
+    }
+    setSelEmpresa(function(prev) { return Object.assign({}, prev, { setor: setorNovo }); });
+    setEditandoSetor(false);
+    setSetorSalvando(false);
+  }
+
   // ── painel direito: álbum de figurinhas ────────────────────────────────────
   const renderAlbum = () => {
     if (!selEmpresa) return null;
@@ -1132,7 +1166,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         flexShrink: 0
       }
     }, /*#__PURE__*/React.createElement("button", {
-      onClick: () => setSelEmpresa(null),
+      onClick: () => { setSelEmpresa(null); setEditandoSetor(false); },
       style: {
         padding: "5px 12px",
         borderRadius: 6,
@@ -1160,17 +1194,38 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
         alignItems: "center",
         marginTop: 3
       }
-    }, /*#__PURE__*/React.createElement("span", {
-      style: {
-        fontSize: 9,
-        padding: "2px 8px",
-        borderRadius: 100,
-        background: "#1A1A2E",
-        color: "#9B9BB4",
-        fontFamily: "IBM Plex Mono,monospace",
-        border: ".5px solid #2D2D44"
-      }
-    }, selEmpresa.setor), /*#__PURE__*/React.createElement("div", {
+    }, editandoSetor
+      ? React.createElement("span", { style: { display: "inline-flex", alignItems: "center", gap: 4 } },
+          React.createElement("input", {
+            autoFocus: true,
+            value: novoSetor,
+            onChange: function(e) { setNovoSetor(e.target.value); },
+            onKeyDown: function(e) { if (e.key === "Enter") salvarSetor(); if (e.key === "Escape") setEditandoSetor(false); },
+            style: { fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "#1A1A2E", border: "1px solid #60A5FA", color: "#F5F5F5", fontFamily: "IBM Plex Mono,monospace", width: 120, outline: "none" }
+          }),
+          React.createElement("button", {
+            onClick: salvarSetor, disabled: setorSalvando,
+            style: { fontSize: 9, padding: "2px 8px", borderRadius: 4, background: "#60A5FA", border: "none", color: "#000", cursor: "pointer", fontFamily: "IBM Plex Mono,monospace" }
+          }, setorSalvando ? "…" : "✓"),
+          React.createElement("button", {
+            onClick: function() { setEditandoSetor(false); },
+            style: { fontSize: 9, padding: "2px 6px", borderRadius: 4, background: "transparent", border: "none", color: "#9B9BB4", cursor: "pointer" }
+          }, "×")
+        )
+      : React.createElement("span", {
+          title: "Clique para editar o setor",
+          onClick: function() { setNovoSetor(selEmpresa.setor || ''); setEditandoSetor(true); },
+          style: {
+            fontSize: 9,
+            padding: "2px 8px",
+            borderRadius: 100,
+            background: "#1A1A2E",
+            color: "#9B9BB4",
+            fontFamily: "IBM Plex Mono,monospace",
+            border: ".5px solid #2D2D44",
+            cursor: "pointer"
+          }
+        }, selEmpresa.setor, " ✎")), /*#__PURE__*/React.createElement("div", {
       className: "score-badge " + scoreCls(selEmpresa.score || 0),
       style: {
         width: 28,
@@ -2000,6 +2055,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
       onClick: () => {
         var supaRow = supaEmpMap[e.nome.toLowerCase().trim()] || null;
         setSelEmpresa(Object.assign({}, e, supaRow ? {empresa_id: supaRow.id, website: supaRow.website, dominio: supaRow.dominio, enriquecido_em: supaRow.enriquecido_em, ultimo_toque_em: supaRow.ultimo_toque_em} : {}));
+        setEditandoSetor(false);
       },
       style: {
         display: "flex",
