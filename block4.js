@@ -1225,7 +1225,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
             border: ".5px solid #2D2D44",
             cursor: "pointer"
           }
-        }, selEmpresa.setor, " ✎")), /*#__PURE__*/React.createElement("div", {
+        }, selEmpresa.setor, " ✎"), /*#__PURE__*/React.createElement("div", {
       className: "score-badge " + scoreCls(selEmpresa.score || 0),
       style: {
         width: 28,
