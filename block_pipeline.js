@@ -142,7 +142,7 @@
       setSalvando(true);
       const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       const patch = Object.assign({}, form, { atualizado_em: new Date().toISOString() });
-      const auditCampos = ['estagio', 'titulo', 'valor_estimado', 'oferta', 'proximo_passo', 'motivo_perda'];
+      const auditCampos = ['estagio', 'titulo', 'valor_estimado', 'oferta', 'proximo_passo', 'motivo_perda', 'agencia_id'];
       for (const campo of auditCampos) {
         const vDe = op[campo] !== undefined ? op[campo] : null;
         const vPara = form[campo] !== undefined ? form[campo] : null;
@@ -226,18 +226,19 @@
         // Ações
         meuPapel === 'admin' && React.createElement('div', { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' } },
           React.createElement('button', {
-            onClick: () => { setForm({ estagio: op.estagio, valor_estimado: op.valor_estimado, proximo_passo: op.proximo_passo, proximo_passo_em: op.proximo_passo_em, oferta: op.oferta, titulo: op.titulo, motivo_perda: op.motivo_perda }); setEditando(true); },
+            onClick: () => { setForm({ estagio: op.estagio, valor_estimado: op.valor_estimado, proximo_passo: op.proximo_passo, proximo_passo_em: op.proximo_passo_em, oferta: op.oferta, titulo: op.titulo, motivo_perda: op.motivo_perda, agencia_id: op.agencia_id || '' }); setEditando(true); },
             style: { fontSize: 9, padding: '4px 10px', background: '#1A1A2E', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, cursor: 'pointer', ...s }
           }, 'Editar'),
           React.createElement('button', {
             onClick: apagar, disabled: salvando,
             style: { fontSize: 9, padding: '4px 10px', background: '#1A1A2E', border: '1px solid #7F1D1D', color: '#EF4444', borderRadius: 4, cursor: 'pointer', ...s }
           }, '🗑 Lixeira'),
-          !op.agencia_id && agencias.length > 0 && React.createElement('select', {
+          agencias.length > 0 && React.createElement('select', {
+            value: '',
             onChange: e => { if (e.target.value) assumirAgencia(e.target.value); },
             style: { fontSize: 9, padding: '4px 8px', background: '#1A1A2E', border: '1px solid #2D2D44', color: '#60A5FA', borderRadius: 4, cursor: 'pointer', ...s }
           },
-            React.createElement('option', { value: '' }, 'Assumir para...'),
+            React.createElement('option', { value: '' }, op.agencia_id ? 'Mover para...' : 'Assumir para...'),
             agencias.map(a => React.createElement('option', { key: a.id, value: a.id }, a.nome))
           )
         ),
@@ -274,6 +275,17 @@
               onChange: e => setForm(prev => Object.assign({}, prev, { oferta: e.target.value })),
               style: { width: '100%', background: '#0d0d1a', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono,monospace' }
             }, OFERTAS.map(o => React.createElement('option', { key: o, value: o }, o)))
+          ),
+          React.createElement('div', { style: { marginBottom: 8 } },
+            React.createElement('div', { style: { fontSize: 9, color: '#555', ...s, marginBottom: 2 } }, 'AGÊNCIA'),
+            React.createElement('select', {
+              value: form.agencia_id || '',
+              onChange: e => setForm(prev => Object.assign({}, prev, { agencia_id: e.target.value || null })),
+              style: { width: '100%', background: '#0d0d1a', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono,monospace' }
+            },
+              React.createElement('option', { value: '' }, '— sem dono —'),
+              agencias.map(a => React.createElement('option', { key: a.id, value: a.id }, a.nome))
+            )
           ),
           React.createElement('div', { style: { marginBottom: 8 } },
             React.createElement('div', { style: { fontSize: 9, color: '#555', ...s, marginBottom: 2 } }, 'VALOR ESTIMADO'),
@@ -568,7 +580,7 @@
             ),
 
             // Cards
-            React.createElement('div', { style: { flex: 1, overflowY: 'auto', minHeight: 40 } },
+            React.createElement('div', { style: { flex: 1, overflowY: 'auto', minHeight: 0 } },
               colOps.map(op => React.createElement(OportunidadeCard, {
                 key: op.id,
                 op, agencias,
