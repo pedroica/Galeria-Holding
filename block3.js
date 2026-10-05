@@ -5694,7 +5694,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -6891,59 +6891,118 @@ function PainelMetas({ agencias }) {
   );
 }
 
-function HoldingHome({ agencias }) {
-  var COLS = [
+function LegacyKanbanTab() {
+  var LCOLS = [
     {id:'contato', label:'1º Contato'},
     {id:'reuniao', label:'Reunião'},
     {id:'proposta', label:'Proposta'},
     {id:'negociacao', label:'Negociação'},
     {id:'fechamento', label:'Fechamento'},
   ];
+  var [lCards, setLCards] = React.useState([]);
+  var [lLoading, setLLoading] = React.useState(true);
+  React.useEffect(function() {
+    supaFetch('/rest/v1/crm_kanban?select=*&order=ordem.asc').then(function(d) {
+      setLCards(Array.isArray(d) ? d : []);
+      setLLoading(false);
+    }).catch(function() { setLLoading(false); });
+  }, []);
+  return React.createElement("div", {style:{display:'flex',flexDirection:'column',flex:1,overflow:'hidden'}},
+    React.createElement("div", {style:{background:'#1A0A00',borderBottom:'.5px solid #FF6B2B44',padding:'8px 16px',flexShrink:0,display:'flex',alignItems:'center',gap:8}},
+      React.createElement("span", {style:{fontSize:11,color:'#FF6B2B',fontFamily:'IBM Plex Mono,monospace',fontWeight:700}}, '⚠ Tabela legada, migrada em 01/10/2026'),
+      React.createElement("span", {style:{fontSize:10,color:'#9B9BB4',fontFamily:'IBM Plex Mono,monospace'}}, '— somente leitura, dados preservados para auditoria')
+    ),
+    React.createElement("div", {style:{display:'flex',flex:1,overflow:'auto',gap:6,padding:'10px 12px'}},
+      LCOLS.map(function(col) {
+        var cc = lCards.filter(function(c) { return c.col === col.id; });
+        return React.createElement("div", {key:col.id, style:{flex:'0 0 190px',background:'#08080F',border:'.5px solid #1A1A2E',borderRadius:8,display:'flex',flexDirection:'column',maxHeight:'100%'}},
+          React.createElement("div", {style:{padding:'7px 10px',borderBottom:'.5px solid #1A1A2E',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}},
+            React.createElement("span", {style:{fontFamily:'IBM Plex Mono,monospace',fontSize:9,color:'#9B9BB4',fontWeight:700,letterSpacing:.5}}, col.label.toUpperCase()),
+            React.createElement("span", {style:{fontFamily:'IBM Plex Mono,monospace',fontSize:13,color:'#FF6B2B',fontWeight:700}}, cc.length)
+          ),
+          React.createElement("div", {style:{overflowY:'auto',padding:'6px',flex:1}},
+            lLoading ? React.createElement("div", {style:{color:'#555',fontSize:11,textAlign:'center',marginTop:20}}, '…') :
+            cc.map(function(card) {
+              return React.createElement("div", {key:card.id, style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderRadius:6,padding:'8px 10px',marginBottom:6}},
+                React.createElement("div", {style:{fontSize:12,fontWeight:600,color:'#9B9BB4',lineHeight:1.3}}, card.nome||'—'),
+                card.produto && React.createElement("div", {style:{fontSize:10,color:'#666',marginTop:3}}, card.produto),
+                card.valor && React.createElement("div", {style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#555',marginTop:3}}, 'R$ '+Number(card.valor).toLocaleString('pt-BR'))
+              );
+            })
+          )
+        );
+      })
+    )
+  );
+}
+
+function HoldingHome({ agencias, agenciaUuids }) {
+  var COLS = [
+    {id:'Wishlist',          label:'Wishlist'},
+    {id:'Primeira reunião',  label:'1ª Reunião'},
+    {id:'Contato direto',    label:'Contato direto'},
+    {id:'Negociando direto', label:'Negociando'},
+    {id:'Concorrências',     label:'Concorrências'},
+    {id:'Negociação',        label:'Negociação'},
+  ];
+  var COR_ESTAGIO = {
+    'Wishlist':'#60A5FA','Primeira reunião':'#A78BFA','Contato direto':'#818CF8',
+    'Negociando direto':'#FBBF24','Concorrências':'#FB923C','Negociação':'#F472B6',
+    'Cliente ativo':'#34D399','Perdido':'#EF4444','Pausado':'#6B7280',
+  };
   var AG = Array.isArray(agencias) ? agencias : [];
+  var uuids = agenciaUuids || {};
+  var uuidToAg = {};
+  AG.forEach(function(a) { if (uuids[a.id]) uuidToAg[uuids[a.id]] = a; });
+
   var [cards, setCards] = React.useState([]);
   var [loading, setLoading] = React.useState(true);
   var [filterAg, setFilterAg] = React.useState('all');
   var [filterCol, setFilterCol] = React.useState('all');
   var [search, setSearch] = React.useState('');
   var [dragging, setDragging] = React.useState(null);
-  var [tab, setTab] = React.useState('pipeline'); // E2: pipeline | metas
+  var [tab, setTab] = React.useState('pipeline');
 
   React.useEffect(function() {
-    supaFetch('/rest/v1/crm_kanban?select=*&order=ordem.asc').then(function(d) {
+    supaFetch('/rest/v1/crm_oportunidades?apagado_em=is.null&select=*&order=atualizado_em.desc&limit=500').then(function(d) {
       setCards(Array.isArray(d) ? d : []);
       setLoading(false);
     }).catch(function() { setLoading(false); });
   }, []);
 
   function agenciaFromCard(card) {
-    var agId = (card.agencia_id || card.responsavel || '').toLowerCase().trim();
-    return AG.find(function(a) { return a.id.toLowerCase() === agId; })
-      || {id: agId, name: card.agencia_id || card.responsavel || '—', color: '#555'};
+    return uuidToAg[card.agencia_id] || {id: card.agencia_id || '—', name: '—', color: '#555'};
   }
 
   var visible = cards.filter(function(c) {
-    if (filterAg !== 'all') { var ag = agenciaFromCard(c); if (ag.id !== filterAg) return false; }
-    if (filterCol !== 'all' && c.col !== filterCol) return false;
-    if (search) { var q = search.toLowerCase(); if (!(c.nome||'').toLowerCase().includes(q) && !(c.produto||'').toLowerCase().includes(q) && !(c.responsavel||'').toLowerCase().includes(q)) return false; }
+    if (filterAg !== 'all' && c.agencia_id !== filterAg) return false;
+    if (filterCol !== 'all' && c.estagio !== filterCol) return false;
+    if (search) { var q = search.toLowerCase(); if (!(c.titulo||'').toLowerCase().includes(q) && !(c.oferta||'').toLowerCase().includes(q)) return false; }
     return true;
   });
 
-  var weekGoals = React.useMemo(function() {
+  var weekGoals = (function() {
     var weeks = [];
     var now = new Date();
     for (var w = 0; w < 5; w++) {
       var wStart = new Date(now); wStart.setDate(wStart.getDate() - wStart.getDay() - w * 7); wStart.setHours(0,0,0,0);
       var wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 7);
-      var wCards = cards.filter(function(c) { var d = new Date(c.atualizado_em); return c.col === 'reuniao' && d >= wStart && d < wEnd; });
+      var wCards = cards.filter(function(c) { var d = new Date(c.atualizado_em); return c.estagio === 'Primeira reunião' && d >= wStart && d < wEnd; });
       var byAg = {}; wCards.forEach(function(c) { var ag = agenciaFromCard(c); byAg[ag.id] = (byAg[ag.id]||0) + 1; });
       weeks.push({label: w===0?'Esta semana':'Sem -'+w, total: wCards.length, byAg: byAg});
     }
     return weeks;
-  }, [cards]);
+  })();
 
-  function moveCard(cardId, newCol) {
-    setCards(function(p) { return p.map(function(c) { return c.id===cardId ? Object.assign({},c,{col:newCol}) : c; }); });
-    supaFetch('/rest/v1/crm_kanban?id=eq.'+cardId, {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({col:newCol, atualizado_em:new Date().toISOString()})});
+  function moveCard(cardId, newEstagio) {
+    var op = cards.find(function(c) { return c.id === cardId; });
+    setCards(function(p) { return p.map(function(c) { return c.id===cardId ? Object.assign({},c,{estagio:newEstagio}) : c; }); });
+    var agora = new Date().toISOString();
+    supaFetch('/rest/v1/crm_oportunidades?id=eq.'+cardId, {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({estagio:newEstagio, atualizado_em:agora})});
+    var userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
+    if (op) {
+      supaFetch('/rest/v1/crm_auditoria', {method:'POST', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({tabela:'crm_oportunidades', registro_id:cardId, campo:'estagio', valor_de:op.estagio, valor_para:newEstagio, usuario_email:userEmail, criado_em:agora})});
+    }
   }
 
   function renderCard(card) {
@@ -6951,20 +7010,19 @@ function HoldingHome({ agencias }) {
     return React.createElement("div", {key:card.id, draggable:true, onDragStart:function(){setDragging(card.id);}, onDragEnd:function(){setDragging(null);},
       style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderLeft:'2px solid '+ag.color,borderRadius:6,padding:'8px 10px',cursor:'grab',marginBottom:6,userSelect:'none'}},
       React.createElement("div",{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:4}},
-        React.createElement("div",{style:{fontSize:12,fontWeight:600,color:'#F5F5F5',lineHeight:1.3,flex:1}}, card.nome||'—'),
+        React.createElement("div",{style:{fontSize:12,fontWeight:600,color:'#F5F5F5',lineHeight:1.3,flex:1}}, card.titulo||'—'),
         React.createElement("span",{style:{fontSize:8,fontFamily:'IBM Plex Mono,monospace',background:ag.color+'22',color:ag.color,padding:'1px 5px',borderRadius:100,flexShrink:0,marginTop:1}}, ag.name)
       ),
-      card.produto && React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',marginTop:3}}, card.produto),
-      card.valor && React.createElement("div",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#34D399',marginTop:3}},
-        'R$ '+Number(card.valor).toLocaleString('pt-BR')
+      card.oferta && React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',marginTop:3}}, card.oferta),
+      card.valor_estimado && React.createElement("div",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#34D399',marginTop:3}},
+        'R$ '+Number(card.valor_estimado).toLocaleString('pt-BR')
       )
     );
   }
 
   return React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden',background:'#060610'}},
-    // E2: Tab bar Pipeline | Metas
     React.createElement("div",{style:{display:'flex',alignItems:'stretch',background:'#08080F',borderBottom:'.5px solid #1A1A2E',flexShrink:0}},
-      [['pipeline','Pipeline'],['metas','Metas semanais']].map(function(t) {
+      [['pipeline','Pipeline'],['metas','Metas semanais'],['legado','Kanban legado']].map(function(t) {
         return React.createElement("div",{key:t[0],onClick:function(){setTab(t[0]);},
           style:{padding:'0 18px',display:'flex',alignItems:'center',height:30,fontFamily:'IBM Plex Mono,monospace',fontSize:9,cursor:'pointer',
             borderBottom:tab===t[0]?'2px solid #FF6B2B':'2px solid transparent',
@@ -6973,12 +7031,13 @@ function HoldingHome({ agencias }) {
       })
     ),
     tab === 'metas' ? React.createElement(PainelMetas, { agencias: agencias }) :
+    tab === 'legado' ? React.createElement(LegacyKanbanTab, null) :
     React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden'}},
     React.createElement("div",{style:{display:'flex',alignItems:'center',gap:8,padding:'8px 16px',borderBottom:'.5px solid #1A1A2E',flexWrap:'wrap',flexShrink:0}},
       COLS.map(function(c) {
-        var cnt = cards.filter(function(k){return k.col===c.id;}).length;
+        var cnt = cards.filter(function(k){return k.estagio===c.id;}).length;
         return React.createElement("div",{key:c.id,style:{display:'flex',alignItems:'center',gap:4,padding:'3px 10px',background:'#0D0D1A',borderRadius:4,border:'.5px solid #1A1A2E'}},
-          React.createElement("span",{style:{fontSize:14,fontWeight:700,color:'#FF6B2B',fontFamily:'IBM Plex Mono,monospace'}}, cnt),
+          React.createElement("span",{style:{fontSize:14,fontWeight:700,color:COR_ESTAGIO[c.id]||'#FF6B2B',fontFamily:'IBM Plex Mono,monospace'}}, cnt),
           React.createElement("span",{style:{fontSize:9,color:'#555',fontFamily:'IBM Plex Mono,monospace'}}, c.label)
         );
       }),
@@ -6986,7 +7045,7 @@ function HoldingHome({ agencias }) {
       React.createElement("input",{value:search,onChange:function(e){setSearch(e.target.value);},placeholder:'Buscar…',style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:4,padding:'4px 8px',color:'#F5F5F5',fontSize:11,outline:'none',fontFamily:'IBM Plex Mono,monospace',width:130}}),
       React.createElement("select",{value:filterAg,onChange:function(e){setFilterAg(e.target.value);},style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:4,padding:'4px 8px',color:'#9B9BB4',fontSize:11,outline:'none'}},
         React.createElement("option",{value:'all'},'Todas agências'),
-        AG.map(function(a){return React.createElement("option",{key:a.id,value:a.id},a.name);})
+        AG.map(function(a){ return uuids[a.id] ? React.createElement("option",{key:a.id,value:uuids[a.id]},a.name) : null; }).filter(Boolean)
       ),
       React.createElement("select",{value:filterCol,onChange:function(e){setFilterCol(e.target.value);},style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:4,padding:'4px 8px',color:'#9B9BB4',fontSize:11,outline:'none'}},
         React.createElement("option",{value:'all'},'Todas etapas'),
@@ -6996,14 +7055,14 @@ function HoldingHome({ agencias }) {
     React.createElement("div",{style:{display:'flex',flex:1,overflow:'hidden'}},
       React.createElement("div",{style:{display:'flex',flex:1,overflow:'auto',gap:6,padding:'10px 12px'}},
         COLS.map(function(col) {
-          var colCards = visible.filter(function(c){return c.col===col.id;});
+          var colCards = visible.filter(function(c){return c.estagio===col.id;});
           return React.createElement("div",{key:col.id,
             onDragOver:function(e){e.preventDefault();},
             onDrop:function(e){e.preventDefault();if(dragging)moveCard(dragging,col.id);},
             style:{flex:'0 0 190px',background:'#08080F',border:'.5px solid #1A1A2E',borderRadius:8,display:'flex',flexDirection:'column',maxHeight:'100%'}},
             React.createElement("div",{style:{padding:'7px 10px',borderBottom:'.5px solid #1A1A2E',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}},
-              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:9,color:'#9B9BB4',fontWeight:700,letterSpacing:.5}}, col.label.toUpperCase()),
-              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:13,color:'#FF6B2B',fontWeight:700}}, colCards.length)
+              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:9,color:COR_ESTAGIO[col.id]||'#9B9BB4',fontWeight:700,letterSpacing:.5}}, col.label.toUpperCase()),
+              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:13,color:COR_ESTAGIO[col.id]||'#FF6B2B',fontWeight:700}}, colCards.length)
             ),
             React.createElement("div",{style:{overflowY:'auto',padding:'6px',flex:1}},
               loading ? React.createElement("div",{style:{color:'#555',fontSize:11,textAlign:'center',marginTop:20}},'…') :
@@ -7033,7 +7092,7 @@ function HoldingHome({ agencias }) {
         })
       )
     )
-    )  // close pipeline wrapper (tab === 'pipeline')
+    )
   );
 }
 
