@@ -5249,7 +5249,7 @@ function App() {
     {id:'frame', name:'Frame', color:'#38BDF8', rgb:'56,189,248'},
     {id:'studioga', name:'Studio GA', color:'#A3E635', rgb:'163,230,53'}
   ];
-  const curAgencia = ALL_AGENCIAS.find(a => a.id === agenciaId) || ALL_AGENCIAS[0];
+  const curAgencia = agenciaId === 'global' ? {id:'global', name:'Todos', color:'#888'} : (ALL_AGENCIAS.find(a => a.id === agenciaId) || ALL_AGENCIAS[0]);
   const [agenciaUuids, setAgenciaUuids] = useState({});
   useEffect(() => {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
@@ -5674,7 +5674,7 @@ function App() {
     React.createElement("button", { className:'resbtn', onClick:() => setResOpen(true) }, "⚠"),
     React.createElement("button", { onClick:logout, style:{ padding:'4px 8px', border:'.5px solid #2D2D44', borderRadius:4, background:'transparent', color:'#555', fontSize:9, fontFamily:'IBM Plex Mono,monospace', cursor:'pointer' }, title:'Sair' }, curUser?.name?.split(" ")[0] || "Sair", " ↩")
   )), navSection === 'agencia' && React.createElement("div", { style:{ display:'flex', alignItems:'stretch', background:'#080810', borderBottom:'.5px solid #1A1A2E', paddingLeft:60, height:30 } },
-    ALL_AGENCIAS.map(a => React.createElement("div", { key:a.id, onClick:()=>navTo('agencia', a.id, null), style:{ display:'flex', alignItems:'center', padding:'0 12px', borderRight:'.5px solid #1A1A2E', borderBottom: agenciaId===a.id ? '2px solid '+a.color : '2px solid transparent', cursor:'pointer', fontFamily:'IBM Plex Mono,monospace', fontSize:9, color: agenciaId===a.id ? a.color : '#555', whiteSpace:'nowrap', flexShrink:0, transition:'all .15s' } }, a.name))
+    [{id:'global', name:'Todos', color:'#9B9BB4'}, ...ALL_AGENCIAS].map(a => React.createElement("div", { key:a.id, onClick:()=>navTo('agencia', a.id, null), style:{ display:'flex', alignItems:'center', padding:'0 12px', borderRight:'.5px solid #1A1A2E', borderBottom: agenciaId===a.id ? '2px solid '+a.color : '2px solid transparent', cursor:'pointer', fontFamily:'IBM Plex Mono,monospace', fontSize:9, color: agenciaId===a.id ? a.color : '#555', whiteSpace:'nowrap', flexShrink:0, transition:'all .15s' } }, a.name))
   ), navSection === 'agencia' && React.createElement("div", { style:{ display:'flex', alignItems:'stretch', background:'#080810', borderBottom:'.5px solid #1A1A2E', paddingLeft:60, height:26 } },
     [['pipeline','Pipeline'],['noticias','Notícias'],['servicos','Serviços'],['cases','Cases'],['credenciais','Credenciais'],['textos','Textos'],['enviar','Enviar pipeline']].map(([t,l]) =>
       React.createElement("div", { key:t, onClick:()=>setAgenciaTab(t), style:{ display:'flex', alignItems:'center', padding:'0 12px', fontFamily:'IBM Plex Mono,monospace', fontSize:9, cursor:'pointer', borderBottom: agenciaTab===t ? '2px solid #FF6B2B' : '2px solid transparent', color: agenciaTab===t ? '#FF6B2B' : '#555', transition:'all .15s', whiteSpace:'nowrap' } }, l)
@@ -7778,7 +7778,7 @@ function AgenciaHome({ agencia, tab, navTo, agenciaUuids }) {
   return React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden'}},
     tab === 'pipeline' ? React.createElement("div",{style:{flex:1,overflow:'hidden'}},
       typeof PipelineGlobalView !== 'undefined'
-        ? React.createElement(PipelineGlobalView, { meuPapel: 'admin', minhaAgenciaId: agencia && agencia.id, agenciaFiltro: agencia && agenciaUuids && agenciaUuids[agencia.id] || null })
+        ? React.createElement(PipelineGlobalView, { key: (agencia && agencia.id !== 'global' && agenciaUuids && agenciaUuids[agencia.id]) || (agencia && agencia.id) || 'global', meuPapel: 'admin', minhaAgenciaId: agencia && agencia.id, agenciaFiltro: agencia && agencia.id !== 'global' && agenciaUuids && agenciaUuids[agencia.id] || null })
         : React.createElement("div",{style:{padding:20,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11}},'Pipeline carregando...')
     ) :
     tab === 'noticias'    ? React.createElement(AgNoticiasTab,   {agencia:agencia, agenciaUuids:agenciaUuids}) :

@@ -468,7 +468,7 @@
       setLoading(false);
     }
 
-    useEffect(() => { carregar(); }, []);
+    useEffect(() => { carregar(); }, [agenciaFiltro]);
 
     const estagiosVisiveis = verFechados ? ESTAGIOS : ESTAGIOS_ATIVOS;
 
