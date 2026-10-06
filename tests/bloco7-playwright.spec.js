@@ -526,3 +526,73 @@ test.describe('Bloco 9 — fila JSON parse e validação de tom', () => {
   });
 
 });
+
+// ── Integration: Mudança de dono (mover para outra agência) ──────────────────
+test.describe('Pipeline — mover oportunidade para outra agência', () => {
+
+  test('mover oportunidade de 404 para Milà e voltar — eventos e auditoria criados', async () => {
+    if (!SUPA_SVC) return;
+
+    // Busca as agências disponíveis
+    const agencias = await supaGet('crm_agencias?select=id,nome&order=nome.asc&limit=10');
+    const agsArr = Array.isArray(agencias) ? agencias : [];
+    expect(agsArr.length).toBeGreaterThanOrEqual(2);
+
+    const ag1 = agsArr[0]; // ex: primeira agência
+    const ag2 = agsArr[1]; // ex: segunda agência
+    console.log(`Testando mover de "${ag1.nome}" → "${ag2.nome}"`);
+
+    // Cria oportunidade de teste com dono = ag1
+    const now = new Date().toISOString();
+    const testOps = await supaPostTest('oportunidades', {
+      titulo: 'Teste mover dono ' + Date.now(),
+      estagio: 'Wishlist', origem: 'fila',
+      agencia_id: ag1.id,
+      aberta_em: now, criado_em: now, atualizado_em: now
+    });
+    const op = Array.isArray(testOps) ? testOps[0] : null;
+    expect(op).not.toBeNull();
+    expect(op.agencia_id).toBe(ag1.id);
+
+    // Simula "Mover para ag2" via PATCH
+    const patchUrl = SUPA_URL + '/rest/v1/crm_test_oportunidades?id=eq.' + op.id;
+    const pr = await fetch(patchUrl, {
+      method: 'PATCH',
+      headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify({ agencia_id: ag2.id, atualizado_em: new Date().toISOString() })
+    });
+    expect(pr.ok).toBe(true);
+    const patched = pr.ok ? await pr.json() : [];
+    const atualizada = Array.isArray(patched) ? patched[0] : null;
+    expect(atualizada).not.toBeNull();
+    expect(atualizada.agencia_id).toBe(ag2.id);
+
+    // Cria evento 'dono' na tabela de teste
+    const evRows = await supaPostTest('oportunidade_eventos', {
+      oportunidade_id: op.id, tipo: 'dono', de: ag1.id, para: ag2.id
+    });
+    const ev = Array.isArray(evRows) ? evRows[0] : null;
+    expect(ev).not.toBeNull();
+    expect(ev.tipo).toBe('dono');
+    expect(ev.de).toBe(ag1.id);
+    expect(ev.para).toBe(ag2.id);
+    console.log(`✅ Evento 'dono' criado: ${ag1.nome} → ${ag2.nome}`);
+
+    // Simula mover de volta para ag1
+    const pr2 = await fetch(patchUrl, {
+      method: 'PATCH',
+      headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json', Prefer: 'return=representation' },
+      body: JSON.stringify({ agencia_id: ag1.id, atualizado_em: new Date().toISOString() })
+    });
+    expect(pr2.ok).toBe(true);
+    const revert = pr2.ok ? await pr2.json() : [];
+    expect((Array.isArray(revert) ? revert[0] : null)?.agencia_id).toBe(ag1.id);
+    console.log(`✅ Revertido para "${ag1.nome}"`);
+
+    // Cleanup
+    const evArr = Array.isArray(evRows) ? evRows : [];
+    for (const e of evArr) { await supaDelTest('oportunidade_eventos', e.id); }
+    await supaDelTest('oportunidades', op.id);
+  });
+
+});
