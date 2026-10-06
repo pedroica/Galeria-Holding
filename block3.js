@@ -2954,6 +2954,8 @@ function AprovacaoHoje() {
   var _showGerarFila = useState(false); var showGerarFila = _showGerarFila[0]; var setShowGerarFila = _showGerarFila[1];
   var _pm = useState({}); var pipelineMap = _pm[0]; var setPipelineMap = _pm[1];
   var _fu = useState(null); var followUps = _fu[0]; var setFollowUps = _fu[1];
+  var _exp = useState(function(){return new Set();}); var expandedBodies = _exp[0]; var setExpandedBodies = _exp[1];
+  var _respL = useState({}); var respondendoMap = _respL[0]; var setRespondendoMap = _respL[1];
 
   function supaJwt(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
@@ -3043,7 +3045,8 @@ function AprovacaoHoje() {
         setSel(function(p){var s=new Set(p);s.delete(id);return s;});
         setEditando(function(p){var e=Object.assign({},p);delete e[id];return e;});
         setBusy(function(p){var b=Object.assign({},p);delete b[id];return b;});
-      });
+      })
+      .catch(function(){setBusy(function(p){var b=Object.assign({},p);delete b[id];return b;});});
   }
   function pular(id) {
     setBusy(function(p){return Object.assign({},p,{[id]:'pular'});});
@@ -3052,14 +3055,31 @@ function AprovacaoHoje() {
         setFila(function(p){return p.filter(function(x){return x.id!==id;});});
         setSel(function(p){var s=new Set(p);s.delete(id);return s;});
         setBusy(function(p){var b=Object.assign({},p);delete b[id];return b;});
-      });
+      })
+      .catch(function(){setBusy(function(p){var b=Object.assign({},p);delete b[id];return b;});});
   }
   function aprovarLote() {
     var ids = Array.from(sel);
-    ids.forEach(function(id){aprovar(id);});
+    if (!ids.length) return;
+    var now = new Date().toISOString();
+    var semEd = ids.filter(function(id){return !editando[id];});
+    var comEd = ids.filter(function(id){return !!editando[id];});
+    if (semEd.length) {
+      setBusy(function(p){var b=Object.assign({},p);semEd.forEach(function(id){b[id]='aprovar';});return b;});
+      supaJwt('/rest/v1/crm_fila?id=in.('+semEd.join(',')+')',{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({status:'aprovado',aprovado_em:now})})
+        .then(function(){
+          setFila(function(p){return p.filter(function(x){return !semEd.includes(x.id);});});
+          setSel(function(p){var s=new Set(p);semEd.forEach(function(id){s.delete(id);});return s;});
+          setBusy(function(p){var b=Object.assign({},p);semEd.forEach(function(id){delete b[id];});return b;});
+        })
+        .catch(function(){setBusy(function(p){var b=Object.assign({},p);semEd.forEach(function(id){delete b[id];});return b;});});
+    }
+    comEd.forEach(function(id){aprovar(id);});
   }
   function pularPipeline() {
     var ids = (fila||[]).filter(function(x){return !!pipelineMap[x.empresa_id];}).map(function(x){return x.id;});
+    if (!ids.length) return;
+    if (!window.confirm('Pular '+ids.length+' itens de empresas em negociação?')) return;
     ids.forEach(function(id){pular(id);});
   }
 
@@ -3067,9 +3087,16 @@ function AprovacaoHoje() {
   function pausar7(item) {
     var pausaAte = new Date(); pausaAte.setDate(pausaAte.getDate() + 7);
     var decisorId = item.decisor_id;
-    supaJwt('/rest/v1/crm_decisores?id=eq.'+decisorId, {method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({pausa_ate_em:pausaAte.toISOString()})});
-    supaJwt('/rest/v1/crm_fila?id=eq.'+item.id, {method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({status:'pulado'})});
-    setFila(function(p){return p.filter(function(x){return x.id!==item.id;});});
+    setBusy(function(p){return Object.assign({},p,{[item.id]:'pausar'});});
+    Promise.all([
+      supaJwt('/rest/v1/crm_decisores?id=eq.'+decisorId,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({pausa_ate_em:pausaAte.toISOString()})}),
+      supaJwt('/rest/v1/crm_fila?id=eq.'+item.id,{method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({status:'pulado'})})
+    ]).then(function(){
+      setFila(function(p){return p.filter(function(x){return x.id!==item.id;});});
+      setBusy(function(p){var b=Object.assign({},p);delete b[item.id];return b;});
+    }).catch(function(){
+      setBusy(function(p){var b=Object.assign({},p);delete b[item.id];return b;});
+    });
   }
 
   // E4-M5: keyboard nav
@@ -3117,10 +3144,12 @@ function AprovacaoHoje() {
   function abrirLinkedIn(item) {
     var ed = editando[item.id];
     var nota = (ed?ed.corpo:item.corpo)||'';
-    if (navigator.clipboard) navigator.clipboard.writeText(nota);
     var li = (item.crm_decisores&&item.crm_decisores.linkedin_url)||'';
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(nota).catch(function(){});
+    }
     if (li) window.open(li,'_blank');
-    else alert('Nota copiada! Cole na mensagem do LinkedIn.');
+    else { window.prompt('Copie o texto abaixo e cole na mensagem do LinkedIn:',nota); }
   }
 
   // D6 — registrar resposta
@@ -3128,7 +3157,10 @@ function AprovacaoHoje() {
     var d = item.crm_decisores||{};
     if (!d.id) return;
     var temp = (d.temperatura||0)+1;
-    supaJwt('/rest/v1/crm_decisores?id=eq.'+d.id, {method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({respondeu:true,temperatura:temp})});
+    setRespondendoMap(function(p){return Object.assign({},p,{[item.id]:true});});
+    supaJwt('/rest/v1/crm_decisores?id=eq.'+d.id, {method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({respondeu:true,temperatura:temp})})
+      .then(function(){ setTimeout(function(){setRespondendoMap(function(p){var b=Object.assign({},p);delete b[item.id];return b;});}, 2000); })
+      .catch(function(){setRespondendoMap(function(p){var b=Object.assign({},p);delete b[item.id];return b;});});
     // Criar card no kanban se não existir
     var agSlug = item.agencia_slug || '';
     supaJwt('/rest/v1/crm_kanban?empresa_id=eq.'+(item.empresa_id||'')+'&agencia_id=eq.'+agSlug+'&select=id&limit=1')
@@ -3185,7 +3217,7 @@ function AprovacaoHoje() {
         var body = JSON.stringify({
           empresa_id: empId, agencia_id: agId || null,
           titulo: (emp.nome || 'Empresa') + ' — ' + agNome,
-          estagio: 'Reunião marcada', origem: 'fila',
+          estagio: 'Primeira reunião', origem: 'fila',
           aberta_em: agora, criado_em: agora, atualizado_em: agora
         });
         fetch(SUPA_B + '/rest/v1/crm_oportunidades', {
@@ -3195,7 +3227,7 @@ function AprovacaoHoje() {
           if (!nova) return;
           fetch(SUPA_B + '/rest/v1/crm_oportunidade_eventos', {
             method: 'POST', headers: { apikey: ANON_B, Authorization: 'Bearer ' + jwt_b, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
-            body: JSON.stringify({ oportunidade_id: nova.id, tipo: 'criada', para: 'Reunião marcada', texto: 'Criada automaticamente via Fila — reunião marcada' })
+            body: JSON.stringify({ oportunidade_id: nova.id, tipo: 'criada', para: 'Primeira reunião', texto: 'Criada automaticamente via Fila — reunião marcada' })
           });
         });
       });
@@ -3247,8 +3279,7 @@ function AprovacaoHoje() {
         (function(){var nPipeline=(fila||[]).filter(function(x){return !!pipelineMap[x.empresa_id];}).length; return nPipeline>0 && React.createElement("button",{onClick:pularPipeline,style:{marginLeft:sel.size>0?4:"auto",...s,fontSize:9,padding:"3px 12px",borderRadius:4,border:".5px solid rgba(251,191,36,.4)",background:"rgba(251,191,36,.08)",color:"#FBBF24",cursor:"pointer"}},"⚡ Pular "+nPipeline+" em negociação");})(),
         React.createElement("button",{onClick:function(){setShowGerarFila(true);},style:{marginLeft:(sel.size>0||Object.keys(pipelineMap).length>0)?4:"auto",...s,fontSize:9,padding:"3px 12px",borderRadius:4,border:".5px solid rgba(129,140,248,.4)",background:"rgba(129,140,248,.08)",color:"#818CF8",cursor:"pointer",fontWeight:700}},"⚡ Gerar nova fila"),
         React.createElement("button",{onClick:load,style:{...s,fontSize:8,padding:"2px 8px",borderRadius:4,border:".5px solid #2D2D44",background:"transparent",color:"#555",cursor:"pointer"}},"↺"),
-        // E4-M5: hint keyboard shortcuts
-        React.createElement("span",{style:{...s,fontSize:7,color:"#2D2D44",marginLeft:4}},"J/K nav · Enter aprovar")
+        React.createElement("span",{style:{...s,fontSize:8,color:"#444",marginLeft:4}},"J/K · Enter")
       ),
       React.createElement("div",{style:{display:"flex",gap:0}},
         canalAbas.map(function(ab){
@@ -3299,13 +3330,21 @@ function AprovacaoHoje() {
               aba==='email' && React.createElement("div",{style:{marginBottom:4}},
                 ed
                   ? React.createElement("input",{value:ed.assunto,placeholder:"Assunto",onChange:function(e){setEditando(function(p){return Object.assign({},p,{[item.id]:Object.assign({},p[item.id],{assunto:e.target.value})});});},style:Object.assign({},inp,{marginBottom:0})})
-                  : React.createElement("div",{style:{...s,fontSize:9,color:"#9B9BB4",marginBottom:2}},"Assunto: "+(item.assunto||'(vazio)'))
+                  : React.createElement("div",{style:{...s,fontSize:9,color:item.assunto?"#9B9BB4":"#555",marginBottom:2,fontStyle:item.assunto?"normal":"italic"}},"Assunto: "+(item.assunto||'(vazio)'))
               ),
               // Corpo
               React.createElement("div",{style:{marginBottom:8}},
                 ed
                   ? React.createElement("textarea",{value:ed.corpo,rows:4,onChange:function(e){setEditando(function(p){return Object.assign({},p,{[item.id]:Object.assign({},p[item.id],{corpo:e.target.value})});});},style:inp})
-                  : React.createElement("div",{style:{...s,fontSize:10,color:"#C5C5D8",lineHeight:1.65,borderLeft:"2px solid #2D2D44",paddingLeft:8,whiteSpace:"pre-wrap"}},(item.corpo||'').slice(0,500)+((item.corpo||'').length>500?'…':''))
+                  : React.createElement("div",null,
+                      React.createElement("div",{style:{...s,fontSize:10,color:"#C5C5D8",lineHeight:1.65,borderLeft:"2px solid #2D2D44",paddingLeft:8,whiteSpace:"pre-wrap"}},
+                        expandedBodies.has(item.id)?(item.corpo||''):(item.corpo||'').slice(0,500)+((item.corpo||'').length>500&&!expandedBodies.has(item.id)?'…':'')
+                      ),
+                      (item.corpo||'').length>500 && React.createElement("button",{
+                        onClick:function(){setExpandedBodies(function(p){var s2=new Set(p);s2.has(item.id)?s2.delete(item.id):s2.add(item.id);return s2;});},
+                        style:{...s,fontSize:8,color:"#60A5FA",background:"transparent",border:"none",cursor:"pointer",padding:"2px 0",display:"block",marginTop:2}
+                      },expandedBodies.has(item.id)?"▲ Ver menos":"▼ Ver mais (+"+(((item.corpo||'').length-500)/1|0)+" chars)")
+                    )
               ),
               // Ações
               React.createElement("div",{style:{display:"flex",gap:5,flexWrap:"wrap",alignItems:"center"}},
@@ -3319,13 +3358,13 @@ function AprovacaoHoje() {
                 aba==='whatsapp' && React.createElement("button",{onClick:function(){abrirWA(item);},style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:"none",background:"rgba(52,211,153,.12)",color:"#34D399",cursor:"pointer"}},"↗ Abrir WA"),
                 aba==='linkedin' && React.createElement("button",{onClick:function(){abrirLinkedIn(item);},style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:"none",background:"rgba(129,140,248,.12)",color:"#818CF8",cursor:"pointer"}},"⇗ LinkedIn + copiar"),
                 // Aprovar
-                React.createElement("button",{onClick:function(){aprovar(item.id);},disabled:isBusy,style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:"none",background:"#22543D",color:"#68D391",cursor:"pointer"}},"✓ Aprovar"),
+                React.createElement("button",{onClick:function(){aprovar(item.id);},disabled:isBusy,style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:"none",background:"#22543D",color:"#68D391",cursor:isBusy?"wait":"pointer",opacity:isBusy?.6:1}},busy[item.id]==='aprovar'?"Aprovando…":"✓ Aprovar"),
                 // Pular
-                React.createElement("button",{onClick:function(){pular(item.id);},disabled:isBusy,style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:".5px solid #2D2D44",background:"transparent",color:"#555",cursor:"pointer"}},"↷ Pular"),
+                React.createElement("button",{onClick:function(){pular(item.id);},disabled:isBusy,style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:".5px solid #2D2D44",background:"transparent",color:"#555",cursor:isBusy?"wait":"pointer"}},busy[item.id]==='pular'?"Pulando…":"↷ Pular"),
                 // E4-M2: pausar 7 dias
-                React.createElement("button",{onClick:function(){pausar7(item);},disabled:isBusy,style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:".5px solid rgba(251,191,36,.2)",background:"transparent",color:"#78716C",cursor:"pointer"}},"⏸ 7d"),
+                React.createElement("button",{onClick:function(){pausar7(item);},disabled:isBusy,style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:".5px solid rgba(251,191,36,.2)",background:"transparent",color:"#78716C",cursor:isBusy?"wait":"pointer"}},busy[item.id]==='pausar'?"Pausando…":"⏸ 7d"),
                 // D6 — Respondeu
-                React.createElement("button",{onClick:function(){registrarResposta(item);},style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:".5px solid rgba(251,191,36,.25)",background:"rgba(251,191,36,.05)",color:"#FBBF24",cursor:"pointer"}},"↩ Respondeu"),
+                React.createElement("button",{onClick:function(){registrarResposta(item);},disabled:!!respondendoMap[item.id],style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:".5px solid rgba(251,191,36,.25)",background:"rgba(251,191,36,.05)",color:"#FBBF24",cursor:"pointer"}},respondendoMap[item.id]?"✓ Salvo":"↩ Respondeu"),
                 // D6 — Reunião
                 React.createElement("button",{onClick:function(){registrarReuniao(item);},style:{...s,fontSize:8,padding:"3px 9px",borderRadius:4,border:".5px solid rgba(52,211,153,.25)",background:"rgba(52,211,153,.05)",color:"#34D399",cursor:"pointer"}},"📅 Reunião")
               )
@@ -4422,7 +4461,7 @@ function SmartBatch({
     style: {
       fontSize: 11,
       color: "#555",
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       marginTop: 4
     }
   }, "Máx 6/setor · Anti-duplicata 3 dias · Prioriza decisores não contatados")), /*#__PURE__*/React.createElement("div", {
@@ -4459,7 +4498,7 @@ function SmartBatch({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       color: "#444",
       letterSpacing: 1,
       marginBottom: 6
@@ -4529,7 +4568,7 @@ function SmartBatch({
     }, "#", l.rank, " ", l.nome, /*#__PURE__*/React.createElement("span", {
       style: {
         fontSize: 9,
-        fontFamily: "DM Mono,monospace",
+        fontFamily: "'IBM Plex Mono',monospace",
         padding: "1px 6px",
         borderRadius: 100,
         background: "rgba(" + hexRgb(fc) + ",.1)",
@@ -4540,7 +4579,7 @@ function SmartBatch({
       style: {
         fontSize: 10,
         color: "#555",
-        fontFamily: "DM Mono,monospace",
+        fontFamily: "'IBM Plex Mono',monospace",
         marginTop: 2
       }
     }, l.setor, l.lastEmailDate ? /*#__PURE__*/React.createElement("span", {
@@ -4555,7 +4594,7 @@ function SmartBatch({
       style: {
         fontSize: 9,
         color: gc,
-        fontFamily: "DM Mono,monospace",
+        fontFamily: "'IBM Plex Mono',monospace",
         marginTop: 2
       }
     }, "→ ", l.nextDec.nome, " · ", l.nextDec.cargo)), /*#__PURE__*/React.createElement("button", {
@@ -4641,7 +4680,7 @@ function ColdCallView({
     style: {
       fontSize: 11,
       color: "#555",
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       marginTop: 4,
       textTransform: "capitalize"
     }
@@ -4664,7 +4703,7 @@ function ColdCallView({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       color: "#444",
       letterSpacing: 1,
       marginBottom: 6
@@ -4725,13 +4764,13 @@ function ColdCallView({
         border: "1px solid rgba(75,158,255,.3)",
         padding: "1px 6px",
         borderRadius: 100,
-        fontFamily: "DM Mono,monospace"
+        fontFamily: "'IBM Plex Mono',monospace"
       }
     }, l.ndecs, " dec.")), /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 10,
         color: "#555",
-        fontFamily: "DM Mono,monospace",
+        fontFamily: "'IBM Plex Mono',monospace",
         marginTop: 2
       }
     }, l.setor, " · #", l.rank, " · ", l.daysSince === 999 ? "nunca contatado" : l.daysSince === 0 ? "hoje" : "há " + l.daysSince + " dias"), !isDone && /*#__PURE__*/React.createElement("input", {
@@ -4751,7 +4790,7 @@ function ColdCallView({
         padding: "4px 8px",
         color: "#eee",
         fontSize: 10,
-        fontFamily: "DM Mono,monospace",
+        fontFamily: "'IBM Plex Mono',monospace",
         outline: "none"
       }
     })), !isDone ? /*#__PURE__*/React.createElement("div", {
@@ -4787,7 +4826,7 @@ function ColdCallView({
       style: {
         fontSize: 11,
         color: "#34D399",
-        fontFamily: "DM Mono,monospace",
+        fontFamily: "'IBM Plex Mono',monospace",
         flexShrink: 0
       }
     }, "✓ ", done[l.rank] === "call" ? "ligado" : "enviado"));
@@ -4817,7 +4856,7 @@ function HoldingView() {
     style: {
       fontSize: 11,
       color: "#555",
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       marginTop: 5
     }
   }, "Todas as empresas — clique para ver conflitos de cliente")), /*#__PURE__*/React.createElement("div", {
@@ -4865,14 +4904,14 @@ function HoldingView() {
       style: {
         fontSize: 10,
         color: "#444",
-        fontFamily: "DM Mono,monospace",
+        fontFamily: "'IBM Plex Mono',monospace",
         lineHeight: 1.5,
         marginBottom: 10
       }
     }, g.desc), isOpen && (myRes.length > 0 ? /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 9,
-        fontFamily: "DM Mono,monospace",
+        fontFamily: "'IBM Plex Mono',monospace",
         color: "#FF4757",
         marginBottom: 7,
         letterSpacing: 1
@@ -4887,7 +4926,7 @@ function HoldingView() {
       key: i,
       style: {
         fontSize: 8,
-        fontFamily: "DM Mono,monospace",
+        fontFamily: "'IBM Plex Mono',monospace",
         padding: "2px 6px",
         borderRadius: 3,
         background: "rgba(255,71,87,.1)",
@@ -4897,13 +4936,13 @@ function HoldingView() {
     }, r.category)))) : /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 10,
-        fontFamily: "DM Mono,monospace",
+        fontFamily: "'IBM Plex Mono',monospace",
         color: "#34D399"
       }
     }, "✓ Sem restrições")), !isOpen && myRes.length > 0 && /*#__PURE__*/React.createElement("div", {
       style: {
         fontSize: 9,
-        fontFamily: "DM Mono,monospace",
+        fontFamily: "'IBM Plex Mono',monospace",
         color: "rgba(255,71,87,.5)",
         marginTop: 5
       }
@@ -5002,7 +5041,7 @@ function Dashboard({
       background: "transparent",
       color: "#34D399",
       fontSize: 9,
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       cursor: "pointer"
     }
   }, "↓ CSV"), /*#__PURE__*/React.createElement("button", {
@@ -5033,7 +5072,7 @@ function Dashboard({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       color: "#444",
       letterSpacing: 1,
       marginBottom: 6
@@ -5061,7 +5100,7 @@ function Dashboard({
       background: period === v ? "rgba(232,201,122,.08)" : "transparent",
       color: period === v ? "#E8C97A" : "#555",
       fontSize: 9,
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       cursor: "pointer"
     }
   }, l))), /*#__PURE__*/React.createElement("div", {
@@ -5071,7 +5110,7 @@ function Dashboard({
   }, /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       color: "#444",
       letterSpacing: 1,
       marginBottom: 10,
@@ -5090,7 +5129,7 @@ function Dashboard({
       flex: 1,
       fontSize: 11,
       color: "#888",
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       overflow: "hidden",
       textOverflow: "ellipsis",
       whiteSpace: "nowrap"
@@ -5109,7 +5148,7 @@ function Dashboard({
       color: "#E8C97A",
       minWidth: 20,
       textAlign: "right",
-      fontFamily: "DM Mono,monospace"
+      fontFamily: "'IBM Plex Mono',monospace"
     }
   }, n)))), loading ? /*#__PURE__*/React.createElement("div", {
     style: {
@@ -5172,7 +5211,7 @@ function Dashboard({
     style: {
       fontSize: 9,
       color: "#555",
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       marginTop: 2
     }
   }, e.isoDate, " ", e.time, " · ", e.userName), e.nota && /*#__PURE__*/React.createElement("div", {
@@ -5574,7 +5613,7 @@ function App() {
       height: "100vh",
       background: "#060606",
       color: "#333",
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       fontSize: 12
     }
   }, "Carregando...");
@@ -5620,7 +5659,7 @@ function App() {
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 9,
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       color: "#555",
       marginTop: 4,
       marginBottom: 12,
@@ -5921,7 +5960,7 @@ function App() {
       background: "rgba(0,255,148,.06)",
       color: "#00FF94",
       fontSize: 9,
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       cursor: "pointer",
       fontWeight: 700
     }
@@ -6015,7 +6054,7 @@ function App() {
         background: "rgba(255,71,87,.06)",
         color: "#FF4757",
         cursor: "pointer",
-        fontFamily: "DM Mono,monospace"
+        fontFamily: "'IBM Plex Mono',monospace"
       }
     }, "✕")));
   }), filtered.length > visLimit && /*#__PURE__*/React.createElement("div", {
@@ -6055,7 +6094,7 @@ function App() {
   }, curGrupo.name), /*#__PURE__*/React.createElement("div", {
     style: {
       fontSize: 10,
-      fontFamily: "DM Mono,monospace",
+      fontFamily: "'IBM Plex Mono',monospace",
       maxWidth: 220,
       lineHeight: 1.7,
       textAlign: "center"

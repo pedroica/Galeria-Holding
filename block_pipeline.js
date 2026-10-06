@@ -33,7 +33,7 @@
       if (!r.ok) { console.warn('[pipeline] supa error', path, r.status); return opts._arr !== false ? [] : null; }
       if (r.status === 204 || r.headers.get('content-length') === '0') return null;
       return r.json();
-    } catch (e) { return opts._arr !== false ? [] : null; }
+    } catch (e) { console.error('[supa]', path, e); return opts._arr !== false ? [] : null; }
   }
 
   function fmtVal(v) {
@@ -55,15 +55,16 @@
   // ── EstagioBadge ────────────────────────────────────────────────────────────
   function EstagioBadge({ estagio }) {
     return React.createElement('span', {
-      style: { background: COR_ESTAGIO[estagio] || '#555', color: '#000', fontSize: 9, padding: '2px 6px', borderRadius: 4, fontFamily: 'IBM Plex Mono,monospace', fontWeight: 700, whiteSpace: 'nowrap' }
+      style: { background: COR_ESTAGIO[estagio] || '#555', color: '#fff', fontSize: 9, padding: '2px 6px', borderRadius: 4, fontFamily: 'IBM Plex Mono,monospace', fontWeight: 700, whiteSpace: 'nowrap' }
     }, estagio);
   }
 
   // ── OportunidadeCard ────────────────────────────────────────────────────────
-  function OportunidadeCard({ op, agencias, meuPapel, minhaAgenciaId, onClick, onDragStart, isDragging, temPedido }) {
+  function OportunidadeCard({ op, agencias, meuPapel, minhaAgenciaId, onClick, onDragStart, isDragging, temPedido, empresaNome }) {
     const ag = agencias.find(a => a.id === op.agencia_id);
     const ehMinha = op.agencia_id === minhaAgenciaId || meuPapel === 'admin';
     const dias = diasNoEstagio(op);
+    const titulo = op.titulo || empresaNome || '—';
 
     return React.createElement('div', {
       draggable: meuPapel === 'admin',
@@ -81,7 +82,7 @@
       }
     },
       temPedido && React.createElement('div', { style: { fontSize: 9, color: '#EF4444', marginBottom: 4, fontFamily: 'IBM Plex Mono,monospace' } }, '⚠ Pedido de atualização'),
-      React.createElement('div', { style: { fontFamily: 'IBM Plex Mono,monospace', fontSize: 11, color: '#eee', fontWeight: 700, marginBottom: 4, lineHeight: '1.3' } }, op.titulo || op.empresa_nome || '—'),
+      React.createElement('div', { title: titulo, style: { fontFamily: 'IBM Plex Mono,monospace', fontSize: 11, color: '#eee', fontWeight: 700, marginBottom: 4, lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, titulo),
       ag && React.createElement('div', { style: { fontSize: 9, color: '#818CF8', marginBottom: 4 } }, ag.nome),
       op.oferta && React.createElement('div', { style: { fontSize: 9, color: '#FBBF24', marginBottom: 4 } }, op.oferta),
       React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
@@ -100,6 +101,7 @@
     const [editando, setEditando] = useState(!!initialEditando);
     const [form, setForm] = useState(initialEditando ? { estagio: op.estagio, valor_estimado: op.valor_estimado, proximo_passo: op.proximo_passo, proximo_passo_em: op.proximo_passo_em, oferta: op.oferta, titulo: op.titulo, motivo_perda: op.motivo_perda, agencia_id: op.agencia_id || '' } : {});
     const [salvando, setSalvando] = useState(false);
+    const [pedidoOk, setPedidoOk] = useState(false);
     const ehMinha = op.agencia_id === minhaAgenciaId || meuPapel === 'admin';
 
     useEffect(() => {
@@ -115,7 +117,7 @@
       await supa('crm_oportunidade_eventos', {
         method: 'POST',
         headers: { Prefer: 'return=minimal' },
-        body: JSON.stringify({ oportunidade_id: op.id, tipo: 'nota', texto: nota.trim(), autor_email: getJwt() === SUPA_ANON ? '' : '' })
+        body: JSON.stringify({ oportunidade_id: op.id, tipo: 'nota', texto: nota.trim(), autor_email: (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '' })
       });
       setNota('');
       supa('crm_oportunidade_eventos?oportunidade_id=eq.' + op.id + '&order=criado_em.desc&limit=50').then(r => setEventos(Array.isArray(r) ? r : []));
@@ -128,7 +130,7 @@
         headers: { Prefer: 'return=minimal' },
         body: JSON.stringify({ oportunidade_id: op.id, tipo: 'pedido_atualizacao', texto: 'Pedido de atualização enviado por leitor.' })
       });
-      alert('Pedido enviado!');
+      setPedidoOk(true); setTimeout(() => setPedidoOk(false), 2500);
     }
 
     async function assumirAgencia(agId) {
@@ -246,8 +248,8 @@
 
         meuPapel === 'leitor' && React.createElement('button', {
           onClick: pedirAtualizacao,
-          style: { fontSize: 9, padding: '6px 14px', background: '#1A1A2E', border: '1px solid #2D2D44', color: '#FBBF24', borderRadius: 4, cursor: 'pointer', marginBottom: 16, ...s }
-        }, '📩 Pedir atualização'),
+          style: { fontSize: 9, padding: '6px 14px', background: pedidoOk ? 'rgba(52,211,153,.08)' : '#1A1A2E', border: '1px solid ' + (pedidoOk ? '#34D399' : '#2D2D44'), color: pedidoOk ? '#34D399' : '#FBBF24', borderRadius: 4, cursor: 'pointer', marginBottom: 16, ...s }
+        }, pedidoOk ? '✓ Pedido enviado' : '📩 Pedir atualização'),
 
         // Editar form
         editando && React.createElement('div', { style: { background: '#1A1A2E', border: '1px solid #2D2D44', borderRadius: 8, padding: 12, marginBottom: 16 } },
@@ -294,6 +296,15 @@
               type: 'number',
               value: form.valor_estimado || '',
               onChange: e => setForm(prev => Object.assign({}, prev, { valor_estimado: e.target.value ? Number(e.target.value) : null })),
+              style: { width: '100%', background: '#0d0d1a', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono,monospace', boxSizing: 'border-box' }
+            })
+          ),
+          React.createElement('div', { style: { marginBottom: 8 } },
+            React.createElement('div', { style: { fontSize: 9, color: '#555', ...s, marginBottom: 2 } }, 'PRÓXIMO PASSO EM'),
+            React.createElement('input', {
+              type: 'date',
+              value: (form.proximo_passo_em || '').slice(0, 10),
+              onChange: e => setForm(prev => Object.assign({}, prev, { proximo_passo_em: e.target.value ? e.target.value + 'T00:00:00.000Z' : null })),
               style: { width: '100%', background: '#0d0d1a', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono,monospace', boxSizing: 'border-box' }
             })
           ),
@@ -501,10 +512,11 @@
       if (!op || op.estagio === novoEstagio) return;
       const agora = new Date().toISOString();
       const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
-      await supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ estagio: novoEstagio, atualizado_em: agora }) });
-      await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'estagio', de: op.estagio, para: novoEstagio }) });
-      await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'estagio', valor_de: op.estagio, valor_para: novoEstagio, usuario_email: userEmail }) });
-      carregar();
+      // Optimistic update — sem reload completo após cada drag
+      setOportunidades(prev => prev.map(o => o.id === opId ? Object.assign({}, o, { estagio: novoEstagio, atualizado_em: agora }) : o));
+      supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ estagio: novoEstagio, atualizado_em: agora }) });
+      supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'estagio', de: op.estagio, para: novoEstagio }) });
+      supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'estagio', valor_de: op.estagio, valor_para: novoEstagio, usuario_email: userEmail }) });
     }
 
     const s = { fontFamily: 'IBM Plex Mono,monospace' };
@@ -579,16 +591,18 @@
 
             // Cards
             React.createElement('div', { style: { flex: 1, overflowY: 'auto', minHeight: 0 } },
-              colOps.map(op => React.createElement(OportunidadeCard, {
-                key: op.id,
-                op, agencias,
-                meuPapel, minhaAgenciaId,
-                empresaNome: empresasMap[op.empresa_id],
-                temPedido: pedidoPorOp(op.id),
-                isDragging: dragId === op.id,
-                onClick: () => setDetalhe(op),
-                onDragStart: () => setDragId(op.id)
-              }))
+              colOps.length === 0
+                ? React.createElement('div', { style: { color: '#2D2D44', fontSize: 9, fontFamily: 'IBM Plex Mono,monospace', textAlign: 'center', padding: '20px 0', userSelect: 'none' } }, 'Nenhuma oportunidade')
+                : colOps.map(op => React.createElement(OportunidadeCard, {
+                    key: op.id,
+                    op, agencias,
+                    meuPapel, minhaAgenciaId,
+                    empresaNome: empresasMap[op.empresa_id],
+                    temPedido: pedidoPorOp(op.id),
+                    isDragging: dragId === op.id,
+                    onClick: () => setDetalhe(op),
+                    onDragStart: () => setDragId(op.id)
+                  }))
             )
           );
         })
@@ -811,7 +825,9 @@
               React.createElement('td', { style: { padding: '6px 8px', color: '#555', fontSize: 8 } }, u.ultimo_acesso_em ? ptDate(u.ultimo_acesso_em) : '—'),
               React.createElement('td', { style: { padding: '6px 8px', display: 'flex', gap: 6 } },
                 React.createElement('button', { onClick: () => editar(u), style: { fontSize: 8, padding: '2px 8px', background: '#1A1A2E', border: '1px solid #2D2D44', color: '#eee', borderRadius: 3, cursor: 'pointer' } }, 'Editar'),
-                u.ativo && React.createElement('button', { onClick: () => desativar(u.email), style: { fontSize: 8, padding: '2px 8px', background: '#1A1A2E', border: '1px solid #2D2D44', color: '#EF4444', borderRadius: 3, cursor: 'pointer' } }, 'Desativar')
+                u.ativo
+                  ? React.createElement('button', { onClick: () => desativar(u.email), style: { fontSize: 8, padding: '2px 8px', background: '#1A1A2E', border: '1px solid #2D2D44', color: '#EF4444', borderRadius: 3, cursor: 'pointer' } }, 'Desativar')
+                  : React.createElement('button', { onClick: async () => { await supa('crm_usuarios?email=eq.' + encodeURIComponent(u.email), { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ ativo: true }) }); carregar(); }, style: { fontSize: 8, padding: '2px 8px', background: '#1A1A2E', border: '1px solid #34D399', color: '#34D399', borderRadius: 3, cursor: 'pointer' } }, 'Reativar')
               )
             );
           })
