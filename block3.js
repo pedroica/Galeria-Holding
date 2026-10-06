@@ -2771,6 +2771,10 @@ function GerarFilaModal(props) {
       var empNaFila = {}; var decNaFila = new Set();
       if (Array.isArray(filaSem)) filaSem.forEach(function(r){ empNaFila[r.empresa_id]=(empNaFila[r.empresa_id]||0)+1; if(r.decisor_id) decNaFila.add(r.decisor_id); });
 
+      setProg('Verificando pipeline ativo…');
+      var opAtivas = await sj('/rest/v1/crm_oportunidades?apagado_em=is.null&estagio=in.('+['Primeira reunião','Contato direto','Negociando direto','Concorrências','Negociação'].map(encodeURIComponent).join(',')+')'+'&select=empresa_id&limit=2000');
+      var empsNoPipeline = new Set(Array.isArray(opAtivas) ? opAtivas.filter(function(o){return o.empresa_id;}).map(function(o){return o.empresa_id;}) : []);
+
       setProg('Carregando decisores…');
       var decs = await sj('/rest/v1/crm_decisores?status=eq.ativo&apagado_em=is.null&email=not.is.null&select=id,nome,cargo,cargo_categoria,email,wa,empresa_id,ultimo_toque_em,respondeu&limit=3000');
       if (!Array.isArray(decs)) throw new Error('Falha ao carregar decisores: '+((decs&&decs.message)||'erro'));
@@ -2797,6 +2801,7 @@ function GerarFilaModal(props) {
       Object.keys(porEmp).forEach(function(empId) {
         var emp = empMap[empId]; if (!emp) return;
         if (carteiraIds.has(empId)) { rejeicoes['cliente_carteira']=(rejeicoes['cliente_carteira']||0)+1; return; }
+        if (empsNoPipeline.has(empId)) { rejeicoes['no_pipeline_ativo']=(rejeicoes['no_pipeline_ativo']||0)+1; return; }
         if ((empNaFila[empId]||0)>=2) { rejeicoes['ja_2_na_fila']=(rejeicoes['ja_2_na_fila']||0)+1; return; }
         var list = porEmp[empId];
         var hasMarketing = list.some(function(d){return d._pri===2;});
@@ -2937,6 +2942,7 @@ function AprovacaoHoje() {
   var _contadores = useState({hoje:0,semana:0}); var contadores = _contadores[0]; var setContadores = _contadores[1];
   var _dbCounts = useState({email:0,whatsapp:0,linkedin:0}); var dbCounts = _dbCounts[0]; var setDbCounts = _dbCounts[1];
   var _showGerarFila = useState(false); var showGerarFila = _showGerarFila[0]; var setShowGerarFila = _showGerarFila[1];
+  var _pm = useState({}); var pipelineMap = _pm[0]; var setPipelineMap = _pm[1];
 
   function supaJwt(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
@@ -2959,7 +2965,15 @@ function AprovacaoHoje() {
     supaJwt('/rest/v1/crm_fila?status=eq.rascunho&' + canalQ(c) +
       '&order=gerado_em.asc&limit=' + BLOCO_SZ + '&offset=' + offset + SEL_FILA
     ).then(function(d){
-      if (Array.isArray(d)) { setFila(d); setErroQuery(null); }
+      if (Array.isArray(d)) {
+        setFila(d); setErroQuery(null);
+        var eIds = d.map(function(x){return x.empresa_id;}).filter(Boolean);
+        if (eIds.length) {
+          supaJwt('/rest/v1/crm_oportunidades?apagado_em=is.null&estagio=in.('+['Primeira reunião','Contato direto','Negociando direto','Concorrências','Negociação'].map(encodeURIComponent).join(',')+')'+'&empresa_id=in.('+eIds.join(',')+')'+'&select=empresa_id,estagio&limit=500')
+            .then(function(ops){ var pm={}; if(Array.isArray(ops)) ops.forEach(function(o){if(o.empresa_id)pm[o.empresa_id]=o.estagio;}); setPipelineMap(pm); })
+            .catch(function(){});
+        } else { setPipelineMap({}); }
+      }
       else { setFila([]); setErroQuery('Erro ao carregar fila: ' + ((d&&d.message)||JSON.stringify(d))); }
     }).catch(function(e){ setFila([]); setErroQuery('Erro de rede: ' + e.message); });
   }
@@ -3022,6 +3036,10 @@ function AprovacaoHoje() {
   function aprovarLote() {
     var ids = Array.from(sel);
     ids.forEach(function(id){aprovar(id);});
+  }
+  function pularPipeline() {
+    var ids = (fila||[]).filter(function(x){return !!pipelineMap[x.empresa_id];}).map(function(x){return x.id;});
+    ids.forEach(function(id){pular(id);});
   }
 
   // E4-M2: pausar decisor por 7 dias
@@ -3200,7 +3218,8 @@ function AprovacaoHoje() {
           "USD " + fila.reduce(function(a,x){return a+(Number(x.custo_usd)||0);},0).toFixed(4)
         ),
         sel.size>0 && React.createElement("button",{onClick:aprovarLote,style:{marginLeft:"auto",...s,fontSize:9,padding:"3px 12px",borderRadius:4,border:"none",background:"#22543D",color:"#68D391",cursor:"pointer"}},"✓ Aprovar "+sel.size+" selecionados"),
-        React.createElement("button",{onClick:function(){setShowGerarFila(true);},style:{marginLeft:sel.size>0?4:"auto",...s,fontSize:9,padding:"3px 12px",borderRadius:4,border:".5px solid rgba(129,140,248,.4)",background:"rgba(129,140,248,.08)",color:"#818CF8",cursor:"pointer",fontWeight:700}},"⚡ Gerar nova fila"),
+        (function(){var nPipeline=(fila||[]).filter(function(x){return !!pipelineMap[x.empresa_id];}).length; return nPipeline>0 && React.createElement("button",{onClick:pularPipeline,style:{marginLeft:sel.size>0?4:"auto",...s,fontSize:9,padding:"3px 12px",borderRadius:4,border:".5px solid rgba(251,191,36,.4)",background:"rgba(251,191,36,.08)",color:"#FBBF24",cursor:"pointer"}},"⚡ Pular "+nPipeline+" em negociação");})(),
+        React.createElement("button",{onClick:function(){setShowGerarFila(true);},style:{marginLeft:(sel.size>0||Object.keys(pipelineMap).length>0)?4:"auto",...s,fontSize:9,padding:"3px 12px",borderRadius:4,border:".5px solid rgba(129,140,248,.4)",background:"rgba(129,140,248,.08)",color:"#818CF8",cursor:"pointer",fontWeight:700}},"⚡ Gerar nova fila"),
         React.createElement("button",{onClick:load,style:{...s,fontSize:8,padding:"2px 8px",borderRadius:4,border:".5px solid #2D2D44",background:"transparent",color:"#555",cursor:"pointer"}},"↺"),
         // E4-M5: hint keyboard shortcuts
         React.createElement("span",{style:{...s,fontSize:7,color:"#2D2D44",marginLeft:4}},"J/K nav · Enter aprovar")
@@ -3241,6 +3260,7 @@ function AprovacaoHoje() {
                 (function() { var m = (item.contexto_para_aprovacao||'').match(/(\d)★/); return m ? React.createElement("span",{style:{...s,fontSize:9,color:'#FBBF24',letterSpacing:1}},Array(parseInt(m[1])+1).join('★')) : null; })(),
                 item._reuniao && React.createElement("span",{style:{...s,fontSize:8,color:"#34D399"}},"📅 reunião registrada"),
                 d.temperatura!=null && React.createElement("span",{style:{...s,fontSize:8,color:"#FF6B2B"}},"🔥"+String(d.temperatura)),
+                pipelineMap[item.empresa_id] && React.createElement("span",{style:{...s,fontSize:8,padding:"1px 7px",borderRadius:100,background:"rgba(251,191,36,.12)",color:"#FBBF24",border:".5px solid rgba(251,191,36,.35)"}},"⚡ "+pipelineMap[item.empresa_id]),
                 React.createElement("span",{style:{...s,fontSize:8,padding:"1px 7px",borderRadius:100,background:"rgba(96,165,250,.08)",color:CANAL_CLR[aba]||"#9B9BB4",border:".5px solid rgba(96,165,250,.12)"}},(item.canal||'').replace(/_/g,' '))
               ),
               // Decisor
