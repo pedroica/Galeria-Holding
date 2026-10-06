@@ -2744,6 +2744,7 @@ function GerarFilaModal(props) {
   var _N = useState(25); var N = _N[0]; var setN = _N[1];
   var _agId = useState(AGENCIAS_GERAR[0].id); var agId = _agId[0]; var setAgId = _agId[1];
   var _distribuir = useState(false); var distribuir = _distribuir[0]; var setDistribuir = _distribuir[1];
+  var _afu = useState(false); var apenasFollowUp = _afu[0]; var setApenasFollowUp = _afu[1];
   var _gerando = useState(false); var gerando = _gerando[0]; var setGerando = _gerando[1];
   var _resultado = useState(null); var resultado = _resultado[0]; var setResultado = _resultado[1];
   var _prog = useState(''); var prog = _prog[0]; var setProg = _prog[1];
@@ -2815,6 +2816,7 @@ function GerarFilaModal(props) {
           if (eligible.some(function(d){return d.respondeu;})) { rejeicoes['respondeu_aguardando']=(rejeicoes['respondeu_aguardando']||0)+1; return; }
           etapa = 'etapa2';
         } else { etapa = 'etapa1'; }
+        if (apenasFollowUp && etapa !== 'etapa2') return;
         var slots = Math.min(2-(empNaFila[empId]||0), eligible.length);
         eligible.sort(function(a,b){return b._pri-a._pri;});
         candidatos.push({empId:empId,emp:emp,decs:eligible.slice(0,slots),etapa:etapa,dias:dias});
@@ -2892,12 +2894,20 @@ function GerarFilaModal(props) {
             React.createElement("option",{value:'__dist__'},"↔ Distribuir entre agências (mín 3 cada)")
           )
         ),
+        React.createElement("label",{style:{...s,fontSize:10,color:'#9B9BB4',display:'flex',alignItems:'center',gap:8,cursor:'pointer'}},
+          React.createElement("input",{type:'checkbox',checked:apenasFollowUp,onChange:function(e){setApenasFollowUp(e.target.checked);},style:{accentColor:'#FBBF24',cursor:'pointer'}}),
+          React.createElement("span",null,"Apenas 2ª tentativa",
+            React.createElement("span",{style:{color:'#555',marginLeft:6}},"(não responderam há 5–10 dias)")
+          )
+        ),
         React.createElement("div",{style:{...s,fontSize:9,color:'#555',borderTop:'.5px solid #1A1A2E',paddingTop:10}},
-          "Critérios: cargo marketing > CEO • não clientes • sem toque >10d (etapa1) ou 5-10d sem resposta (etapa2) • máx 2 por empresa/semana"
+          apenasFollowUp
+            ? "Modo follow-up: gera somente para quem foi tocado há 5–10 dias e não respondeu"
+            : "Critérios: cargo marketing > CEO • não clientes • sem toque >10d (etapa1) ou 5-10d sem resposta (etapa2) • máx 2 por empresa/semana"
         ),
         gerando
           ? React.createElement("div",{style:{...s,fontSize:10,color:'#60A5FA',padding:'8px 0'}},prog)
-          : React.createElement("button",{onClick:gerar,style:{...s,fontSize:11,fontWeight:700,padding:'8px 0',borderRadius:7,border:'none',background:'#4F46E5',color:'#fff',cursor:'pointer',width:'100%'}},"Gerar fila")
+          : React.createElement("button",{onClick:gerar,style:{...s,fontSize:11,fontWeight:700,padding:'8px 0',borderRadius:7,border:'none',background:apenasFollowUp?'#92400E':'#4F46E5',color:'#fff',cursor:'pointer',width:'100%'}},apenasFollowUp?"↻ Gerar follow-ups":"Gerar fila")
       ),
       resultado && resultado.erro && React.createElement("div",{style:{...s,fontSize:10,color:'#F87171',padding:'8px 0'}},
         "❌ ",resultado.erro,
@@ -2943,6 +2953,7 @@ function AprovacaoHoje() {
   var _dbCounts = useState({email:0,whatsapp:0,linkedin:0}); var dbCounts = _dbCounts[0]; var setDbCounts = _dbCounts[1];
   var _showGerarFila = useState(false); var showGerarFila = _showGerarFila[0]; var setShowGerarFila = _showGerarFila[1];
   var _pm = useState({}); var pipelineMap = _pm[0]; var setPipelineMap = _pm[1];
+  var _fu = useState(null); var followUps = _fu[0]; var setFollowUps = _fu[1];
 
   function supaJwt(path, opts) {
     var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
@@ -3000,7 +3011,17 @@ function AprovacaoHoje() {
       setContadores({hoje:Array.isArray(res[3])?res[3].length:0, semana:Array.isArray(res[4])?res[4].length:0});
     });
   }
-  useEffect(function(){ load(aba, bloco); loadContadores(); }, [tick]);
+  function loadFollowUps() {
+    var desde = new Date(Date.now()-12*86400000).toISOString();
+    var ate = new Date(Date.now()-5*86400000).toISOString();
+    supaJwt('/rest/v1/crm_fila?status=eq.enviado&etapa=eq.etapa1&enviado_em=gte.'+desde+'&enviado_em=lte.'+ate+'&select=decisor_id,crm_decisores!decisor_id(respondeu)&limit=500')
+      .then(function(d){
+        if (!Array.isArray(d)) return;
+        var nao = d.filter(function(x){return !(x.crm_decisores&&x.crm_decisores.respondeu);});
+        setFollowUps(nao.length);
+      }).catch(function(){});
+  }
+  useEffect(function(){ load(aba, bloco); loadContadores(); loadFollowUps(); }, [tick]);
   // reset bloco e recarrega itens ao trocar aba
   useEffect(function(){ setBloco(0); load(aba, 0); }, [aba]);
   // E4-M3: auto-refresh
@@ -3195,6 +3216,11 @@ function AprovacaoHoje() {
       React.createElement("span",{style:{...s,fontSize:9,color:"#34D399",flex:1}},"WA aberto para "+(undoItem.crm_empresas&&undoItem.crm_empresas.nome||'')+" — marcado como enviado"),
       React.createElement("button",{onClick:desfazerWA,style:{...s,fontSize:9,padding:"2px 10px",borderRadius:4,border:".5px solid rgba(52,211,153,.4)",background:"transparent",color:"#34D399",cursor:"pointer"}},"⟲ Não enviei")
     ),
+    // Banner follow-ups sem resposta
+    followUps > 0 && React.createElement("div",{style:{background:"rgba(251,191,36,.05)",borderBottom:".5px solid rgba(251,191,36,.18)",padding:"6px 20px",display:"flex",alignItems:"center",gap:10,flexShrink:0}},
+      React.createElement("span",{style:{...s,fontSize:9,color:"#FBBF24",flex:1}},"↻ "+followUps+" não responderam da semana passada"),
+      React.createElement("button",{onClick:function(){setShowGerarFila(true);},style:{...s,fontSize:9,padding:"2px 10px",borderRadius:4,border:".5px solid rgba(251,191,36,.4)",background:"rgba(251,191,36,.08)",color:"#FBBF24",cursor:"pointer"}},"Gerar 2ª tentativa")
+    ),
     // Erro de query visível
     erroQuery && React.createElement("div",{style:{background:"rgba(239,68,68,.08)",borderBottom:".5px solid rgba(239,68,68,.25)",padding:"6px 20px",flexShrink:0}},
       React.createElement("span",{style:{...s,fontSize:9,color:"#F87171"}},"⚠ "+erroQuery)
@@ -3258,6 +3284,7 @@ function AprovacaoHoje() {
                 React.createElement("span",{style:{...s,fontSize:11,fontWeight:600,color:"#F5F5F5",flex:1}},(emp.nome||'')),
                 // E4-M1: estrelas extraídas de contexto_para_aprovacao (formato "Empresa · Decisor · Cargo · 4★")
                 (function() { var m = (item.contexto_para_aprovacao||'').match(/(\d)★/); return m ? React.createElement("span",{style:{...s,fontSize:9,color:'#FBBF24',letterSpacing:1}},Array(parseInt(m[1])+1).join('★')) : null; })(),
+                item.etapa==='etapa2' && React.createElement("span",{style:{...s,fontSize:7,padding:"1px 6px",borderRadius:100,background:"rgba(251,191,36,.1)",color:"#F59E0B",border:".5px solid rgba(245,158,11,.3)"}},"↻ 2ª tentativa"),
                 item._reuniao && React.createElement("span",{style:{...s,fontSize:8,color:"#34D399"}},"📅 reunião registrada"),
                 d.temperatura!=null && React.createElement("span",{style:{...s,fontSize:8,color:"#FF6B2B"}},"🔥"+String(d.temperatura)),
                 pipelineMap[item.empresa_id] && React.createElement("span",{style:{...s,fontSize:8,padding:"1px 7px",borderRadius:100,background:"rgba(251,191,36,.12)",color:"#FBBF24",border:".5px solid rgba(251,191,36,.35)"}},"⚡ "+pipelineMap[item.empresa_id]),
