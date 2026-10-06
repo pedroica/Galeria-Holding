@@ -8,6 +8,7 @@
   const ESTAGIOS = ['Wishlist','Primeira reunião','Contato direto','Negociando direto','Concorrências','Negociação','Cliente ativo','Perdido','Pausado'];
   const ESTAGIOS_ATIVOS = ['Wishlist','Primeira reunião','Contato direto','Negociando direto','Concorrências','Negociação'];
   const OFERTAS = ['CR.IA','BrandSync','GEO','Hiper Presence','criação','planejamento','mídia','conteúdo','outro'];
+  const DISPLAY_NOME = { 'Cliente ativo': 'Negócio fechado', 'Perdido': 'Negócio perdido' };
 
   const COR_ESTAGIO = {
     'Wishlist':          '#60A5FA',
@@ -92,12 +93,12 @@
   }
 
   // ── OportunidadeDetalhe ─────────────────────────────────────────────────────
-  function OportunidadeDetalhe({ op, agencias, meuPapel, minhaAgenciaId, onClose, onAtualizar, empresaNome }) {
+  function OportunidadeDetalhe({ op, agencias, meuPapel, minhaAgenciaId, onClose, onAtualizar, empresaNome, initialEditando }) {
     const [eventos, setEventos] = useState([]);
     const [toques, setToques] = useState([]);
     const [nota, setNota] = useState('');
-    const [editando, setEditando] = useState(false);
-    const [form, setForm] = useState({});
+    const [editando, setEditando] = useState(!!initialEditando);
+    const [form, setForm] = useState(initialEditando ? { estagio: op.estagio, valor_estimado: op.valor_estimado, proximo_passo: op.proximo_passo, proximo_passo_em: op.proximo_passo_em, oferta: op.oferta, titulo: op.titulo, motivo_perda: op.motivo_perda, agencia_id: op.agencia_id || '' } : {});
     const [salvando, setSalvando] = useState(false);
     const ehMinha = op.agencia_id === minhaAgenciaId || meuPapel === 'admin';
 
@@ -449,7 +450,6 @@
     const [filtroAg, setFiltroAg] = useState(agenciaFiltro || '');
     const [filtroOferta, setFiltroOferta] = useState('');
     const [busca, setBusca] = useState('');
-    const [verFechados, setVerFechados] = useState(false);
     const [eventos, setEventos] = useState([]);
 
     async function carregar() {
@@ -481,8 +481,6 @@
     }
 
     useEffect(() => { carregar(); }, [agenciaFiltro]);
-
-    const estagiosVisiveis = verFechados ? ESTAGIOS : ESTAGIOS_ATIVOS;
 
     const opsFiltradas = useMemo(() => oportunidades.filter(op => {
       if (filtroAg && op.agencia_id !== filtroAg) return false;
@@ -525,10 +523,6 @@
           OFERTAS.map(o => React.createElement('option', { key: o, value: o }, o))
         ),
         React.createElement('input', { placeholder: 'Buscar empresa…', value: busca, onChange: e => setBusca(e.target.value), style: { fontSize: 9, padding: '3px 8px', background: '#1A1A2E', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, ...s, width: 160 } }),
-        React.createElement('label', { style: { fontSize: 9, color: '#555', ...s, display: 'flex', alignItems: 'center', gap: 4 } },
-          React.createElement('input', { type: 'checkbox', checked: verFechados, onChange: e => setVerFechados(e.target.checked) }),
-          'Ver Ganho/Perdido/Pausado'
-        ),
         meuPapel === 'admin' && React.createElement('button', {
           onClick: () => setNovaModal(true),
           style: { marginLeft: 'auto', fontSize: 9, padding: '5px 12px', background: '#FF6B2B', border: 'none', color: '#fff', borderRadius: 4, cursor: 'pointer', ...s }
@@ -553,7 +547,11 @@
       // Kanban
       loading ? React.createElement('div', { style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', ...s, fontSize: 11 } }, 'Carregando…') :
       React.createElement('div', { style: { flex: 1, overflowX: 'auto', overflowY: 'hidden', display: 'flex', padding: '12px 20px', gap: 10 } },
-        estagiosVisiveis.map(estagio => {
+        [...ESTAGIOS_ATIVOS, '__separator', 'Cliente ativo', 'Perdido'].map(estagio => {
+          if (estagio === '__separator') {
+            return React.createElement('div', { key: '__sep', style: { width: 1, minWidth: 1, background: '#2D2D44', alignSelf: 'stretch', margin: '4px 6px', borderRadius: 1 } });
+          }
+          const displayNome = DISPLAY_NOME[estagio] || estagio;
           const colOps = opsFiltradas.filter(op => op.estagio === estagio);
           const totalVal = colOps.reduce((s, op) => s + (op.valor_estimado || 0), 0);
           const isOver = overCol === estagio;
@@ -573,7 +571,7 @@
             // Column header
             React.createElement('div', { style: { marginBottom: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
               React.createElement('div', null,
-                React.createElement('div', { style: { fontSize: 9, fontWeight: 700, color: COR_ESTAGIO[estagio] || '#eee', ...s } }, estagio.toUpperCase()),
+                React.createElement('div', { style: { fontSize: 9, fontWeight: 700, color: COR_ESTAGIO[estagio] || '#eee', ...s } }, displayNome.toUpperCase()),
                 React.createElement('div', { style: { fontSize: 8, color: '#555', ...s } }, colOps.length + ' op' + (colOps.length !== 1 ? 's' : ''))
               ),
               totalVal > 0 && React.createElement('div', { style: { fontSize: 9, color: '#34D399', ...s } }, fmtVal(totalVal))
@@ -602,6 +600,7 @@
         agencias,
         meuPapel, minhaAgenciaId,
         empresaNome: empresasMap[detalhe.empresa_id],
+        initialEditando: meuPapel === 'admin',
         onClose: () => setDetalhe(null),
         onAtualizar: () => { carregar(); setDetalhe(null); }
       }),
