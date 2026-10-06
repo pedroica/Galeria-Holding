@@ -60,7 +60,8 @@
   }
 
   // ── OportunidadeCard ────────────────────────────────────────────────────────
-  function OportunidadeCard({ op, agencias, meuPapel, minhaAgenciaId, onClick, onDragStart, isDragging, temPedido, empresaNome }) {
+  function OportunidadeCard({ op, agencias, meuPapel, minhaAgenciaId, onClick, onDragStart, isDragging, temPedido, empresaNome, dupCount, onMoverAgencia }) {
+    const [showAgSelect, setShowAgSelect] = React.useState(false);
     const ag = agencias.find(a => a.id === op.agencia_id);
     const ehMinha = op.agencia_id === minhaAgenciaId || meuPapel === 'admin';
     const dias = diasNoEstagio(op);
@@ -69,7 +70,7 @@
     return React.createElement('div', {
       draggable: meuPapel === 'admin',
       onDragStart: onDragStart,
-      onClick: onClick,
+      onClick: e => { if (!e.defaultPrevented) onClick(e); },
       style: {
         background: isDragging ? '#1e1e38' : '#0d0d1a',
         border: '1px solid ' + (temPedido ? '#EF4444' : (isDragging ? '#FF6B2B' : '#2D2D44')),
@@ -82,8 +83,29 @@
       }
     },
       temPedido && React.createElement('div', { style: { fontSize: 9, color: '#EF4444', marginBottom: 4, fontFamily: 'IBM Plex Mono,monospace' } }, '⚠ Pedido de atualização'),
-      React.createElement('div', { title: titulo, style: { fontFamily: 'IBM Plex Mono,monospace', fontSize: 11, color: '#eee', fontWeight: 700, marginBottom: 4, lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, titulo),
-      ag && React.createElement('div', { style: { fontSize: 9, color: '#818CF8', marginBottom: 4 } }, ag.nome),
+      React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 } },
+        React.createElement('div', { title: titulo, style: { fontFamily: 'IBM Plex Mono,monospace', fontSize: 11, color: '#eee', fontWeight: 700, lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, titulo),
+        dupCount > 1 && React.createElement('span', { title: dupCount + ' oportunidades para esta empresa', style: { fontSize: 8, background: '#2D2D44', color: '#FBBF24', borderRadius: 3, padding: '1px 4px', marginLeft: 4, flexShrink: 0, fontFamily: 'IBM Plex Mono,monospace' } }, 'x' + dupCount)
+      ),
+      meuPapel === 'admin' && React.createElement('div', {
+        onClick: e => { e.preventDefault(); e.stopPropagation(); setShowAgSelect(v => !v); },
+        style: { fontSize: 9, color: '#818CF8', marginBottom: 4, cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }
+      },
+        React.createElement('span', null, ag ? ag.nome : 'Sem dono'),
+        React.createElement('span', { style: { color: '#2D2D44', fontSize: 8 } }, showAgSelect ? '▲' : '▼')
+      ),
+      meuPapel !== 'admin' && ag && React.createElement('div', { style: { fontSize: 9, color: '#818CF8', marginBottom: 4 } }, ag.nome),
+      showAgSelect && meuPapel === 'admin' && React.createElement('select', {
+        autoFocus: true,
+        value: op.agencia_id || '',
+        onClick: e => { e.preventDefault(); e.stopPropagation(); },
+        onChange: e => { e.stopPropagation(); setShowAgSelect(false); if (onMoverAgencia) onMoverAgencia(op.id, e.target.value || null); },
+        onBlur: () => setShowAgSelect(false),
+        style: { fontSize: 9, width: '100%', background: '#1A1A2E', border: '1px solid #60A5FA', color: '#eee', borderRadius: 4, padding: '3px 6px', marginBottom: 4, fontFamily: 'IBM Plex Mono,monospace' }
+      },
+        React.createElement('option', { value: '' }, '— sem dono —'),
+        agencias.map(a => React.createElement('option', { key: a.id, value: a.id }, a.nome))
+      ),
       op.oferta && React.createElement('div', { style: { fontSize: 9, color: '#FBBF24', marginBottom: 4 } }, op.oferta),
       React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
         ehMinha && op.valor_estimado ? React.createElement('span', { style: { fontSize: 9, color: '#34D399' } }, fmtVal(op.valor_estimado)) : React.createElement('span', null),
@@ -505,7 +527,24 @@
 
     const semDono = opsFiltradas.filter(op => !op.agencia_id && ESTAGIOS_ATIVOS.includes(op.estagio));
 
+    const dupMap = useMemo(() => {
+      const m = {};
+      opsFiltradas.forEach(op => { if (op.empresa_id) m[op.empresa_id] = (m[op.empresa_id] || 0) + 1; });
+      return m;
+    }, [opsFiltradas]);
+
     function pedidoPorOp(opId) { return eventos.some(e => e.oportunidade_id === opId); }
+
+    async function moverAgencia(opId, novaAgenciaId) {
+      const op = oportunidades.find(o => o.id === opId);
+      if (!op) return;
+      const agora = new Date().toISOString();
+      const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
+      setOportunidades(prev => prev.map(o => o.id === opId ? Object.assign({}, o, { agencia_id: novaAgenciaId, atualizado_em: agora }) : o));
+      supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ agencia_id: novaAgenciaId, atualizado_em: agora }) });
+      supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'dono', de: op.agencia_id, para: novaAgenciaId }) });
+      supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'agencia_id', valor_de: op.agencia_id, valor_para: novaAgenciaId, usuario_email: userEmail }) });
+    }
 
     async function moverEstagio(opId, novoEstagio) {
       const op = oportunidades.find(o => o.id === opId);
@@ -521,7 +560,7 @@
 
     const s = { fontFamily: 'IBM Plex Mono,monospace' };
 
-    return React.createElement('div', { style: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#060606' } },
+    return React.createElement('div', { style: { flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden', background: '#060606' } },
 
       // Header + filtros
       React.createElement('div', { style: { padding: '12px 20px', borderBottom: '1px solid #1A1A2E', display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } },
@@ -558,7 +597,7 @@
 
       // Kanban
       loading ? React.createElement('div', { style: { flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#555', ...s, fontSize: 11 } }, 'Carregando…') :
-      React.createElement('div', { style: { flex: 1, overflowX: 'auto', overflowY: 'hidden', display: 'flex', padding: '12px 20px', gap: 10 } },
+      React.createElement('div', { style: { flex: 1, minHeight: 0, overflowX: 'auto', overflowY: 'hidden', display: 'flex', alignItems: 'stretch', padding: '12px 20px', gap: 10 } },
         [...ESTAGIOS_ATIVOS, '__separator', 'Cliente ativo', 'Perdido'].map(estagio => {
           if (estagio === '__separator') {
             return React.createElement('div', { key: '__sep', style: { width: 1, minWidth: 1, background: '#2D2D44', alignSelf: 'stretch', margin: '4px 6px', borderRadius: 1 } });
@@ -600,8 +639,10 @@
                     empresaNome: empresasMap[op.empresa_id],
                     temPedido: pedidoPorOp(op.id),
                     isDragging: dragId === op.id,
+                    dupCount: op.empresa_id ? (dupMap[op.empresa_id] || 1) : 1,
                     onClick: () => setDetalhe(op),
-                    onDragStart: () => setDragId(op.id)
+                    onDragStart: () => setDragId(op.id),
+                    onMoverAgencia: moverAgencia
                   }))
             )
           );
