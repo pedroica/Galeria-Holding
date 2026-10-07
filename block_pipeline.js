@@ -157,9 +157,14 @@
 
     async function assumirAgencia(agId) {
       setSalvando(true);
-      await supa('crm_oportunidades?id=eq.' + op.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ agencia_id: agId, atualizado_em: new Date().toISOString() }) });
-      await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'dono', de: op.agencia_id, para: agId }) });
+      const res = await supa('crm_oportunidades?id=eq.' + op.id, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ agencia_id: agId, atualizado_em: new Date().toISOString() }) });
+      const ok = Array.isArray(res) && res.length > 0;
       setSalvando(false);
+      if (!ok) {
+        alert('Sem permissão para alterar esta oportunidade.');
+        return;
+      }
+      await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'dono', de: op.agencia_id, para: agId }) });
       onAtualizar();
       window.dispatchEvent(new CustomEvent('crm-op-updated'));
     }
@@ -179,8 +184,13 @@
           await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: op.id, campo, valor_de: vDe, valor_para: vPara, usuario_email: userEmail }) });
         }
       }
-      await supa('crm_oportunidades?id=eq.' + op.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(patch) });
+      const patchRes = await supa('crm_oportunidades?id=eq.' + op.id, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(patch) });
+      const patchOk = Array.isArray(patchRes) && patchRes.length > 0;
       setSalvando(false);
+      if (!patchOk) {
+        alert('Sem permissão para salvar esta oportunidade.');
+        return;
+      }
       setEditando(false);
       onAtualizar();
       window.dispatchEvent(new CustomEvent('crm-op-updated'));
@@ -191,10 +201,15 @@
       setSalvando(true);
       const agora = new Date().toISOString();
       const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
-      await supa('crm_oportunidades?id=eq.' + op.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ apagado_em: agora }) });
+      const apagarRes = await supa('crm_oportunidades?id=eq.' + op.id, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ apagado_em: agora }) });
+      const apagarOk = Array.isArray(apagarRes) && apagarRes.length > 0;
+      setSalvando(false);
+      if (!apagarOk) {
+        alert('Sem permissão para mover esta oportunidade para a lixeira.');
+        return;
+      }
       await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'apagado', texto: 'Movido para lixeira' }) });
       await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: op.id, campo: 'apagado_em', valor_de: null, valor_para: agora, usuario_email: userEmail }) });
-      setSalvando(false);
       onAtualizar();
     }
 
@@ -550,9 +565,10 @@
       const agora = new Date().toISOString();
       const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       setOportunidades(prev => prev.map(o => o.id === opId ? Object.assign({}, o, { agencia_id: novaAgenciaId, atualizado_em: agora }) : o));
-      const res = await supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ agencia_id: novaAgenciaId, atualizado_em: agora }) });
-      if (res !== null) {
-        // PATCH falhou — supa retorna [] em erros, null em 204 sucesso
+      const res = await supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ agencia_id: novaAgenciaId, atualizado_em: agora }) });
+      const ok = Array.isArray(res) && res.length > 0;
+      if (!ok) {
+        // PATCH falhou (0 linhas afetadas = sem permissão, ou erro HTTP)
         setOportunidades(prev => prev.map(o => o.id === opId ? Object.assign({}, o, { agencia_id: op.agencia_id, atualizado_em: op.atualizado_em }) : o));
         const tId = Date.now();
         setToast({ id: tId, tipo: 'erro', msg: '⚠ Falha ao mover — verifique permissões' });
@@ -574,7 +590,15 @@
       const agora = new Date().toISOString();
       const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       setOportunidades(prev => prev.map(o => o.id === opId ? Object.assign({}, o, { estagio: novoEstagio, atualizado_em: agora }) : o));
-      await supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ estagio: novoEstagio, atualizado_em: agora }) });
+      const estagioRes = await supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ estagio: novoEstagio, atualizado_em: agora }) });
+      const estagioOk = Array.isArray(estagioRes) && estagioRes.length > 0;
+      if (!estagioOk) {
+        setOportunidades(prev => prev.map(o => o.id === opId ? Object.assign({}, o, { estagio: op.estagio, atualizado_em: op.atualizado_em }) : o));
+        const tId = Date.now();
+        setToast({ id: tId, tipo: 'erro', msg: '⚠ Sem permissão para mover estágio' });
+        setTimeout(function() { setToast(function(t) { return t && t.id === tId ? null : t; }); }, 4000);
+        return;
+      }
       supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'estagio', de: op.estagio, para: novoEstagio }) });
       supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'estagio', valor_de: op.estagio, valor_para: novoEstagio, usuario_email: userEmail }) });
       window.dispatchEvent(new CustomEvent('crm-op-updated'));
