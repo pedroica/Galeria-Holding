@@ -7921,7 +7921,7 @@ function AgEnviarTab({ agencia, agenciaUuids }) {
 
 function AgenciaHome({ agencia, tab, navTo, agenciaUuids }) {
   return React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden'}},
-    tab === 'pipeline' ? React.createElement("div",{style:{flex:1,overflow:'hidden'}},
+    tab === 'pipeline' ? React.createElement("div",{style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}},
       typeof PipelineGlobalView !== 'undefined'
         ? React.createElement(PipelineGlobalView, { key: (agencia && agencia.id !== 'global' && agenciaUuids && agenciaUuids[agencia.id]) || (agencia && agencia.id) || 'global', meuPapel: 'admin', minhaAgenciaId: agencia && agencia.id, agenciaFiltro: agencia && agencia.id !== 'global' && agenciaUuids && agenciaUuids[agencia.id] || null })
         : React.createElement("div",{style:{padding:20,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11}},'Pipeline carregando...')
