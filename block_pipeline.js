@@ -573,9 +573,8 @@
       if (!op || op.estagio === novoEstagio) return;
       const agora = new Date().toISOString();
       const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
-      // Optimistic update — sem reload completo após cada drag
       setOportunidades(prev => prev.map(o => o.id === opId ? Object.assign({}, o, { estagio: novoEstagio, atualizado_em: agora }) : o));
-      supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ estagio: novoEstagio, atualizado_em: agora }) });
+      await supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ estagio: novoEstagio, atualizado_em: agora }) });
       supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'estagio', de: op.estagio, para: novoEstagio }) });
       supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'estagio', valor_de: op.estagio, valor_para: novoEstagio, usuario_email: userEmail }) });
       window.dispatchEvent(new CustomEvent('crm-op-updated'));
