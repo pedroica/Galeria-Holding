@@ -5368,6 +5368,20 @@ function App() {
     window.addEventListener('copiloto:abordar', handleAbordagemCopiloto);
     return () => window.removeEventListener('copiloto:abordar', handleAbordagemCopiloto);
   }, []);
+  useEffect(() => {
+    function handleCrmNavigate(e) {
+      const d = e.detail || {};
+      if (!d.section) return;
+      let agId = d.agId || null;
+      if (!agId && d.agenciaUUID && agenciaUuids) {
+        const entry = Object.entries(agenciaUuids).find(function(kv) { return kv[1] === d.agenciaUUID; });
+        agId = entry ? entry[0] : null;
+      }
+      navTo(d.section, agId, d.tab || null);
+    }
+    window.addEventListener('crm-navigate', handleCrmNavigate);
+    return () => window.removeEventListener('crm-navigate', handleCrmNavigate);
+  }, [agenciaUuids]);
   const [showTutorial, setShowTutorial] = useState(false);
   const [abordagemGlobal, setAbordagemGlobal] = useState(null); // {decisor, empresa, setor}
   const [curUser, setCurUser] = useState(null);

@@ -486,6 +486,7 @@
     const [filtroOferta, setFiltroOferta] = useState('');
     const [busca, setBusca] = useState('');
     const [eventos, setEventos] = useState([]);
+    const [toast, setToast] = useState(null);
 
     async function carregar() {
       setLoading(true);
@@ -549,9 +550,21 @@
       const agora = new Date().toISOString();
       const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       setOportunidades(prev => prev.map(o => o.id === opId ? Object.assign({}, o, { agencia_id: novaAgenciaId, atualizado_em: agora }) : o));
-      supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ agencia_id: novaAgenciaId, atualizado_em: agora }) });
+      const res = await supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ agencia_id: novaAgenciaId, atualizado_em: agora }) });
+      if (res !== null) {
+        // PATCH falhou — supa retorna [] em erros, null em 204 sucesso
+        setOportunidades(prev => prev.map(o => o.id === opId ? Object.assign({}, o, { agencia_id: op.agencia_id, atualizado_em: op.atualizado_em }) : o));
+        const tId = Date.now();
+        setToast({ id: tId, tipo: 'erro', msg: '⚠ Falha ao mover — verifique permissões' });
+        setTimeout(function() { setToast(function(t) { return t && t.id === tId ? null : t; }); }, 4000);
+        return;
+      }
       supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'dono', de: op.agencia_id, para: novaAgenciaId }) });
       supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'agencia_id', valor_de: op.agencia_id, valor_para: novaAgenciaId, usuario_email: userEmail }) });
+      const agNome = (agencias.find(function(a) { return a.id === novaAgenciaId; }) || {}).nome || '...';
+      const tId = Date.now();
+      setToast({ id: tId, tipo: 'ok', msg: '✓ Movido para ' + agNome, agUuid: novaAgenciaId });
+      setTimeout(function() { setToast(function(t) { return t && t.id === tId ? null : t; }); }, 5000);
       window.dispatchEvent(new CustomEvent('crm-op-updated'));
     }
 
@@ -675,7 +688,25 @@
         agencias,
         onClose: () => setNovaModal(false),
         onCriada: () => { setNovaModal(false); carregar(); }
-      })
+      }),
+
+      // Toast de feedback de ação
+      toast && React.createElement('div', {
+        style: { position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 9999, background: toast.tipo === 'ok' ? '#14532d' : '#7f1d1d', border: '1px solid ' + (toast.tipo === 'ok' ? '#16a34a' : '#dc2626'), borderRadius: 8, padding: '10px 18px', display: 'flex', alignItems: 'center', gap: 12, fontFamily: 'IBM Plex Mono,monospace', fontSize: 12, color: '#fff', boxShadow: '0 4px 24px rgba(0,0,0,.6)', pointerEvents: 'auto' }
+      },
+        React.createElement('span', null, toast.msg),
+        toast.tipo === 'ok' && toast.agUuid && React.createElement('button', {
+          onClick: function() {
+            window.dispatchEvent(new CustomEvent('crm-navigate', { detail: { section: 'agencia', agenciaUUID: toast.agUuid, tab: 'pipeline' } }));
+            setToast(null);
+          },
+          style: { background: '#16a34a', border: 'none', borderRadius: 4, color: '#fff', fontFamily: 'IBM Plex Mono,monospace', fontSize: 11, padding: '3px 10px', cursor: 'pointer', whiteSpace: 'nowrap' }
+        }, 'Ver →'),
+        React.createElement('button', {
+          onClick: function() { setToast(null); },
+          style: { background: 'transparent', border: 'none', color: '#aaa', cursor: 'pointer', fontSize: 14, padding: '0 2px', lineHeight: 1 }
+        }, '×')
+      )
     );
   }
 
