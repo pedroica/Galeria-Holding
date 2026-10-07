@@ -370,6 +370,44 @@ input,select,button,textarea{font-family:'Inter',sans-serif!important}
 .cov-bar{height:4px;background:#2D2D44;border-radius:2px;overflow:hidden;margin-top:6px}
 .cov-fill{height:100%;border-radius:2px;transition:width .3s}
 
+/* ═══ MOBILE (≤767px) ═══ */
+@media (max-width:767px){
+  /* Topbar: hide brand label, compact tabs */
+  .brand>span{display:none}
+  .brand{padding:0 10px!important}
+  .tb-nav>div{padding:0 8px!important}
+  .tb-right{padding:0 6px!important;gap:3px!important}
+  .tb-right button{padding:3px 5px!important;font-size:8px!important}
+  /* Base/Empresas view: sidebar stacks above main */
+  .ws{flex-direction:column!important}
+  .sb{width:100%!important;max-height:36vh;min-height:120px;border-right:none!important;border-bottom:1px solid var(--gh-mid);flex-shrink:0}
+  .main{overflow-y:auto!important}
+  /* Panel padding */
+  .panel{padding:12px 14px!important}
+  /* Modal: full width with tight padding */
+  .modov{padding:10px!important}
+  .mod{padding:16px!important;max-height:92vh!important}
+  .addco-modal{max-width:calc(100vw - 20px)!important;padding:16px!important}
+  /* Grids: single column */
+  .g3{grid-template-columns:1fr!important}
+  .g2{grid-template-columns:1fr!important}
+  /* Buttons: 44px min tap target */
+  .btn{padding:11px 14px!important;font-size:11px!important}
+  .gh-btn-primary,.gh-btn-secondary,.gh-btn-ghost{padding:11px 16px!important;min-height:44px!important}
+  /* Subtabs: horizontal scroll + bigger tap target */
+  .subtabs{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important}
+  .st{padding:11px 14px!important;min-height:40px!important;white-space:nowrap!important}
+  /* Tutorial: bottom sheet */
+  .tut-overlay{padding:0!important;align-items:flex-end!important}
+  .tut-card{max-width:100%!important;border-radius:16px 16px 0 0!important}
+  /* Kanban acionamentos: narrower cols */
+  .ka-col{width:170px!important}
+  /* LLM: stack input row */
+  .llm-input-row{flex-direction:column!important}
+  /* Scrollbar: slightly bigger on touch */
+  ::-webkit-scrollbar{width:4px;height:4px}
+}
+
 </style>
 <link rel="manifest" href="manifest.json">
 <meta name="theme-color" content="#FF6B2B">

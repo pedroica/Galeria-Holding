@@ -199,7 +199,7 @@
     const s = { fontFamily: 'IBM Plex Mono,monospace' };
 
     return React.createElement('div', {
-      style: { position: 'fixed', top: 0, right: 0, width: 400, height: '100vh', background: '#0d0d1a', borderLeft: '1px solid #2D2D44', zIndex: 200, display: 'flex', flexDirection: 'column', overflowY: 'auto' }
+      style: { position: 'fixed', top: 0, right: 0, width: 'min(400px, 100vw)', height: '100vh', background: '#0d0d1a', borderLeft: '1px solid #2D2D44', zIndex: 200, display: 'flex', flexDirection: 'column', overflowY: 'auto' }
     },
       // Header
       React.createElement('div', { style: { padding: '14px 16px', borderBottom: '1px solid #1A1A2E', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' } },
