@@ -3853,7 +3853,9 @@ function KanbanView({
   }, renderStats()), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
+      minHeight: 0,
       overflowX: 'auto',
+      overflowY: 'auto',
       padding: '8px 16px 32px'
     }
   }, /*#__PURE__*/React.createElement("div", {

@@ -1771,9 +1771,10 @@ function KanbanAcionamentosV2({
   })), /*#__PURE__*/React.createElement("div", {
     style: {
       flex: 1,
+      minHeight: 0,
       overflowX: "auto",
       padding: "12px 16px",
-      overflowY: "hidden"
+      overflowY: "auto"
     }
   }, /*#__PURE__*/React.createElement("div", {
     style: {
