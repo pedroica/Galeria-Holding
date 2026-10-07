@@ -7051,10 +7051,15 @@ function HoldingHome({ agencias, agenciaUuids }) {
   var [tab, setTab] = React.useState('pipeline');
 
   React.useEffect(function() {
-    supaFetch('/rest/v1/crm_oportunidades?apagado_em=is.null&select=*&order=atualizado_em.desc&limit=500').then(function(d) {
-      setCards(Array.isArray(d) ? d : []);
-      setLoading(false);
-    }).catch(function() { setLoading(false); });
+    function load() {
+      supaFetch('/rest/v1/crm_oportunidades?apagado_em=is.null&select=*&order=atualizado_em.desc&limit=500').then(function(d) {
+        setCards(Array.isArray(d) ? d : []);
+        setLoading(false);
+      }).catch(function() { setLoading(false); });
+    }
+    load();
+    window.addEventListener('crm-op-updated', load);
+    return function() { window.removeEventListener('crm-op-updated', load); };
   }, []);
 
   function agenciaFromCard(card) {
@@ -7082,14 +7087,16 @@ function HoldingHome({ agencias, agenciaUuids }) {
   })();
 
   function moveCard(cardId, newEstagio) {
-    var op = cards.find(function(c) { return c.id === cardId; });
-    setCards(function(p) { return p.map(function(c) { return c.id===cardId ? Object.assign({},c,{estagio:newEstagio}) : c; }); });
     var agora = new Date().toISOString();
+    var op = cards.find(function(c) { return c.id === cardId; });
+    setCards(function(p) { return p.map(function(c) { return c.id===cardId ? Object.assign({},c,{estagio:newEstagio, atualizado_em:agora}) : c; }); });
     supaFetch('/rest/v1/crm_oportunidades?id=eq.'+cardId, {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({estagio:newEstagio, atualizado_em:agora})});
     var userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
     if (op) {
       supaFetch('/rest/v1/crm_auditoria', {method:'POST', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({tabela:'crm_oportunidades', registro_id:cardId, campo:'estagio', valor_de:op.estagio, valor_para:newEstagio, usuario_email:userEmail, criado_em:agora})});
+      supaFetch('/rest/v1/crm_oportunidade_eventos', {method:'POST', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({oportunidade_id:cardId, tipo:'estagio', de:op.estagio, para:newEstagio})});
     }
+    window.dispatchEvent(new CustomEvent('crm-op-updated'));
   }
 
   function renderCard(card) {

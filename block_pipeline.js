@@ -161,6 +161,7 @@
       await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'dono', de: op.agencia_id, para: agId }) });
       setSalvando(false);
       onAtualizar();
+      window.dispatchEvent(new CustomEvent('crm-op-updated'));
     }
 
     async function salvarEdicao() {
@@ -182,6 +183,7 @@
       setSalvando(false);
       setEditando(false);
       onAtualizar();
+      window.dispatchEvent(new CustomEvent('crm-op-updated'));
     }
 
     async function apagar() {
@@ -515,6 +517,12 @@
 
     useEffect(() => { carregar(); }, [agenciaFiltro]);
 
+    useEffect(() => {
+      const h = () => carregar();
+      window.addEventListener('crm-op-updated', h);
+      return () => window.removeEventListener('crm-op-updated', h);
+    }, [agenciaFiltro]);
+
     const opsFiltradas = useMemo(() => oportunidades.filter(op => {
       if (filtroAg && op.agencia_id !== filtroAg) return false;
       if (filtroOferta && op.oferta !== filtroOferta) return false;
@@ -544,6 +552,7 @@
       supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ agencia_id: novaAgenciaId, atualizado_em: agora }) });
       supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'dono', de: op.agencia_id, para: novaAgenciaId }) });
       supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'agencia_id', valor_de: op.agencia_id, valor_para: novaAgenciaId, usuario_email: userEmail }) });
+      window.dispatchEvent(new CustomEvent('crm-op-updated'));
     }
 
     async function moverEstagio(opId, novoEstagio) {
@@ -556,6 +565,7 @@
       supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ estagio: novoEstagio, atualizado_em: agora }) });
       supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'estagio', de: op.estagio, para: novoEstagio }) });
       supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'estagio', valor_de: op.estagio, valor_para: novoEstagio, usuario_email: userEmail }) });
+      window.dispatchEvent(new CustomEvent('crm-op-updated'));
     }
 
     const s = { fontFamily: 'IBM Plex Mono,monospace' };
