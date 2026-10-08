@@ -77,7 +77,7 @@ test.describe('Bloco 4 — Histórico e Base', () => {
     const histBtn = await abrirHistorico(page);
     await histBtn.click();
     await page.waitForTimeout(2000);
-    await expect(page.getByText('Ambev')).toBeVisible({ timeout: 8000 });
+    await expect(page.getByText('Ambev').first()).toBeVisible({ timeout: 8000 });
   });
 
   test('aba Histórico: botão CSV exporta sem erros', async ({ page }) => {

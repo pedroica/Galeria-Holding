@@ -228,9 +228,32 @@ test.describe('Bloco 7 — Tela Pipeline Global', () => {
     await expect(page.getByText(/WISHLIST|PRIMEIRA REUNIÃO|NEGOCIANDO DIRETO|NEGOCIAÇÃO/).first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('nav item Admin existe na topbar', async ({ page }) => {
+  test('nav item Admin AUSENTE para leitor (papel=leitor não vê Admin)', async ({ page }) => {
     await page.goto(APP_URL);
-    await expect(page.getByText('Admin', { exact: true }).first()).toBeVisible({ timeout: 15000 });
+    // After role fetch completes (~<2s), meuPapel='leitor' → Admin item is filtered out of nav
+    // Playwright retries until element is not visible (handles initial 'admin' default state)
+    await expect(page.getByText('Admin', { exact: true })).not.toBeVisible({ timeout: 10000 });
+  });
+
+  // NOTE: this test requires the auditoria-completa changes to be deployed.
+  // Before deploy: fails because AgenciaHome hardcoded meuPapel:'admin'.
+  // After deploy: passes because meuPapel prop is correctly propagated.
+  test('leitor via Agências → aba Pipeline não vê botão + Nova oportunidade', async ({ page }) => {
+    await page.goto(APP_URL);
+    // Wait for role fetch to complete: leitor never sees Admin nav item
+    // (meuPapel starts as 'admin', changes to 'leitor' after Supabase fetch)
+    await expect(page.getByText('Admin', { exact: true })).not.toBeVisible({ timeout: 10000 });
+    await expect(page.getByText('Agências', { exact: true })).toBeVisible({ timeout: 5000 });
+    await page.getByText('Agências', { exact: true }).click();
+    // Wait for agency sub-nav to appear — use exact agency name (GRUPO[0].name is 'Galeria')
+    // Note: .tb-nav ~ div div fails because .tb-nav is inside the header row, not a sibling of the sub-nav
+    await expect(page.getByText('Galeria', { exact: true })).toBeVisible({ timeout: 8000 });
+    await page.getByText('Galeria', { exact: true }).first().click();
+    // Click Pipeline tab
+    await page.getByText('Pipeline', { exact: true }).last().click();
+    await page.waitForTimeout(2500);
+    // Leitor must NOT see the write button
+    await expect(page.getByText('+ Nova oportunidade', { exact: true })).not.toBeVisible({ timeout: 5000 });
   });
 
 });
