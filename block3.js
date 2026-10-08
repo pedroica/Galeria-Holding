@@ -5356,7 +5356,8 @@ function App() {
   };
   const [alertaBadge, setAlertaBadge] = useState(() => lsGet("gh_alertas_v2", []).filter(a => !a.lido).length);
   const [cronAlerta, setCronAlerta] = useState(false);
-  const [meuPapel, setMeuPapel] = useState('admin'); // default admin até verificar
+  const [meuPapel, setMeuPapel] = useState('leitor');
+  const [papelLoading, setPapelLoading] = useState(true);
   const [minhaAgenciaId, setMinhaAgenciaId] = useState(null);
   const [acessoNegado, setAcessoNegado] = useState(false);
   useEffect(() => {
@@ -5481,17 +5482,18 @@ function App() {
       if (!Array.isArray(rows) || rows.length === 0) {
         // Email de admins hardcoded: nunca bloqueiam
         if (email === 'pedro.ica@galeriaholding.co' || email === 'pedroica@gmail.com') {
-          setMeuPapel('admin'); setAcessoNegado(false); return;
+          setMeuPapel('admin'); setAcessoNegado(false); setPapelLoading(false); return;
         }
-        setAcessoNegado(true); return;
+        setAcessoNegado(true); setPapelLoading(false); return;
       }
       var u = rows[0];
-      if (!u.ativo) { setAcessoNegado(true); return; }
+      if (!u.ativo) { setAcessoNegado(true); setPapelLoading(false); return; }
       setMeuPapel(u.papel || 'leitor');
       setMinhaAgenciaId(u.agencia_id || null);
       setAcessoNegado(false);
+      setPapelLoading(false);
       // Atualizar ultimo_acesso_em via service key não disponível no frontend — apenas registra
-    }).catch(function(){});
+    }).catch(function(){ setPapelLoading(false); });
   }, [curUser]);
   useEffect(() => {
     // Auto-show config on first load if no Claude key
@@ -5769,6 +5771,7 @@ function App() {
     )
   ),
   React.createElement("div", { className:"tb-right", style:{ gap:6 } },
+    papelLoading && React.createElement("span", { title:'Verificando permissões…', style:{ fontFamily:'IBM Plex Mono,monospace', fontSize:9, color:'#555', display:'flex', alignItems:'center', flexShrink:0, userSelect:'none' } }, "●"),
     alertaBadge > 0 && React.createElement("span", { style:{ background:'#E24B4A', color:'#fff', borderRadius:'50%', width:16, height:16, fontSize:9, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 } }, alertaBadge),
     React.createElement("button", { onClick:() => setToolsOpen(true), style:{ padding:'4px 8px', border:'.5px solid #2D2D44', borderRadius:4, background:'transparent', color:'#9B9BB4', fontSize:9, fontFamily:'IBM Plex Mono,monospace', cursor:'pointer' }, title:'Backup & APIs' }, "🛟"),
     React.createElement("button", { className:'cfgbtn', onClick:() => { setCfgPD(pdKey); setCfgClaude(getClaudeKey()); setCfgOpen(true); }, style:{ borderColor: getClaudeKey() ? '' : 'rgba(255,107,43,.5)', color: getClaudeKey() ? '' : '#FF6B2B' }, title: getClaudeKey() ? 'Configurações' : '⚠ Configure a Claude API Key' }, "⚙", !getClaudeKey() && " ⚠"),
