@@ -228,9 +228,11 @@ test.describe('Bloco 7 — Tela Pipeline Global', () => {
     await expect(page.getByText(/WISHLIST|PRIMEIRA REUNIÃO|NEGOCIANDO DIRETO|NEGOCIAÇÃO/).first()).toBeVisible({ timeout: 10000 });
   });
 
-  test('nav item Admin existe na topbar', async ({ page }) => {
+  test('nav item Admin AUSENTE para leitor (papel=leitor não vê Admin)', async ({ page }) => {
     await page.goto(APP_URL);
-    await expect(page.getByText('Admin', { exact: true }).first()).toBeVisible({ timeout: 15000 });
+    // After role fetch completes (~<2s), meuPapel='leitor' → Admin item is filtered out of nav
+    // Playwright retries until element is not visible (handles initial 'admin' default state)
+    await expect(page.getByText('Admin', { exact: true })).not.toBeVisible({ timeout: 10000 });
   });
 
 });
