@@ -235,6 +235,27 @@ test.describe('Bloco 7 — Tela Pipeline Global', () => {
     await expect(page.getByText('Admin', { exact: true })).not.toBeVisible({ timeout: 10000 });
   });
 
+  // NOTE: this test requires the auditoria-completa changes to be deployed.
+  // Before deploy: fails because AgenciaHome hardcoded meuPapel:'admin'.
+  // After deploy: passes because meuPapel prop is correctly propagated.
+  test('leitor via Agências → aba Pipeline não vê botão + Nova oportunidade', async ({ page }) => {
+    await page.goto(APP_URL);
+    // Wait for app to load and role fetch to complete
+    await expect(page.getByText('Agências', { exact: true })).toBeVisible({ timeout: 15000 });
+    await page.getByText('Agências', { exact: true }).click();
+    // Wait for agency sub-nav to appear and click first real agency (not "Todos")
+    await page.waitForTimeout(1500);
+    const agLinks = page.locator('.tb-nav ~ div div', { hasText: /Galeria|404|Avantgarde|Anagram/ });
+    const first = agLinks.first();
+    await expect(first).toBeVisible({ timeout: 8000 });
+    await first.click();
+    // Click Pipeline tab
+    await page.getByText('Pipeline', { exact: true }).last().click();
+    await page.waitForTimeout(2500);
+    // Leitor must NOT see the write button
+    await expect(page.getByText('+ Nova oportunidade', { exact: true })).not.toBeVisible({ timeout: 5000 });
+  });
+
 });
 
 // ── Integration: Leitor pedido_atualizacao ─────────────────────────────────────
