@@ -5356,7 +5356,8 @@ function App() {
   };
   const [alertaBadge, setAlertaBadge] = useState(() => lsGet("gh_alertas_v2", []).filter(a => !a.lido).length);
   const [cronAlerta, setCronAlerta] = useState(false);
-  const [meuPapel, setMeuPapel] = useState('admin'); // default admin até verificar
+  const [meuPapel, setMeuPapel] = useState('leitor');
+  const [papelLoading, setPapelLoading] = useState(true);
   const [minhaAgenciaId, setMinhaAgenciaId] = useState(null);
   const [acessoNegado, setAcessoNegado] = useState(false);
   useEffect(() => {
@@ -5481,17 +5482,18 @@ function App() {
       if (!Array.isArray(rows) || rows.length === 0) {
         // Email de admins hardcoded: nunca bloqueiam
         if (email === 'pedro.ica@galeriaholding.co' || email === 'pedroica@gmail.com') {
-          setMeuPapel('admin'); setAcessoNegado(false); return;
+          setMeuPapel('admin'); setAcessoNegado(false); setPapelLoading(false); return;
         }
-        setAcessoNegado(true); return;
+        setAcessoNegado(true); setPapelLoading(false); return;
       }
       var u = rows[0];
-      if (!u.ativo) { setAcessoNegado(true); return; }
+      if (!u.ativo) { setAcessoNegado(true); setPapelLoading(false); return; }
       setMeuPapel(u.papel || 'leitor');
       setMinhaAgenciaId(u.agencia_id || null);
       setAcessoNegado(false);
+      setPapelLoading(false);
       // Atualizar ultimo_acesso_em via service key não disponível no frontend — apenas registra
-    }).catch(function(){});
+    }).catch(function(){ setPapelLoading(false); });
   }, [curUser]);
   useEffect(() => {
     // Auto-show config on first load if no Claude key
@@ -5760,7 +5762,7 @@ function App() {
     }
   }, "GALERIA HOLDING")),
   React.createElement("div", { className:"tb-nav", style:{ display:'flex', alignItems:'stretch', flex:1 } },
-    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['pipeline','Pipeline'],['admin','Admin'],['ferramentas','Ferramentas']].map(([s, l]) =>
+    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['pipeline','Pipeline'],['admin','Admin'],['ferramentas','Ferramentas']].filter(([s]) => s !== 'admin' || meuPapel === 'admin').map(([s, l]) =>
       React.createElement("div", {
         key: s,
         onClick: () => { if (s === 'ferramentas') { setToolsOpen(true); } else { navTo(s, null, null); } },
@@ -5769,6 +5771,7 @@ function App() {
     )
   ),
   React.createElement("div", { className:"tb-right", style:{ gap:6 } },
+    papelLoading && React.createElement("span", { title:'Verificando permissões…', style:{ fontFamily:'IBM Plex Mono,monospace', fontSize:9, color:'#555', display:'flex', alignItems:'center', flexShrink:0, userSelect:'none' } }, "●"),
     alertaBadge > 0 && React.createElement("span", { style:{ background:'#E24B4A', color:'#fff', borderRadius:'50%', width:16, height:16, fontSize:9, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 } }, alertaBadge),
     React.createElement("button", { onClick:() => setToolsOpen(true), style:{ padding:'4px 8px', border:'.5px solid #2D2D44', borderRadius:4, background:'transparent', color:'#9B9BB4', fontSize:9, fontFamily:'IBM Plex Mono,monospace', cursor:'pointer' }, title:'Backup & APIs' }, "🛟"),
     React.createElement("button", { className:'cfgbtn', onClick:() => { setCfgPD(pdKey); setCfgClaude(getClaudeKey()); setCfgOpen(true); }, style:{ borderColor: getClaudeKey() ? '' : 'rgba(255,107,43,.5)', color: getClaudeKey() ? '' : '#FF6B2B' }, title: getClaudeKey() ? 'Configurações' : '⚠ Configure a Claude API Key' }, "⚙", !getClaudeKey() && " ⚠"),
@@ -5795,7 +5798,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids, meuPapel: meuPapel }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -7941,11 +7944,11 @@ function AgEnviarTab({ agencia, agenciaUuids }) {
   );
 }
 
-function AgenciaHome({ agencia, tab, navTo, agenciaUuids }) {
+function AgenciaHome({ agencia, tab, navTo, agenciaUuids, meuPapel }) {
   return React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden'}},
     tab === 'pipeline' ? React.createElement("div",{style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}},
       typeof PipelineGlobalView !== 'undefined'
-        ? React.createElement(PipelineGlobalView, { key: (agencia && agencia.id !== 'global' && agenciaUuids && agenciaUuids[agencia.id]) || (agencia && agencia.id) || 'global', meuPapel: 'admin', minhaAgenciaId: agencia && agencia.id, agenciaFiltro: agencia && agencia.id !== 'global' && agenciaUuids && agenciaUuids[agencia.id] || null })
+        ? React.createElement(PipelineGlobalView, { key: (agencia && agencia.id !== 'global' && agenciaUuids && agenciaUuids[agencia.id]) || (agencia && agencia.id) || 'global', meuPapel: meuPapel || 'leitor', minhaAgenciaId: agencia && agencia.id, agenciaFiltro: agencia && agencia.id !== 'global' && agenciaUuids && agenciaUuids[agencia.id] || null })
         : React.createElement("div",{style:{padding:20,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:11}},'Pipeline carregando...')
     ) :
     tab === 'noticias'    ? React.createElement(AgNoticiasTab,   {agencia:agencia, agenciaUuids:agenciaUuids}) :
