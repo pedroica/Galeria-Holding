@@ -1,6 +1,10 @@
 // Playwright — Pipeline write permissions
 // Tests all 5 fixed write functions with admin (should succeed) and leitor (should fail)
 // Uses direct Supabase API calls with user JWTs — no browser UI needed for most tests
+// Also includes 2 UI tests: moverAgencia via card dropdown (success toast + error toast)
+
+const APP_URL = process.env.APP_URL || 'https://galeria-holding-sage.vercel.app';
+const SUPA_STORAGE_KEY = 'sb-uetltlnjmobeiunxfsqi-auth-token';
 
 import { test, expect } from '@playwright/test';
 
@@ -316,6 +320,128 @@ test.describe('Pipeline — write permissions (return=representation)', () => {
     const blocked = !res || (Array.isArray(res) && res.length === 0);
     expect(blocked).toBe(true);
     console.log(`✅ assumirAgencia leitor bloqueado: res=${JSON.stringify(res)}`);
+  });
+
+});
+
+// ── UI: admin moves card via agency dropdown ──────────────────────────────────
+test.describe('Pipeline — UI: moverAgencia via card dropdown', () => {
+
+  let adminJwt = null;
+
+  test.beforeAll(async () => {
+    if (!ADMIN_PWD) return;
+    adminJwt = await getJwt(ADMIN_EMAIL, ADMIN_PWD);
+  });
+
+  // Inject admin JWT so the page loads with admin role regardless of global storageState
+  async function openPipelineAsAdmin(page) {
+    if (!adminJwt) throw new Error('Admin JWT not available');
+    await page.addInitScript(({ k, v }) => {
+      localStorage.setItem(k, v);
+      localStorage.setItem('ghub_cfg_shown', 'true');
+      localStorage.setItem('ghub_claude_key', 'playwright-test-placeholder');
+    }, { k: SUPA_STORAGE_KEY, v: JSON.stringify(adminJwt) });
+    await page.goto(APP_URL);
+    await page.getByText('Pipeline', { exact: true }).first().click();
+    // Wait for kanban to load (at least one card visible)
+    await page.waitForTimeout(3000);
+  }
+
+  // ── 11. admin muda agência de um card e vê toast ✓ Movido ────────────────────
+  test('admin move card de agência e vê toast ✓ Movido', async ({ page }) => {
+    if (!ADMIN_PWD || !SUPA_SVC || !adminJwt) { test.skip(); return; }
+
+    await openPipelineAsAdmin(page);
+
+    // The agency label on each card shows "AgNome ▼" for admin
+    // Click it to open the agency select dropdown
+    const agLabel = page.locator('div').filter({ has: page.locator('span:text-is("▼")') }).first();
+    await expect(agLabel).toBeVisible({ timeout: 8000 });
+    await agLabel.click();
+    await page.waitForTimeout(200);
+
+    // The select appears with a blue border
+    const agSelect = page.locator('select').filter({ has: page.locator('option', { hasText: '— sem dono —' }) }).first();
+    await expect(agSelect).toBeVisible({ timeout: 3000 });
+
+    // Record current value and pick a different non-empty agency
+    const currentVal = await agSelect.inputValue();
+    const opts = await agSelect.locator('option').all();
+    let targetVal = '';
+    for (const opt of opts) {
+      const v = await opt.getAttribute('value');
+      if (v && v !== '' && v !== currentVal) { targetVal = v; break; }
+    }
+    expect(targetVal).not.toBe('');
+
+    // Change agency
+    await agSelect.selectOption(targetVal);
+    await page.waitForTimeout(500);
+
+    // Assert success toast
+    await expect(page.getByText(/✓ Movido para/)).toBeVisible({ timeout: 5000 });
+
+    // Revert via service key so the test leaves no permanent change to business data
+    const ops = await svcGet(`crm_oportunidades?agencia_id=eq.${targetVal}&apagado_em=is.null&select=id,agencia_id&limit=1`);
+    const moved = Array.isArray(ops) ? ops[0] : null;
+    if (moved && currentVal) {
+      await fetch(`${SUPA_URL}/rest/v1/crm_oportunidades?id=eq.${moved.id}`, {
+        method: 'PATCH',
+        headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json', Prefer: 'return=minimal' },
+        body: JSON.stringify({ agencia_id: currentVal, atualizado_em: new Date().toISOString() })
+      });
+    }
+    console.log(`✅ UI moverAgencia admin: toast visível, revertido`);
+  });
+
+  // ── 12. save falha (PATCH retorna []) → erro, não "✓ Movido" ─────────────────
+  test('save falha (PATCH retorna []) → mostra erro, não toast ✓ Movido', async ({ page }) => {
+    if (!ADMIN_PWD || !adminJwt) { test.skip(); return; }
+
+    // Mock: all PATCH calls to crm_oportunidades return empty array (simulates RLS/permission failure)
+    await page.addInitScript(() => {
+      const origFetch = window.fetch;
+      window.fetch = function(url, opts) {
+        const s = String(url);
+        if (s.includes('crm_oportunidades') && opts && (opts.method === 'PATCH' || opts.method === 'patch')) {
+          return Promise.resolve(new Response('[]', {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'content-length': '2' }
+          }));
+        }
+        return origFetch.apply(this, arguments);
+      };
+    });
+
+    await openPipelineAsAdmin(page);
+
+    // Click agency label on first card to open select
+    const agLabel = page.locator('div').filter({ has: page.locator('span:text-is("▼")') }).first();
+    await expect(agLabel).toBeVisible({ timeout: 8000 });
+    await agLabel.click();
+    await page.waitForTimeout(200);
+
+    const agSelect = page.locator('select').filter({ has: page.locator('option', { hasText: '— sem dono —' }) }).first();
+    await expect(agSelect).toBeVisible({ timeout: 3000 });
+
+    const currentVal = await agSelect.inputValue();
+    const opts = await agSelect.locator('option').all();
+    let targetVal = '';
+    for (const opt of opts) {
+      const v = await opt.getAttribute('value');
+      if (v && v !== '' && v !== currentVal) { targetVal = v; break; }
+    }
+    if (!targetVal) { test.skip(); return; }
+
+    await agSelect.selectOption(targetVal);
+    await page.waitForTimeout(500);
+
+    // Error toast must appear
+    await expect(page.getByText(/⚠ Falha ao mover/)).toBeVisible({ timeout: 5000 });
+    // Success toast must NOT appear
+    await expect(page.getByText(/✓ Movido para/)).not.toBeVisible({ timeout: 2000 });
+    console.log(`✅ UI moverAgencia mock-fail: erro visível, ✓ Movido ausente`);
   });
 
 });

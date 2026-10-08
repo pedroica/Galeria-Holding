@@ -86,53 +86,57 @@ test.describe('Bloco 3 — painel Abordar', () => {
   });
 
   test('Avisos de regra: segundo decisor da mesma empresa mostra aviso', async ({ page }) => {
-    // Mocka crm_toques para simular empresa abordada por 2 decisores nesta semana
-    await page.route('**/rest/v1/crm_toques*', async route => {
-      const url = route.request().url();
-      if (url.includes('empresa_id')) {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify([
-            { agencia_id: '14a057af-31c6-4606-8236-4c97d8067335', decisor_id: 'dec-outro-1' },
-            { agencia_id: '14a057af-31c6-4606-8236-4c97d8067335', decisor_id: 'dec-outro-2' }
-          ])
-        });
-      } else {
-        await route.continue();
-      }
-    });
+    // page.route não intercepta estes fetches (Chromium fast-fetch path bypassa CDP).
+    // Mock ao nível JavaScript via addInitScript, antes do page.goto.
+    const mockBody = JSON.stringify([
+      { agencia_id: '14a057af-31c6-4606-8236-4c97d8067335', decisor_id: 'dec-outro-1' },
+      { agencia_id: '14a057af-31c6-4606-8236-4c97d8067335', decisor_id: 'dec-outro-2' }
+    ]);
+    await page.addInitScript((body) => {
+      const origFetch = window.fetch;
+      window.fetch = function(url, opts) {
+        const s = String(url);
+        if (s.includes('crm_toques') && s.includes('empresa_id=eq.') && s.includes('data=gte.')) {
+          return Promise.resolve(new Response(body, {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'content-length': String(body.length) }
+          }));
+        }
+        return origFetch.apply(this, arguments);
+      };
+    }, mockBody);
 
     await abrirAbordagemPanel(page);
     await page.getByText('📨 Abordar').first().click();
-    // Aguarda painel carregar e processar avisos
     await page.waitForTimeout(2000);
-    // Verifica que o painel está aberto
     await expect(page.getByText('AGÊNCIA', { exact: true })).toBeVisible({ timeout: 5000 });
-    // Com o mock de 2 decisores mesma agência, aviso de regra deve aparecer
     const aviso = page.getByText(/2 decisores|Empresa já abordada|abordada por outra/).first();
     await expect(aviso).toBeVisible({ timeout: 5000 });
   });
 
   // ── Bug fix: agSel usa agId selecionado, não AG[0] hardcoded ─────────────
   test('aviso de agência usa agId selecionado (bug fix agSel)', async ({ page }) => {
-    // Mock: empresa foi tocada pela agência 'ag-outra' nesta semana
-    await page.route('**/rest/v1/crm_toques*', async route => {
-      const url = route.request().url();
-      if (url.includes('empresa_id') && url.includes('semana') || (url.includes('empresa_id') && url.includes('gte'))) {
-        await route.fulfill({
-          status: 200, contentType: 'application/json',
-          body: JSON.stringify([{ agencia_id: 'ag-outra-id', decisor_id: 'dec-1' }])
-        });
-      } else { await route.continue(); }
-    });
+    // Mock via addInitScript (page.route bypassed by Chromium fast-fetch path)
+    const mockBody = JSON.stringify([{ agencia_id: 'ag-outra-id', decisor_id: 'dec-1' }]);
+    await page.addInitScript((body) => {
+      const origFetch = window.fetch;
+      window.fetch = function(url, opts) {
+        const s = String(url);
+        if (s.includes('crm_toques') && s.includes('empresa_id=eq.') && s.includes('data=gte.')) {
+          return Promise.resolve(new Response(body, {
+            status: 200,
+            headers: { 'Content-Type': 'application/json', 'content-length': String(body.length) }
+          }));
+        }
+        return origFetch.apply(this, arguments);
+      };
+    }, mockBody);
 
     await abrirAbordagemPanel(page);
     await page.getByText('📨 Abordar').first().click();
     await page.waitForTimeout(2000);
-    // Modal must be open
     await expect(page.getByText('AGÊNCIA', { exact: true })).toBeVisible({ timeout: 5000 });
-    // The warning is driven by the actual agId state — no JS error thrown
+    // The warning logic runs without JS errors (agSel uses actual agId state, not AG[0] hardcoded)
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
     await page.waitForTimeout(1000);
