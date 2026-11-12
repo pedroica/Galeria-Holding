@@ -2,24 +2,69 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "outputDirectory": ".",
   "functions": {
-    "api/cron.js":       { "maxDuration": 60 },
-    "api/copiloto.js":   { "maxDuration": 55 },
-    "api/crm-backup.js": { "maxDuration": 60 }
+    "api/cron.js": {
+      "maxDuration": 60
+    },
+    "api/copiloto.js": {
+      "maxDuration": 55
+    },
+    "api/crm-backup.js": {
+      "maxDuration": 60
+    },
+    "api/enrich.js": {
+      "maxDuration": 60
+    }
   },
   "rewrites": [
-    { "source": "/c/:token", "destination": "/api/fila?token=:token" },
-    { "source": "/api/whatsapp", "destination": "/api/enrich?provider=whatsapp" },
-    { "source": "/api/gerar-fila", "destination": "/api/fila" },
-    { "source": "/api/gerar-credencial", "destination": "/api/fila?action=credencial" },
-    { "source": "/api/crawl", "destination": "/api/enrich?provider=crawl" },
-    { "source": "/api/claude", "destination": "/api/enrich?provider=claude" },
-    { "source": "/api/gaia-board", "destination": "/api/enrich?provider=gaia-board" }
+    {
+      "source": "/c/:token",
+      "destination": "/api/fila?token=:token"
+    },
+    {
+      "source": "/api/whatsapp",
+      "destination": "/api/enrich?provider=whatsapp"
+    },
+    {
+      "source": "/api/gerar-fila",
+      "destination": "/api/fila"
+    },
+    {
+      "source": "/api/gerar-credencial",
+      "destination": "/api/fila?action=credencial"
+    },
+    {
+      "source": "/api/crawl",
+      "destination": "/api/enrich?provider=crawl"
+    },
+    {
+      "source": "/api/claude",
+      "destination": "/api/enrich?provider=claude"
+    },
+    {
+      "source": "/api/gaia-board",
+      "destination": "/api/enrich?provider=gaia-board"
+    }
   ],
   "crons": [
-    { "path": "/api/cron?job=gerar-fila-diario",      "schedule": "30 9 * * 1-5" },
-    { "path": "/api/cron?job=enriquecimento-diario",   "schedule": "0 9 * * *"   },
-    { "path": "/api/cron?job=noticias-semanal",        "schedule": "30 8 * * 1-5" },
-    { "path": "/api/cron?job=fechamento-sexta",        "schedule": "0 20 * * 5"  },
-    { "path": "/api/crm-backup",                       "schedule": "0 2 * * *"   }
+    {
+      "path": "/api/cron?job=gerar-fila-diario",
+      "schedule": "30 9 * * 1-5"
+    },
+    {
+      "path": "/api/cron?job=enriquecimento-diario",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/cron?job=noticias-semanal",
+      "schedule": "30 8 * * 1-5"
+    },
+    {
+      "path": "/api/cron?job=fechamento-sexta",
+      "schedule": "0 20 * * 5"
+    },
+    {
+      "path": "/api/crm-backup",
+      "schedule": "0 2 * * *"
+    }
   ]
 }
