@@ -315,9 +315,19 @@ async function saveConversa(cId, userId, msgs, titulo) {
 }
 
 async function logCusto(cId, tokIn, tokOut) {
+  // crm_logs é (origem, nivel, mensagem, contexto) — os três primeiros NOT NULL.
+  // Antes gravávamos tipo/custo_usd/tokens_*, colunas que não existem: todo
+  // insert falhava e o .catch engolia, deixando o custo sem registro nenhum.
   const custo = (tokIn * 3 + tokOut * 15) / 1_000_000;
-  await supa('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tipo: 'copiloto', referencia_id: cId || null, custo_usd: custo, tokens_entrada: tokIn, tokens_saida: tokOut, payload: { modelo: 'claude-sonnet-4-6' } }) }).catch(() => {});
+  await supa('/rest/v1/crm_logs', {
+    method: 'POST', headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      origem: 'copiloto', nivel: 'info', mensagem: 'conversa respondida',
+      contexto: { conversa_id: cId || null, modelo: 'claude-sonnet-4-6', tokens_entrada: tokIn, tokens_saida: tokOut, custo_usd: custo }
+    })
+  }).catch(() => {});
 }
+
 
 // ─── Handler ─────────────────────────────────────────────────────────────────
 export const config = { maxDuration: 55 };
@@ -460,4 +470,128 @@ export default async function handler(req, res) {
     send({ t: 'error', msg: err.message || 'Erro interno no Copiloto' });
   }
   res.end();
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Canal WhatsApp
+//
+// Mesmo cérebro do Copiloto da tela, com três diferenças que o canal impõe:
+//   1. sem streaming — o WhatsApp recebe a resposta inteira de uma vez
+//   2. sem cartão de confirmação — no celular não existe UI para confirmar, então
+//      as ferramentas que criam ou movem registro ficam de fora (ver WA_BLOQUEADAS)
+//   3. resposta curta e com a formatação do WhatsApp (*negrito*, _itálico_)
+//
+// Usado por api/enrich.js no provider `whatsapp`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Ficam de fora do WhatsApp: gastam crédito, criam rascunho em lote ou alteram
+// pipeline sem a confirmação que só a tela oferece.
+const WA_BLOQUEADAS = ['gerar_fila', 'abordar', 'criar_oportunidade', 'mover_estagio', 'atribuir_dono'];
+
+const WA_TOOL_DEFS = TOOL_DEFS.filter(t => !WA_BLOQUEADAS.includes(t.name));
+
+function buildSystemWa() {
+  return buildSystem() + `
+
+## Você está no WhatsApp do Pedro
+- Responda curto: até 6 linhas, salvo quando ele pedir uma lista.
+- Formatação do WhatsApp: *negrito*, _itálico_. Nunca use #, ##, tabela ou bloco de código, porque não renderiza.
+- Lista longa: no máximo 10 itens, e ofereça mandar o resto.
+- Não existe cartão de confirmação aqui. Gerar fila, abordar e mexer em oportunidade só na tela do CRM; se ele pedir, diga isso em uma linha e ofereça o que dá para fazer por aqui.
+- registrar_resultado você executa direto quando ele contar o que aconteceu.`;
+}
+
+async function execToolWa(name, input) {
+  // registrar_resultado não está no execTool porque na tela ele passa pelo
+  // cartão de confirmação. No WhatsApp é a ação que mais faz sentido: o Pedro
+  // conta o que aconteceu na rua e o toque entra no banco na hora.
+  if (name === 'registrar_resultado') return toolRegistrarResultado(input);
+  return execTool(name, input);
+}
+
+/**
+ * Responde uma mensagem de WhatsApp.
+ * @param {{ texto: string, historico?: Array<{role:string,content:string}> }} args
+ * @returns {Promise<{ texto: string, historico: Array, tokIn: number, tokOut: number, ferramentas: string[] }>}
+ */
+export async function responderWhatsApp({ texto, historico = [] }) {
+  if (!ANTHROPIC_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
+
+  const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
+  const system = buildSystemWa();
+  const ferramentas = [];
+  let tokIn = 0, tokOut = 0;
+
+  // Histórico guardado é texto puro; o loop monta os blocos de tool por turno.
+  let apiMsgs = [
+    ...historico.filter(m => typeof m.content === 'string').map(m => ({ role: m.role, content: m.content })),
+    { role: 'user', content: texto },
+  ];
+
+  let chamadas = 0;
+  let resposta = '';
+
+  while (true) {
+    const msg = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1500,
+      system,
+      tools: WA_TOOL_DEFS,
+      messages: apiMsgs,
+    });
+    tokIn  += msg.usage?.input_tokens  || 0;
+    tokOut += msg.usage?.output_tokens || 0;
+
+    const textoTurno = (msg.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    if (textoTurno) resposta = textoTurno;
+
+    // Ferramenta de servidor (web_search) pode pausar o turno: devolvemos o
+    // turno do assistente e seguimos, senão a resposta volta pela metade.
+    if (msg.stop_reason === 'pause_turn') {
+      apiMsgs = [...apiMsgs, { role: 'assistant', content: msg.content }];
+      continue;
+    }
+
+    const usos = (msg.content || []).filter(b => b.type === 'tool_use');
+    if (msg.stop_reason !== 'tool_use' || !usos.length) break;
+
+    if (chamadas >= MAX_TOOL) {
+      resposta = (resposta ? resposta + '\n\n' : '') +
+        `_Parei em ${MAX_TOOL} consultas. Me faz uma pergunta mais específica que eu chego lá._`;
+      break;
+    }
+
+    const resultados = [];
+    for (const uso of usos) {
+      chamadas++;
+      ferramentas.push(uso.name);
+
+      if (uso.name === 'web_search') {
+        const bloco = (msg.content || []).find(b => b.type === 'tool_result' && b.tool_use_id === uso.id);
+        resultados.push({
+          type: 'tool_result',
+          tool_use_id: uso.id,
+          content: bloco ? (typeof bloco.content === 'string' ? bloco.content : JSON.stringify(bloco.content)) : '[]',
+        });
+        continue;
+      }
+
+      let out;
+      try { out = await execToolWa(uso.name, uso.input || {}); }
+      catch (e) { out = { erro: String(e.message || e) }; }
+      resultados.push({ type: 'tool_result', tool_use_id: uso.id, content: JSON.stringify(out) });
+    }
+
+    apiMsgs = [...apiMsgs, { role: 'assistant', content: msg.content }, { role: 'user', content: resultados }];
+  }
+
+  // Guardamos só texto: blocos de tool_use não sobrevivem entre invocações
+  // serverless e sujariam o histórico da próxima mensagem.
+  const novoHistorico = [
+    ...historico,
+    { role: 'user', content: texto },
+    { role: 'assistant', content: resposta || 'Não consegui formular resposta.' },
+  ];
+
+  return { texto: resposta, historico: novoHistorico, tokIn, tokOut, ferramentas };
 }

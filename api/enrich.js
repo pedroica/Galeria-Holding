@@ -1,7 +1,7 @@
 // Proxy unificado: Hunter.io, Lusha, Microsoft Graph e health check.
 // Consolida múltiplas integrações num único handler para respeitar
 // o limite de 12 Serverless Functions do plano Hobby da Vercel.
-import { randomBytes } from 'crypto';
+import { randomBytes, createHmac, timingSafeEqual } from 'crypto';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -15,6 +15,13 @@ const MS_TENANT_ID    = process.env.MS_TENANT_ID;
 const SUPA_URL        = 'https://uetltlnjmobeiunxfsqi.supabase.co';
 const SUPA_SVC        = process.env.SUPA_CRM_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SUPA_ANON       = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
+const WA_TOKEN        = process.env.WHATSAPP_CLOUD_TOKEN;
+const WA_PHONE_ID     = process.env.WHATSAPP_PHONE_NUMBER_ID;
+const WA_APP_SECRET   = process.env.WHATSAPP_APP_SECRET;
+const WA_VERIFY       = process.env.WHATSAPP_VERIFY_TOKEN;
+// Só estes números comandam o agente. Sem lista, ninguém é atendido.
+const WA_PERMITIDOS   = (process.env.WHATSAPP_ALLOWED_NUMBERS || '')
+  .split(/[,;\s]+/).map(function(n){ return n.replace(/\D/g, ''); }).filter(Boolean);
 
 // Carrega imagem de assinatura uma vez no cold start
 const __dir = dirname(fileURLToPath(import.meta.url));
@@ -240,7 +247,14 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       claude: !!ANTHROPIC_KEY, hunter: !!HUNTER_KEY, lusha: !!LUSHA_KEY,
-      graph: !!MS_CLIENT_ID, sig: !!SIG_B64
+      graph: !!MS_CLIENT_ID, sig: !!SIG_B64,
+      // Diagnóstico do agente de WhatsApp: só presença, nunca o valor.
+      whatsapp: {
+        token: !!WA_TOKEN, phone_id: !!WA_PHONE_ID, app_secret: !!WA_APP_SECRET,
+        verify_token: !!WA_VERIFY, numeros_permitidos: WA_PERMITIDOS.length,
+        supabase: !!SUPA_SVC,
+        pronto: !!(WA_TOKEN && WA_PHONE_ID && WA_APP_SECRET && WA_VERIFY && WA_PERMITIDOS.length && SUPA_SVC && ANTHROPIC_KEY)
+      }
     });
   }
 
@@ -783,17 +797,159 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(502).json({ error: String(e) }); }
   }
 
-  // ── provider: whatsapp — webhook stub Meta (preserva URL /api/whatsapp via rewrite) ──
+  // ── provider: whatsapp — agente conversacional (URL /api/whatsapp via rewrite) ──
+  //
+  // GET  → handshake de verificação da Meta
+  // POST → mensagem recebida: confere origem, responde com o Copiloto e envia
+  //
+  // Autenticação do POST. A Meta assina o corpo com HMAC sobre os BYTES CRUS,
+  // mas esta função compartilha o parser de corpo com os outros providers, que
+  // dependem de req.body já desserializado. Reserializar costuma reproduzir o
+  // original (a Meta manda JSON compacto e o V8 preserva a ordem das chaves),
+  // então essa é a checagem primária. Como ela pode falhar legitimamente, há
+  // um segundo fator: um segredo na própria URL do webhook (?s=...), que só a
+  // Meta conhece porque fomos nós que registramos a URL. Passar em qualquer um
+  // dos dois basta; falhar nos dois recusa a requisição.
   if (provider === 'whatsapp') {
     if (req.method === 'GET') {
       const mode = req.query['hub.mode'];
       const token = req.query['hub.verify_token'];
       const challenge = req.query['hub.challenge'];
-      if (mode === 'subscribe' && token === process.env.WHATSAPP_VERIFY_TOKEN) return res.status(200).send(challenge);
+      if (mode === 'subscribe' && WA_VERIFY && token === WA_VERIFY) return res.status(200).send(challenge);
       return res.status(403).json({ error: 'forbidden' });
     }
-    if (req.method === 'POST') return res.status(200).json({ ok: true });
-    return res.status(405).json({ error: 'method not allowed' });
+    if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
+
+    const faltando = [];
+    if (!WA_TOKEN)           faltando.push('WHATSAPP_CLOUD_TOKEN');
+    if (!WA_PHONE_ID)        faltando.push('WHATSAPP_PHONE_NUMBER_ID');
+    if (!WA_PERMITIDOS.length) faltando.push('WHATSAPP_ALLOWED_NUMBERS');
+    if (!SUPA_SVC)           faltando.push('SUPA_CRM_SERVICE_KEY');
+    if (!ANTHROPIC_KEY)      faltando.push('ANTHROPIC_API_KEY');
+    if (faltando.length) {
+      console.error('[wa] faltam variáveis:', faltando.join(', '));
+      return res.status(200).json({ ok: true, ignorado: 'config incompleta' });
+    }
+
+    const corpo = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+
+    function assinaturaConfere() {
+      if (!WA_APP_SECRET) return false;
+      const recebida = String(req.headers['x-hub-signature-256'] || '');
+      if (!recebida) return false;
+      const esperada = 'sha256=' + createHmac('sha256', WA_APP_SECRET).update(JSON.stringify(corpo)).digest('hex');
+      const a = Buffer.from(recebida), b = Buffer.from(esperada);
+      return a.length === b.length && timingSafeEqual(a, b);
+    }
+    function segredoDaUrlConfere() {
+      const esperado = process.env.WHATSAPP_URL_SECRET;
+      if (!esperado) return false;
+      const recebido = String(req.query.s || '');
+      const a = Buffer.from(recebido), b = Buffer.from(esperado);
+      return a.length === b.length && timingSafeEqual(a, b);
+    }
+    if (!assinaturaConfere() && !segredoDaUrlConfere()) {
+      console.warn('[wa] origem não confirmada — descartado');
+      return res.status(401).json({ error: 'unauthorized' });
+    }
+
+    // ── Extrai as mensagens de texto do payload ──────────────────────────────
+    const recebidas = [];
+    for (const entry of (corpo.entry || [])) {
+      for (const ch of (entry.changes || [])) {
+        for (const m of ((ch.value || {}).messages || [])) {
+          const t = m.type === 'text' ? ((m.text || {}).body || '')
+            : m.type === 'interactive' ? (((m.interactive || {}).button_reply || {}).title || ((m.interactive || {}).list_reply || {}).title || '')
+            : m.type === 'button' ? ((m.button || {}).text || '') : '';
+          recebidas.push({ id: String(m.id || ''), de: String(m.from || '').replace(/\D/g, ''), texto: t, tipo: m.type });
+        }
+      }
+    }
+    if (!recebidas.length) return res.status(200).json({ ok: true }); // status de entrega e afins
+
+    const cauda = function (n) { return n.slice(-11); };
+    async function enviarWa(para, texto) {
+      // A Cloud API corta em 4096 caracteres; cortamos antes, em parágrafo.
+      const partes = [];
+      let resto = String(texto || '').trim();
+      while (resto.length > 3800) {
+        let corte = resto.lastIndexOf('\n\n', 3800);
+        if (corte < 1900) corte = resto.lastIndexOf('\n', 3800);
+        if (corte < 1900) corte = resto.lastIndexOf(' ', 3800);
+        if (corte < 1900) corte = 3800;
+        partes.push(resto.slice(0, corte).trim());
+        resto = resto.slice(corte).trim();
+      }
+      if (resto) partes.push(resto);
+      for (const parte of partes) {
+        const r = await fetch('https://graph.facebook.com/v21.0/' + WA_PHONE_ID + '/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + WA_TOKEN },
+          body: JSON.stringify({ messaging_product: 'whatsapp', recipient_type: 'individual', to: para, type: 'text', text: { preview_url: false, body: parte } })
+        });
+        if (!r.ok) throw new Error('WhatsApp ' + r.status + ': ' + (await r.text()).slice(0, 200));
+      }
+    }
+
+    const { responderWhatsApp } = await import('./copiloto.js');
+
+    for (const msg of recebidas) {
+      try {
+        if (!msg.de || !WA_PERMITIDOS.some(function (p) { return p === msg.de || cauda(p) === cauda(msg.de); })) {
+          console.warn('[wa] número fora da allowlist');
+          continue; // silêncio: nem confirmamos que o número existe
+        }
+
+        // A Meta reentrega quando o 200 demora; sem isto o agente responde duas vezes.
+        const marcou = await supaReq('/rest/v1/crm_wa_inbox', {
+          method: 'POST', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({ wamid: msg.id })
+        }).then(function () { return true; }).catch(function (e) {
+          const txt = JSON.stringify(e || '');
+          if (/23505|duplicate key/i.test(txt)) return false;
+          throw e;
+        });
+        if (!marcou) continue;
+
+        if (!msg.texto) { await enviarWa(msg.de, 'Por enquanto eu só leio texto. Manda escrito que eu resolvo.'); continue; }
+
+        const sess = await supaReq('/rest/v1/crm_wa_sessoes?select=mensagens&telefone=eq.' + encodeURIComponent(msg.de))
+          .catch(function () { return []; });
+        const historico = (sess[0] && Array.isArray(sess[0].mensagens)) ? sess[0].mensagens : [];
+
+        // /novo zera a conversa sem precisar de botão.
+        if (/^\/(novo|limpar|reset)\b/i.test(msg.texto.trim())) {
+          await supaReq('/rest/v1/crm_wa_sessoes?on_conflict=telefone', {
+            method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+            body: JSON.stringify([{ telefone: msg.de, mensagens: [], atualizado_em: new Date().toISOString() }])
+          }).catch(function () {});
+          await enviarWa(msg.de, 'Conversa zerada. Pode mandar.');
+          continue;
+        }
+
+        const r = await responderWhatsApp({ texto: msg.texto, historico: historico.slice(-20) });
+
+        await supaReq('/rest/v1/crm_wa_sessoes?on_conflict=telefone', {
+          method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify([{ telefone: msg.de, mensagens: r.historico.slice(-20), atualizado_em: new Date().toISOString() }])
+        }).catch(function () {});
+
+        await enviarWa(msg.de, r.texto || 'Não consegui formular resposta. Tenta de novo?');
+
+        supaReq('/rest/v1/crm_logs', {
+          method: 'POST', headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            origem: 'whatsapp', nivel: 'info', mensagem: 'resposta enviada',
+            contexto: { ferramentas: r.ferramentas, modelo: 'claude-sonnet-4-6', tokens_entrada: r.tokIn, tokens_saida: r.tokOut, custo_usd: (r.tokIn * 3 + r.tokOut * 15) / 1000000 }
+          })
+        }).catch(function () {});
+      } catch (e) {
+        console.error('[wa] erro:', e && e.message);
+        try { await enviarWa(msg.de, 'Deu erro aqui do meu lado: ' + String(e && e.message).slice(0, 200)); } catch {}
+      }
+    }
+
+    return res.status(200).json({ ok: true });
   }
 
   // ── provider: gaia-board — board GAIA cifrado via KV ──────────────────────
