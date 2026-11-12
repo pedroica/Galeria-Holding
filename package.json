@@ -11,6 +11,7 @@
     "build": "echo 'Build OK'",
     "test": "cd agent && npm test",
     "test:crm": "node tests/crm-integration.test.mjs",
+    "test:cron": "node tests/cron-jobs.test.mjs",
     "test:e2e": "npx playwright test tests/lusha-e2e.playwright.mjs --reporter=list",
     "typecheck": "cd agent && npm run typecheck"
   },

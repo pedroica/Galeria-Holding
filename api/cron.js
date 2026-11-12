@@ -16,8 +16,14 @@ const BASE_URL = process.env.VERCEL_URL ? 'https://'+process.env.VERCEL_URL : 'h
 async function authCheck(req, res, job) {
   const auth = req.headers.authorization || '';
   const secret = (process.env.CRON_SECRET || '').trim();
-  if (secret && auth !== 'Bearer ' + secret) {
-    const hint = auth ? `bearer present, prefix=${auth.slice(0, 15)}` : 'no Authorization header';
+  // Falha fechado: sem CRON_SECRET configurado, só a service key passa.
+  // Antes, `if (secret && ...)` deixava o endpoint aberto a qualquer um quando
+  // a variável estava vazia — e este endpoint gasta créditos Lusha.
+  const aceitos = [secret, (SUPA_KEY || '').trim()].filter(Boolean).map(v => 'Bearer ' + v);
+  if (!aceitos.length || !aceitos.includes(auth)) {
+    const hint = !secret
+      ? 'CRON_SECRET ausente — configure a variável na Vercel'
+      : (auth ? `bearer present, prefix=${auth.slice(0, 15)}` : 'no Authorization header');
     try {
       await fetch(SUPA_URL+'/rest/v1/crm_logs', {
         method:'POST',
@@ -39,6 +45,10 @@ async function sp(path, body, method='POST') {
   const r = await fetch(SUPA_URL+'/rest/v1/'+path, { method, headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'return=minimal'}, body:JSON.stringify(body) });
   return r.ok;
 }
+// Um job que termina sem fazer nada não pode registrar 'info'.
+// Era por isso que 30 dias de no-op passaram como sucesso.
+function nivelTrabalho(unidades) { return unidades > 0 ? 'info' : 'aviso'; }
+
 async function logCron(job, nivel, mensagem, contexto) {
   try {
     await fetch(SUPA_URL+'/rest/v1/crm_logs', {
@@ -49,17 +59,51 @@ async function logCron(job, nivel, mensagem, contexto) {
   } catch(e) { console.error('[logCron]', e.message); }
 }
 
+// ── higiene da fila ──────────────────────────────────────────────────────────
+// Rascunho que envelhece sem aprovação tem data vencida e texto velho: não serve
+// mais para envio e ainda trava o gerar-fila-diario pelo pré-check de fila cheia.
+// Era esse o impasse: 22 execuções seguidas pularam por 'fila_cheia' enquanto os
+// mesmos 31 rascunhos apodreciam, e o texto era reescrito por LLM mais tarde.
+// Arquiva como 'pulado' (não apaga). Para reverter:
+//   UPDATE crm_fila SET status='rascunho', motivo_pulo=NULL
+//   WHERE motivo_pulo LIKE 'arquivado automaticamente%';
+const HIGIENE_MAX_POR_RODADA = 300;
+
+async function higienizarFila() {
+  const cfg = await sg('crm_configuracoes?chave=eq.higiene_fila_dias&select=valor&limit=1');
+  const dias = Array.isArray(cfg) && cfg[0]?.valor ? Number(cfg[0].valor) : 7;
+  const corte = new Date(Date.now() - dias*24*60*60*1000).toISOString();
+
+  const vencidos = await sg(
+    'crm_fila?status=eq.rascunho&apagado_em=is.null&gerado_em=lt.' + corte +
+    '&select=id&order=gerado_em.asc&limit=' + HIGIENE_MAX_POR_RODADA
+  );
+  const ids = (Array.isArray(vencidos) ? vencidos : []).map(r => r.id).filter(Boolean);
+  if (!ids.length) return { arquivados: 0, dias };
+
+  const ok = await sp(
+    'crm_fila?id=in.(' + ids.join(',') + ')',
+    { status: 'pulado', motivo_pulo: 'arquivado automaticamente: rascunho venceu sem aprovação (' + dias + ' dias)' },
+    'PATCH'
+  );
+  return { arquivados: ok ? ids.length : 0, dias, falhou: !ok };
+}
+
 // ── job: gerar-fila-diario ───────────────────────────────────────────────────
 async function jobGerarFila(req, res) {
   const inicio = Date.now();
   await logCron('gerar-fila-diario', 'info', 'início', null);
 
-  // Pré-check: menos de 30 rascunhos na fila
-  const rascRows = await sg('crm_fila?status=eq.rascunho&select=id&limit=31');
+  // Limpa os vencidos ANTES do pré-check, senão a fila nunca desafoga sozinha.
+  const higiene = await higienizarFila();
+
+  // Pré-check: menos de 30 rascunhos vivos na fila
+  const rascRows = await sg('crm_fila?status=eq.rascunho&apagado_em=is.null&select=id&limit=31');
   const qtdRascunhos = Array.isArray(rascRows) ? rascRows.length : 0;
   if (qtdRascunhos >= 30) {
-    const ctx = { motivo: 'fila_cheia', qtdRascunhos, ms: Date.now()-inicio };
-    await logCron('gerar-fila-diario', 'info', 'fim — pulado', ctx);
+    const ctx = { motivo: 'fila_cheia', qtdRascunhos, higiene, ms: Date.now()-inicio };
+    // 'aviso': fila cheia sem nada gerado é um problema a resolver, não um sucesso.
+    await logCron('gerar-fila-diario', 'aviso', 'fim — pulado', ctx);
     return res.status(200).json({ ok:true, pulado:true, ...ctx });
   }
 
@@ -75,7 +119,7 @@ async function jobGerarFila(req, res) {
     if (cnt >= 3) agElegiveis.add(key.split(':')[0]);
   }
   if (agElegiveis.size === 0) {
-    const ctx = { motivo: 'sem_agencias_elegiveis', qtdRascunhos, ms: Date.now()-inicio };
+    const ctx = { motivo: 'sem_agencias_elegiveis', qtdRascunhos, higiene, ms: Date.now()-inicio };
     await logCron('gerar-fila-diario', 'info', 'fim — pulado', ctx);
     return res.status(200).json({ ok:true, pulado:true, ...ctx });
   }
@@ -130,12 +174,49 @@ async function jobGerarFila(req, res) {
 
 // ── job: enriquecimento-diario ───────────────────────────────────────────────
 
-// Lusha V3: busca contatos por domínio/empresa
-async function lushaSearchV3(dominio, empresa_nome) {
-  if (!LUSHA_KEY) return [];
-  const target = dominio
-    ? { companies: { include: { domains: [dominio] } } }
-    : { companies: { include: { name: empresa_nome } } };
+// Preço real da Lusha (confirmado em /v3/account/usage): revealEmail = 1 crédito,
+// revealPhone = 5 créditos. O código antigo contabilizava 2 por contato — 3x menos
+// que o custo real de um reveal com e-mail + telefone.
+const CUSTO_EMAIL = 1;
+const CUSTO_TELEFONE = 5;
+const PISO_CREDITOS = 200; // abaixo disso o job para e avisa
+
+// crm_empresas tem três campos de web preenchidos de forma inconsistente
+// (dominio, website, site). O job antigo só olhava `dominio` e por isso
+// considerava "sem domínio" quase toda a base.
+function dominioDe(emp) {
+  const bruto = emp && (emp.dominio || emp.website || emp.site) || '';
+  if (!bruto) return null;
+  const limpo = String(bruto).trim()
+    .replace(/^https?:\/\//i, '')
+    .replace(/^www\./i, '')
+    .replace(/[\/?#].*$/, '')
+    .toLowerCase();
+  return limpo || null;
+}
+
+// Descobre o domínio pelo provider que já existe em api/enrich.js.
+// Ele grava crm_empresas.website sozinho e devolve { domain, source }.
+async function descobrirDominio(empresaId, nome) {
+  if (!nome) return null;
+  try {
+    const r = await fetch(BASE_URL + '/api/enrich?provider=lusha-domain', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company: nome, empresaId })
+    });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return d && d.domain ? d.domain : null;
+  } catch (_) { return null; }
+}
+
+// Lusha V3: busca contatos por domínio.
+// Só busca com domínio: o filtro por nome que havia aqui mandava
+// `companies.include.name` como string, formato que a API não aceita, e o
+// `if (!r.ok) return []` engolia o erro — era o caminho de ~88% das empresas.
+async function lushaSearchV3(dominio, falhas) {
+  if (!LUSHA_KEY || !dominio) return [];
   try {
     const r = await fetch('https://api.lusha.com/v3/contacts/prospecting', {
       method: 'POST',
@@ -143,113 +224,165 @@ async function lushaSearchV3(dominio, empresa_nome) {
       body: JSON.stringify({
         filters: {
           contacts: { include: { seniority: [9,10,8,6], departments: ['Marketing','General Management'] } },
-          ...target
+          companies: { include: { domains: [dominio] } }
         },
         pagination: { page: 0, size: 5 }
       })
     });
-    if (!r.ok) return [];
+    if (!r.ok) {
+      const corpo = await r.text().catch(() => '');
+      falhas.push({ etapa: 'search', dominio, status: r.status, corpo: corpo.slice(0, 200) });
+      return [];
+    }
     const d = await r.json();
     return Array.isArray(d.contacts) ? d.contacts : [];
-  } catch (_) { return []; }
+  } catch (e) {
+    falhas.push({ etapa: 'search', dominio, erro: e.message });
+    return [];
+  }
 }
 
-// Lusha V3: revela email/telefone de contatos (max 5 por chamada = 1 crédito revealEmail + revealPhone cada)
-async function lushaRevealV3(contacts) {
+// Telefone custa 5x o e-mail, então só é revelado onde vale: empresas 4-5 estrelas.
+async function lushaRevealV3(contacts, comTelefone, falhas) {
   if (!LUSHA_KEY || !contacts.length) return [];
+  const reveal = comTelefone ? ['emails', 'phones'] : ['emails'];
   try {
     const r = await fetch('https://api.lusha.com/v3/contacts/enrich', {
       method: 'POST',
       headers: { api_key: LUSHA_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contacts: contacts.slice(0, 2), reveal: ['emails', 'phones'] })
+      body: JSON.stringify({ contacts: contacts.slice(0, 2), reveal })
     });
-    if (!r.ok) return [];
+    if (!r.ok) {
+      const corpo = await r.text().catch(() => '');
+      falhas.push({ etapa: 'reveal', status: r.status, corpo: corpo.slice(0, 200) });
+      return [];
+    }
     const d = await r.json();
     return Array.isArray(d.results) ? d.results : [];
-  } catch (_) { return []; }
+  } catch (e) {
+    falhas.push({ etapa: 'reveal', erro: e.message });
+    return [];
+  }
 }
 
-// Lusha V3: créditos restantes
-async function lushaCreditsV3() {
+async function lushaCreditsV3(falhas) {
   if (!LUSHA_KEY) return null;
   try {
     const r = await fetch('https://api.lusha.com/v3/account/usage', { headers: { api_key: LUSHA_KEY } });
-    return r.ok ? r.json() : null;
-  } catch (_) { return null; }
+    if (!r.ok) {
+      const corpo = await r.text().catch(() => '');
+      if (falhas) falhas.push({ etapa: 'usage', status: r.status, corpo: corpo.slice(0, 200) });
+      return null;
+    }
+    return await r.json();
+  } catch (e) {
+    if (falhas) falhas.push({ etapa: 'usage', erro: e.message });
+    return null;
+  }
 }
 
 async function jobEnriquecimento(req, res) {
   const inicio = Date.now();
+  const falhas = [];
   await logCron('enriquecimento-diario', 'info', 'início', null);
   if (!LUSHA_KEY) {
-    await logCron('enriquecimento-diario', 'info', 'fim — pulado', { motivo: 'LUSHA_KEY_ausente' });
+    await logCron('enriquecimento-diario', 'aviso', 'fim — pulado', { motivo: 'LUSHA_KEY_ausente' });
     return res.status(200).json({ ok: true, pulado: true, motivo: 'LUSHA_KEY_ausente' });
   }
 
-  // Teto diário de crm_configuracoes (padrão 10)
+  // Saldo antes: sem isso o job gasta às cegas.
+  const saldoAntes = await lushaCreditsV3(falhas);
+  const creditosDisponiveis = saldoAntes?.credits?.remaining ?? saldoAntes?.credits?.balance ?? null;
+  if (creditosDisponiveis !== null && creditosDisponiveis < PISO_CREDITOS) {
+    const ctx = { motivo: 'creditos_baixos', creditos_restantes: creditosDisponiveis, piso: PISO_CREDITOS, ms: Date.now()-inicio };
+    await logCron('enriquecimento-diario', 'aviso', 'fim — pulado', ctx);
+    return res.status(200).json({ ok: true, pulado: true, ...ctx });
+  }
+
   const cfgRows = await sg('crm_configuracoes?chave=eq.enriquecimento_diario_max&select=valor&limit=1');
   const teto = Array.isArray(cfgRows) && cfgRows[0]?.valor ? Number(cfgRows[0].valor) : 10;
 
-  // Setores com mais reuniões no histórico → prioridade
   const kanbanReunioes = await sg('crm_kanban?col=eq.reuniao&select=empresa_id&limit=500');
   const reunioesPorEmpresa = {};
   for (const k of (Array.isArray(kanbanReunioes) ? kanbanReunioes : [])) {
     if (k.empresa_id) reunioesPorEmpresa[k.empresa_id] = (reunioesPorEmpresa[k.empresa_id] || 0) + 1;
   }
-  // Empresas com decisores sem email, ordenadas por prioridade
-  const semEmail = await sg('crm_decisores?email=is.null&select=id,nome,empresa_id,linkedin_url&order=ultimo_toque_em.desc.nullslast&limit=50');
+
+  // Candidatos: decisores ativos sem e-mail. O filtro apagado_em faltava.
+  const semEmail = await sg('crm_decisores?email=is.null&apagado_em=is.null&select=id,nome,empresa_id,linkedin_url&order=ultimo_toque_em.desc.nullslast&limit=50');
   const decisoresSemEmail = Array.isArray(semEmail) ? semEmail : [];
   if (decisoresSemEmail.length === 0) {
     const ctx = { revelados: 0, teto, motivo: 'nenhum_decisor_sem_email', ms: Date.now()-inicio };
-    await logCron('enriquecimento-diario', 'info', 'fim', ctx);
+    await logCron('enriquecimento-diario', 'aviso', 'fim', ctx);
     return res.status(200).json({ ok: true, ...ctx });
   }
 
-  // Buscar nomes das empresas
   const empIds = [...new Set(decisoresSemEmail.map(d => d.empresa_id).filter(Boolean))].slice(0, 50);
-  const empRows = empIds.length > 0 ? await sg(`crm_empresas?id=in.(${empIds.join(',')})&select=id,nome,dominio,setor&limit=50`) : [];
-  const empMap  = {};
+  const empRows = empIds.length > 0
+    ? await sg(`crm_empresas?id=in.(${empIds.join(',')})&select=id,nome,dominio,website,site,setor&limit=50`)
+    : [];
+  const empMap = {};
   for (const e of (Array.isArray(empRows) ? empRows : [])) empMap[e.id] = e;
 
-  // Ordenar: empresas com mais reuniões no histórico primeiro
+  // Estrelas por empresa: decide se vale gastar 5 créditos em telefone.
+  const estrelasRows = empIds.length > 0
+    ? await sg(`crm_empresa_agencia_estrelas?empresa_id=in.(${empIds.join(',')})&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=500`)
+    : [];
+  const estrelasPorEmpresa = {};
+  for (const r of (Array.isArray(estrelasRows) ? estrelasRows : [])) {
+    const v = Number(r.estrelas_manual ?? r.estrelas_calculadas ?? 0) || 0;
+    if (v > (estrelasPorEmpresa[r.empresa_id] || 0)) estrelasPorEmpresa[r.empresa_id] = v;
+  }
+
   decisoresSemEmail.sort((a, b) => {
     const ra = reunioesPorEmpresa[a.empresa_id] || 0;
     const rb = reunioesPorEmpresa[b.empresa_id] || 0;
-    return rb - ra;
+    if (rb !== ra) return rb - ra;
+    return (estrelasPorEmpresa[b.empresa_id] || 0) - (estrelasPorEmpresa[a.empresa_id] || 0);
   });
 
   let revelados = 0;
   let creditosUsados = 0;
+  let dominiosDescobertos = 0;
+  let empresasTentadas = 0;
+  let semDominio = 0;
   const reveladosPorEmpresa = {};
-  const LIMITE_MS = 45000; // para com 45s para deixar margem para logs
+  const empresasVistas = new Set();
+  const LIMITE_MS = 45000;
 
   for (const dec of decisoresSemEmail) {
     if (revelados >= teto) break;
     if (Date.now() - inicio > LIMITE_MS) break;
-
-    // Máximo 2 revelações por empresa
-    const empRev = reveladosPorEmpresa[dec.empresa_id] || 0;
-    if (empRev >= 2) continue;
+    if ((reveladosPorEmpresa[dec.empresa_id] || 0) >= 2) continue;
 
     const emp = empMap[dec.empresa_id] || {};
-    const dominio = emp.dominio || null;
+    let dominio = dominioDe(emp);
 
-    // Buscar contato no Lusha V3
-    const contacts = await lushaSearchV3(dominio, emp.nome || '');
+    // Sem domínio o search não funciona. Descobre antes em vez de desistir calado.
+    if (!dominio && emp.nome) {
+      dominio = await descobrirDominio(dec.empresa_id, emp.nome);
+      if (dominio) { dominiosDescobertos++; emp.website = 'https://' + dominio; }
+      await new Promise(r => setTimeout(r, 200));
+    }
+    if (!dominio) { semDominio++; continue; }
+
+    if (!empresasVistas.has(dec.empresa_id)) { empresasVistas.add(dec.empresa_id); empresasTentadas++; }
+
+    const contacts = await lushaSearchV3(dominio, falhas);
     await new Promise(r => setTimeout(r, 200));
-
     if (!contacts.length) continue;
 
-    // Revelar email/telefone
-    const results = await lushaRevealV3(contacts);
+    const comTelefone = (estrelasPorEmpresa[dec.empresa_id] || 0) >= 4;
+    const results = await lushaRevealV3(contacts, comTelefone, falhas);
     await new Promise(r => setTimeout(r, 200));
-    creditosUsados += results.length * 2;
 
     for (const result of results) {
       const email = result.email || result.emailAddresses?.[0]?.emailAddress || null;
       const tel   = result.phoneNumber || result.phoneNumbers?.[0]?.internationalNumber || null;
       const linkedinUrl = result.linkedin_url || result.linkedinUrl || null;
 
+      if (email) creditosUsados += CUSTO_EMAIL;
+      if (tel)   creditosUsados += CUSTO_TELEFONE;
       if (!email && !tel) continue;
 
       const nomeCompleto = [result.firstName, result.lastName].filter(Boolean).join(' ');
@@ -264,22 +397,28 @@ async function jobEnriquecimento(req, res) {
       if (tel)   patch.wa   = tel;
       if (linkedinUrl && !decCorrespondente.linkedin_url) patch.linkedin_url = linkedinUrl;
 
-      await sp('crm_decisores?id=eq.' + decCorrespondente.id, patch, 'PATCH');
+      const gravou = await sp('crm_decisores?id=eq.' + decCorrespondente.id, patch, 'PATCH');
+      if (!gravou) { falhas.push({ etapa: 'patch_decisor', decisor_id: decCorrespondente.id }); continue; }
       revelados++;
-      reveladosPorEmpresa[dec.empresa_id] = empRev + 1;
+      reveladosPorEmpresa[dec.empresa_id] = (reveladosPorEmpresa[dec.empresa_id] || 0) + 1;
       if (revelados >= teto) break;
     }
   }
 
-  const creditosInfo = await lushaCreditsV3();
+  const saldoDepois = await lushaCreditsV3(falhas);
   const ctx_enrich = {
-    revelados, teto, creditos_usados: creditosUsados,
-    creditos_restantes: creditosInfo?.credits?.balance ?? null,
-    empresas_tentadas: Object.keys(reveladosPorEmpresa).length,
+    revelados, teto,
+    creditos_usados: creditosUsados,
+    creditos_restantes: saldoDepois?.credits?.remaining ?? saldoDepois?.credits?.balance ?? null,
+    empresas_tentadas: empresasTentadas,
+    dominios_descobertos: dominiosDescobertos,
+    sem_dominio: semDominio,
+    falhas: falhas.slice(0, 10),
     ms: Date.now()-inicio
   };
-  console.log('[cron:enriquecimento-diario]', revelados, 'revelações,', creditosUsados, 'créditos usados');
-  await logCron('enriquecimento-diario', 'info', 'fim', ctx_enrich);
+  console.log('[cron:enriquecimento-diario]', revelados, 'revelações,', creditosUsados, 'créditos');
+  // 'aviso' quando não revelou nada: um no-op deixa de parecer sucesso.
+  await logCron('enriquecimento-diario', nivelTrabalho(revelados), 'fim', ctx_enrich);
   return res.status(200).json({ ok: true, ...ctx_enrich });
 }
 
@@ -309,6 +448,19 @@ async function jobNoticias(req, res) {
   const inicio = Date.now();
   await logCron('noticias-semanal', 'info', 'início', null);
 
+  // O cron dispara de segunda a sexta, mas este job é semanal. Sem esta guarda
+  // ele rodava 5x por semana sobre as mesmas 20 empresas, e era isso que gerava
+  // a duplicata em massa em crm_noticias.
+  const jaRodou = await sg(
+    'crm_logs?origem=eq.cron:noticias-semanal&mensagem=eq.fim&criado_em=gte.' +
+    inicioSemanaISO() + '&select=id&limit=1'
+  );
+  if (Array.isArray(jaRodou) && jaRodou.length > 0) {
+    const ctx = { motivo: 'ja_rodou_esta_semana', ms: Date.now()-inicio };
+    await logCron('noticias-semanal', 'info', 'fim — pulado', ctx);
+    return res.status(200).json({ ok: true, pulado: true, ...ctx });
+  }
+
   // Todas as empresas com ≥3 estrelas
   const scoreRows = await sg('crm_empresa_agencia_estrelas?or=(estrelas_manual.gte.3,estrelas_calculadas.gte.3)&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=1000');
   const empMap = {};
@@ -326,9 +478,11 @@ async function jobNoticias(req, res) {
   const filaRows = await sg(`crm_fila?gerado_em=gte.${inicioSemanaISO()}&select=empresa_id&limit=500`);
   const filaSet = new Set((Array.isArray(filaRows)?filaRows:[]).map(r=>r.empresa_id).filter(Boolean));
 
-  // Já processadas nos últimos 7 dias → excluir da rotação
-  const cutoff7d = new Date(Date.now()-7*86400000).toISOString();
-  const recentRows = await sg(`crm_noticias?criado_em=gte.${cutoff7d}&select=empresa_id&limit=1000`);
+  // Já processadas recentemente → excluir da rotação.
+  // Eram 7 dias: com 2.287 empresas na base e 20 por rodada, a janela curta
+  // fazia as mesmas empresas voltarem sempre e o resto nunca ser coberto.
+  const cutoffRotacao = new Date(Date.now()-30*86400000).toISOString();
+  const recentRows = await sg(`crm_noticias?criado_em=gte.${cutoffRotacao}&select=empresa_id&limit=2000`);
   const recentSet = new Set((Array.isArray(recentRows)?recentRows:[]).map(r=>r.empresa_id).filter(Boolean));
 
   // Lista priorizada: fila da semana primeiro, depois rotação geral
@@ -347,19 +501,37 @@ async function jobNoticias(req, res) {
   const empresas = Array.isArray(empresaRows) ? empresaRows : [];
 
   const LIMITE_NOTICIAS_MS = 45000;
+  // URLs que a empresa já tem: o insert não tinha dedupe nenhum.
+  const urlsExistentes = new Set();
+  if (selecionados.length) {
+    const jaTem = await sg(`crm_noticias?empresa_id=in.(${selecionados.join(',')})&select=empresa_id,url&limit=2000`);
+    for (const r of (Array.isArray(jaTem)?jaTem:[])) if (r.url) urlsExistentes.add(r.empresa_id + '|' + r.url);
+  }
+
   let inseridas = 0;
+  let duplicadas = 0;
   for (const emp of empresas) {
     if (Date.now() - inicio > LIMITE_NOTICIAS_MS) break;
     const noticias = await buscarNoticias(emp);
     for (const n of noticias) {
-      const ok = await sp('crm_noticias', {empresa_id:emp.id,titulo:n.titulo.slice(0,500),url:n.url||null,fonte:n.fonte||'Google News',data:n.publicado_em?new Date(n.publicado_em).toISOString():null});
-      if(ok)inseridas++;
+      const chave = emp.id + '|' + (n.url || '');
+      if (n.url && urlsExistentes.has(chave)) { duplicadas++; continue; }
+      const ok = await sp('crm_noticias', {
+        empresa_id: emp.id,
+        titulo: n.titulo.slice(0,500),
+        url: n.url || null,
+        fonte: n.fonte || 'Google News',
+        data: n.publicado_em ? new Date(n.publicado_em).toISOString() : null,
+        // explícito: a exclusão da rotação filtra por criado_em e dependia de um default
+        criado_em: new Date().toISOString()
+      });
+      if (ok) { inseridas++; if (n.url) urlsExistentes.add(chave); }
     }
   }
-  const ctx_noticias = {inseridas, empresas:empresas.length, faltam, ms:Date.now()-inicio};
+  const ctx_noticias = {inseridas, duplicadas_evitadas:duplicadas, empresas:empresas.length, faltam, ms:Date.now()-inicio};
   console.log('[cron:noticias-semanal]', inseridas, 'notícias,', empresas.length, 'empresas,', faltam, 'faltam');
-  await logCron('noticias-semanal', 'info', 'fim', ctx_noticias);
-  return res.status(200).json({ok:true, processadas:empresas.length, inseridas, faltam});
+  await logCron('noticias-semanal', nivelTrabalho(inseridas), 'fim', ctx_noticias);
+  return res.status(200).json({ok:true, processadas:empresas.length, ...ctx_noticias});
 }
 
 // ── job: fechamento-sexta ────────────────────────────────────────────────────
@@ -518,11 +690,16 @@ export default async function handler(req, res) {
   const { job } = req.query;
   if (!await authCheck(req, res, job)) return;
   try {
+    if (job === 'higiene-fila') {
+      const h = await higienizarFila();
+      await logCron('higiene-fila', nivelTrabalho(h.arquivados), 'fim', h);
+      return res.status(200).json({ ok: true, ...h });
+    }
     if (job === 'gerar-fila-diario')     return await jobGerarFila(req, res);
     if (job === 'enriquecimento-diario') return await jobEnriquecimento(req, res);
     if (job === 'noticias-semanal')      return await jobNoticias(req, res);
     if (job === 'fechamento-sexta')      return await jobFechamento(req, res);
-    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta' });
+    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta, higiene-fila' });
   } catch(e) {
     console.error('[cron:'+job+']', e.message);
     try { await logCron(job||'unknown', 'error', 'erro: '+e.message, null); } catch(_) {}
