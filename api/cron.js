@@ -767,6 +767,100 @@ async function jobRascunhosMatinais(req, res) {
   return res.status(200).json({ ok: true, ...ctx });
 }
 
+// ── job: oportunidades-paradas ───────────────────────────────────────────────
+// 109 de 109 oportunidades estavam paradas há mais de 14 dias sem nenhum evento,
+// 21 delas no fundo do funil. Ninguém era avisado porque nada olhava para isso.
+// O agente marca a oportunidade parada com um evento 'pedido_atualizacao' — tipo
+// que já existe e já é usado na tela — e resume no log.
+// NÃO reescreve proximo_passo: aquele texto é do Pedro.
+const ESTAGIOS_FORA = ['Perdido', 'Cliente ativo', 'Wishlist'];
+
+async function jobOportunidadesParadas(req, res) {
+  const inicio = Date.now();
+  await logCron('oportunidades-paradas', 'info', 'início', null);
+
+  const cfg = await sg('crm_configuracoes?chave=eq.oportunidade_parada_dias&select=valor&limit=1');
+  const dias = Array.isArray(cfg) && cfg[0]?.valor ? Number(cfg[0].valor) : 14;
+  const corte = Date.now() - dias*24*60*60*1000;
+
+  const opps = await sg('crm_oportunidades?apagado_em=is.null&select=id,titulo,estagio,empresa_id,valor_estimado,proximo_passo,proximo_passo_em,aberta_em&limit=500');
+  const ativas = (Array.isArray(opps) ? opps : []).filter(o => !ESTAGIOS_FORA.includes(o.estagio));
+  if (!ativas.length) {
+    const ctx = { marcadas: 0, motivo: 'nenhuma_oportunidade_ativa', ms: Date.now()-inicio };
+    await logCron('oportunidades-paradas', 'aviso', 'fim', ctx);
+    return res.status(200).json({ ok: true, ...ctx });
+  }
+
+  // Último evento por oportunidade + quando foi o último pedido de atualização.
+  const eventos = await sg('crm_oportunidade_eventos?apagado_em=is.null&select=oportunidade_id,tipo,criado_em&order=criado_em.desc&limit=5000');
+  const ultimoEvento = {};
+  const ultimoPedido = {};
+  for (const e of (Array.isArray(eventos) ? eventos : [])) {
+    const t = new Date(e.criado_em).getTime();
+    if (!ultimoEvento[e.oportunidade_id] || t > ultimoEvento[e.oportunidade_id]) ultimoEvento[e.oportunidade_id] = t;
+    if (e.tipo === 'pedido_atualizacao') {
+      if (!ultimoPedido[e.oportunidade_id] || t > ultimoPedido[e.oportunidade_id]) ultimoPedido[e.oportunidade_id] = t;
+    }
+  }
+
+  const agora = Date.now();
+  const paradas = [];
+  for (const o of ativas) {
+    const ultima = ultimoEvento[o.id] || new Date(o.aberta_em || 0).getTime();
+    if (ultima > corte) continue;
+    // Não cobra de novo quem já foi cobrado dentro da janela.
+    if (ultimoPedido[o.id] && ultimoPedido[o.id] > corte) continue;
+    paradas.push({ ...o, diasParado: Math.floor((agora - ultima) / 86400000), semEvento: !ultimoEvento[o.id] });
+  }
+
+  // Fundo do funil primeiro, depois valor.
+  const PESO = { 'Negociação': 5, 'Negociando direto': 4, 'Concorrências': 3, 'Primeira reunião': 2, 'Contato direto': 1 };
+  paradas.sort((a, b) => {
+    const pa = PESO[a.estagio] || 0, pb = PESO[b.estagio] || 0;
+    if (pb !== pa) return pb - pa;
+    return (Number(b.valor_estimado) || 0) - (Number(a.valor_estimado) || 0);
+  });
+
+  let marcadas = 0;
+  const falhas = [];
+  const porEstagio = {};
+  const LIMITE_MS = 45000;
+  for (const o of paradas) {
+    if (Date.now() - inicio > LIMITE_MS) break;
+    const passoVencido = o.proximo_passo_em && new Date(o.proximo_passo_em).getTime() < agora;
+    const texto = [
+      `Parada há ${o.diasParado} dias em "${o.estagio}".`,
+      o.semEvento ? 'Nunca teve evento registrado.' : null,
+      passoVencido ? `Próximo passo venceu em ${o.proximo_passo_em}: ${o.proximo_passo || '(sem descrição)'}.` : null,
+      !o.proximo_passo ? 'Sem próximo passo definido.' : null,
+      'Atualize o estágio ou registre o que aconteceu.'
+    ].filter(Boolean).join(' ');
+
+    const ok = await sp('crm_oportunidade_eventos', {
+      oportunidade_id: o.id,
+      tipo: 'pedido_atualizacao',
+      texto: texto.slice(0, 1000),
+      autor_email: 'cron@galeriaholding.co',
+      criado_em: new Date().toISOString()
+    });
+    if (!ok) { falhas.push({ oportunidade_id: o.id }); continue; }
+    marcadas++;
+    porEstagio[o.estagio] = (porEstagio[o.estagio] || 0) + 1;
+  }
+
+  const ctx = {
+    marcadas, paradas: paradas.length, ativas: ativas.length, dias,
+    por_estagio: porEstagio,
+    fundo_funil: paradas.filter(o => (PESO[o.estagio] || 0) >= 3).length,
+    sem_evento: paradas.filter(o => o.semEvento).length,
+    falhas: falhas.slice(0, 10),
+    ms: Date.now()-inicio
+  };
+  console.log('[cron:oportunidades-paradas]', marcadas, 'marcadas de', paradas.length, 'paradas');
+  await logCron('oportunidades-paradas', nivelTrabalho(paradas.length), 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
 // ── handler principal ─────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   const { job } = req.query;
@@ -778,11 +872,12 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, ...h });
     }
     if (job === 'rascunhos-matinais')    return await jobRascunhosMatinais(req, res);
+    if (job === 'oportunidades-paradas') return await jobOportunidadesParadas(req, res);
     if (job === 'gerar-fila-diario')     return await jobGerarFila(req, res);
     if (job === 'enriquecimento-diario') return await jobEnriquecimento(req, res);
     if (job === 'noticias-semanal')      return await jobNoticias(req, res);
     if (job === 'fechamento-sexta')      return await jobFechamento(req, res);
-    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta, higiene-fila, rascunhos-matinais' });
+    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta, higiene-fila, rascunhos-matinais, oportunidades-paradas' });
   } catch(e) {
     console.error('[cron:'+job+']', e.message);
     try { await logCron(job||'unknown', 'error', 'erro: '+e.message, null); } catch(_) {}

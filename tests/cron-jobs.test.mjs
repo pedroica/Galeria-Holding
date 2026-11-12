@@ -205,5 +205,40 @@ const logM = CHAMADAS.filter(c => c.url.includes('crm_logs') && c.body?.mensagem
 ok(logM?.body?.nivel === 'aviso', '0 rascunhos criados registra aviso, não info');
 globalThis.__draftFalha = false;
 
+// ── T11 · oportunidades paradas ────────────────────────────────────────────
+console.log('\nT11 — oportunidades paradas');
+const dias = n => new Date(Date.now() - n*86400000).toISOString();
+const opps = [
+  { id: 'o1', titulo: 'Deal quente',  estagio: 'Negociação',       valor_estimado: 500000, aberta_em: dias(90), proximo_passo: 'Enviar proposta', proximo_passo_em: dias(20).slice(0,10) },
+  { id: 'o2', titulo: 'Topo',         estagio: 'Contato direto',   valor_estimado: 1000,   aberta_em: dias(90), proximo_passo: null },
+  { id: 'o3', titulo: 'Recente',      estagio: 'Negociação',       valor_estimado: 9000,   aberta_em: dias(90) },
+  { id: 'o4', titulo: 'Ja cobrada',   estagio: 'Concorrências',    valor_estimado: 9000,   aberta_em: dias(90) },
+  { id: 'o5', titulo: 'Cliente',      estagio: 'Cliente ativo',    valor_estimado: 999,    aberta_em: dias(90) },
+  { id: 'o6', titulo: 'Perdida',      estagio: 'Perdido',          valor_estimado: 999,    aberta_em: dias(90) },
+  { id: 'o7', titulo: 'Lista',        estagio: 'Wishlist',         valor_estimado: 999,    aberta_em: dias(90) }
+];
+TABELAS = { __escritas: [],
+  crm_configuracoes: () => [{ valor: '14' }],
+  crm_oportunidades: () => opps,
+  crm_oportunidade_eventos: () => [
+    { oportunidade_id: 'o3', tipo: 'estagio', criado_em: dias(2) },
+    { oportunidade_id: 'o4', tipo: 'pedido_atualizacao', criado_em: dias(3) }
+  ] };
+CHAMADAS = [];
+r = await run('oportunidades-paradas', 'Bearer service-key-fake');
+const marc = esc().filter(e => e.tabela === 'crm_oportunidade_eventos' && e.method === 'POST');
+const ids = marc.map(e => e.body.oportunidade_id);
+ok(!ids.includes('o3'), 'ignora quem teve evento há 2 dias');
+ok(!ids.includes('o4'), 'não cobra de novo quem já foi cobrado dentro da janela');
+ok(!ids.some(i => ['o5','o6','o7'].includes(i)), 'ignora Cliente ativo, Perdido e Wishlist');
+ok(ids.includes('o1') && ids.includes('o2'), 'marca as realmente paradas');
+ok(ids[0] === 'o1', 'fundo do funil primeiro (Negociação antes de Contato direto)');
+ok(marc[0]?.body?.tipo === 'pedido_atualizacao', 'usa o tipo de evento que já existe no sistema');
+ok(/Parada há \d+ dias em "Negociação"/.test(marc[0]?.body?.texto || ''), 'texto diz há quanto tempo e em que estágio');
+ok(/Próximo passo venceu/.test(marc[0]?.body?.texto || ''), 'aponta o próximo passo vencido');
+ok(/Sem próximo passo definido/.test(marc.find(e => e.body.oportunidade_id === 'o2')?.body?.texto || ''), 'sinaliza quem não tem próximo passo');
+ok(!esc().some(e => e.tabela === 'crm_oportunidades' && e.method === 'PATCH'), 'NÃO reescreve proximo_passo — o texto é do Pedro');
+ok(r.payload?.fundo_funil === 1, `conta quantas estão no fundo do funil (${r.payload?.fundo_funil})`);
+
 console.log(`\n${pass} passaram, ${fail} falharam`);
 process.exit(fail ? 1 : 0);
