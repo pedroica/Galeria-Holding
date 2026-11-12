@@ -68,6 +68,9 @@ async function logCron(job, nivel, mensagem, contexto) {
 //   UPDATE crm_fila SET status='rascunho', motivo_pulo=NULL
 //   WHERE motivo_pulo LIKE 'arquivado automaticamente%';
 const HIGIENE_MAX_POR_RODADA = 300;
+// uuid tem 36 chars; `id=in.(...)` com 300 deles gera ~11KB de URL e o gateway
+// corta em 8KB (414). Vai em lotes de 80 (~3KB), que passa com folga.
+const HIGIENE_LOTE = 80;
 
 async function higienizarFila() {
   const cfg = await sg('crm_configuracoes?chave=eq.higiene_fila_dias&select=valor&limit=1');
@@ -81,12 +84,19 @@ async function higienizarFila() {
   const ids = (Array.isArray(vencidos) ? vencidos : []).map(r => r.id).filter(Boolean);
   if (!ids.length) return { arquivados: 0, dias };
 
-  const ok = await sp(
-    'crm_fila?id=in.(' + ids.join(',') + ')',
-    { status: 'pulado', motivo_pulo: 'arquivado automaticamente: rascunho venceu sem aprovação (' + dias + ' dias)' },
-    'PATCH'
-  );
-  return { arquivados: ok ? ids.length : 0, dias, falhou: !ok };
+  const motivo = 'arquivado automaticamente: rascunho venceu sem aprovação (' + dias + ' dias)';
+  let arquivados = 0;
+  let lotesFalhos = 0;
+  for (let i = 0; i < ids.length; i += HIGIENE_LOTE) {
+    const lote = ids.slice(i, i + HIGIENE_LOTE);
+    const ok = await sp(
+      'crm_fila?id=in.(' + lote.join(',') + ')',
+      { status: 'pulado', motivo_pulo: motivo },
+      'PATCH'
+    );
+    if (ok) arquivados += lote.length; else lotesFalhos++;
+  }
+  return { arquivados, dias, lotes: Math.ceil(ids.length / HIGIENE_LOTE), lotes_falhos: lotesFalhos };
 }
 
 // ── job: gerar-fila-diario ───────────────────────────────────────────────────
@@ -451,11 +461,16 @@ async function jobNoticias(req, res) {
   // O cron dispara de segunda a sexta, mas este job é semanal. Sem esta guarda
   // ele rodava 5x por semana sobre as mesmas 20 empresas, e era isso que gerava
   // a duplicata em massa em crm_noticias.
-  const jaRodou = await sg(
+  // Só conta como "já rodou" a execução que de fato inseriu alguma notícia.
+  // Senão uma rodada estéril (Google News fora do ar, timeout de 4s) trancaria
+  // o job pelo resto da semana.
+  const rodadas = await sg(
     'crm_logs?origem=eq.cron:noticias-semanal&mensagem=eq.fim&criado_em=gte.' +
-    inicioSemanaISO() + '&select=id&limit=1'
+    inicioSemanaISO() + '&select=contexto&limit=20'
   );
-  if (Array.isArray(jaRodou) && jaRodou.length > 0) {
+  const jaRodou = (Array.isArray(rodadas) ? rodadas : [])
+    .filter(l => Number(l?.contexto?.inseridas || 0) > 0);
+  if (jaRodou.length > 0) {
     const ctx = { motivo: 'ja_rodou_esta_semana', ms: Date.now()-inicio };
     await logCron('noticias-semanal', 'info', 'fim — pulado', ctx);
     return res.status(200).json({ ok: true, pulado: true, ...ctx });
@@ -857,7 +872,9 @@ async function jobOportunidadesParadas(req, res) {
     ms: Date.now()-inicio
   };
   console.log('[cron:oportunidades-paradas]', marcadas, 'marcadas de', paradas.length, 'paradas');
-  await logCron('oportunidades-paradas', nivelTrabalho(paradas.length), 'fim', ctx);
+  // nivelTrabalho sobre `marcadas`, não sobre `paradas`: se nenhum evento foi
+  // gravado o job não fez trabalho nenhum, por mais que tenha detectado muita coisa.
+  await logCron('oportunidades-paradas', nivelTrabalho(marcadas), 'fim', ctx);
   return res.status(200).json({ ok: true, ...ctx });
 }
 

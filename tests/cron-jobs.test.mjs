@@ -49,6 +49,7 @@ globalThis.fetch = async (url, opts = {}) => {
     const [, tabela, query] = m;
     if ((opts.method || 'GET') === 'GET') return json(TABELAS[tabela] ? TABELAS[tabela](query) : []);
     (TABELAS.__escritas ||= []).push({ tabela, query, method: opts.method, body });
+    if (globalThis.__falhaEscrita && tabela === 'crm_oportunidade_eventos') return json({}, false, 403);
     return json({}, true, 204);
   }
   return json({}, false, 404);
@@ -147,9 +148,9 @@ ok(logFim?.body?.nivel === 'aviso', 'registra nivel=aviso quando não fez trabal
 
 // ── T7 · notícias: guarda semanal e dedupe por URL ─────────────────────────
 console.log('\nT7 — notícias');
-TABELAS = { __escritas: [], crm_logs: () => [{ id: 'l1' }] };
+TABELAS = { __escritas: [], crm_logs: () => [{ contexto: { inseridas: 12 } }] };
 r = await run('noticias-semanal', 'Bearer service-key-fake');
-ok(r.payload?.motivo === 'ja_rodou_esta_semana', 'não roda 2x na mesma semana');
+ok(r.payload?.motivo === 'ja_rodou_esta_semana', 'não roda 2x na mesma semana depois de uma rodada produtiva');
 
 TABELAS = { __escritas: [],
   crm_logs: () => [],
@@ -239,6 +240,47 @@ ok(/Próximo passo venceu/.test(marc[0]?.body?.texto || ''), 'aponta o próximo 
 ok(/Sem próximo passo definido/.test(marc.find(e => e.body.oportunidade_id === 'o2')?.body?.texto || ''), 'sinaliza quem não tem próximo passo');
 ok(!esc().some(e => e.tabela === 'crm_oportunidades' && e.method === 'PATCH'), 'NÃO reescreve proximo_passo — o texto é do Pedro');
 ok(r.payload?.fundo_funil === 1, `conta quantas estão no fundo do funil (${r.payload?.fundo_funil})`);
+
+// ── T12 · regressões achadas na revisão do diff ────────────────────────────
+console.log('\nT12 — higiene fatia o PATCH em lotes (URL de 11KB estourava o gateway)');
+TABELAS = { __escritas: [],
+  crm_configuracoes: () => [{ valor: '7' }],
+  crm_fila: q => q.includes('gerado_em=lt.')
+    ? Array.from({ length: 200 }, (_, i) => ({ id: '550e8400-e29b-41d4-a716-' + String(i).padStart(12, '0') }))
+    : [] };
+r = await run('higiene-fila', 'Bearer service-key-fake');
+const patches = esc().filter(e => e.tabela === 'crm_fila' && e.method === 'PATCH');
+ok(patches.length === 3, `200 ids viram 3 lotes de no máximo 80 (${patches.length})`);
+ok(r.payload?.arquivados === 200, `soma todos os lotes (${r.payload?.arquivados})`);
+const maiorUrl = Math.max(...patches.map(e => e.query.length));
+ok(maiorUrl < 8192, `maior URL tem ${maiorUrl} chars, abaixo do limite de 8192 do gateway`);
+ok(patches.every(e => (e.query.match(/,/g) || []).length < 80), 'nenhum lote passa de 80 ids');
+
+console.log('\nT13 — rodada estéril de notícias não tranca a semana');
+TABELAS = { __escritas: [],
+  crm_logs: () => [{ contexto: { inseridas: 0 } }],
+  crm_empresa_agencia_estrelas: () => [{ empresa_id: 'e1', estrelas_manual: 5 }],
+  crm_fila: () => [],
+  crm_noticias: () => [],
+  crm_empresas: () => [{ id: 'e1', nome: 'Alvo SA' }] };
+r = await run('noticias-semanal', 'Bearer service-key-fake');
+ok(r.payload?.motivo !== 'ja_rodou_esta_semana', 'rodada anterior com 0 inseridas não bloqueia nova tentativa');
+TABELAS.crm_logs = () => [{ contexto: { inseridas: 0 } }, { contexto: { inseridas: 42 } }];
+r = await run('noticias-semanal', 'Bearer service-key-fake');
+ok(r.payload?.motivo === 'ja_rodou_esta_semana', 'rodada que inseriu de verdade continua bloqueando');
+
+console.log('\nT14 — oportunidades: nível reflete o que foi gravado');
+globalThis.__falhaEscrita = true;
+TABELAS = { __escritas: [],
+  crm_configuracoes: () => [{ valor: '14' }],
+  crm_oportunidades: () => [{ id: 'o1', titulo: 'X', estagio: 'Negociação', valor_estimado: 1, aberta_em: dias(90) }],
+  crm_oportunidade_eventos: () => [] };
+CHAMADAS = [];
+r = await run('oportunidades-paradas', 'Bearer service-key-fake');
+const logOp = CHAMADAS.filter(c => c.url.includes('crm_logs') && c.body?.mensagem === 'fim').pop();
+ok(r.payload?.paradas === 1 && r.payload?.marcadas === 0, 'detectou 1 parada mas não conseguiu gravar');
+ok(logOp?.body?.nivel === 'aviso', `detectar sem gravar registra aviso, não info (${logOp?.body?.nivel})`);
+globalThis.__falhaEscrita = false;
 
 console.log(`\n${pass} passaram, ${fail} falharam`);
 process.exit(fail ? 1 : 0);

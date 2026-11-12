@@ -559,9 +559,13 @@ export default async function handler(req, res) {
     // fora. graph-send, graph-init, graph-disconnect e graph-sync continuam
     // exigindo o JWT do Pedro — a regra "nunca envie e-mails automaticamente"
     // fica garantida pelo próprio controle de acesso, não só por convenção.
+    // As duas env vars de service key são aliases, mas cron.js e enrich.js as
+    // resolvem em ordens opostas. Aceita ambas para o bearer do cron não deixar
+    // de bater caso uma delas seja rotacionada sozinha.
     const segredosCron = [
       (process.env.CRON_SECRET || '').trim(),
-      (SUPA_SVC || '').trim()
+      (process.env.SUPA_CRM_SERVICE_KEY || '').trim(),
+      (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
     ].filter(Boolean);
     const ehCronRascunho = provider === 'graph-draft'
       && authHeader
