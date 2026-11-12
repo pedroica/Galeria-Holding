@@ -553,7 +553,21 @@ export default async function handler(req, res) {
     if (!SUPA_SVC)     return res.status(500).json({ error: 'SUPA_CRM_SERVICE_KEY não configurado.' });
 
     const authHeader = (req.headers.authorization || '').replace('Bearer ','');
-    const authed = await verifyUserJwt(authHeader);
+
+    // O cron matinal de rascunhos precisa chamar graph-draft sem JWT de usuário.
+    // Esta exceção vale SÓ para graph-draft: criar rascunho não manda nada para
+    // fora. graph-send, graph-init, graph-disconnect e graph-sync continuam
+    // exigindo o JWT do Pedro — a regra "nunca envie e-mails automaticamente"
+    // fica garantida pelo próprio controle de acesso, não só por convenção.
+    const segredosCron = [
+      (process.env.CRON_SECRET || '').trim(),
+      (SUPA_SVC || '').trim()
+    ].filter(Boolean);
+    const ehCronRascunho = provider === 'graph-draft'
+      && authHeader
+      && segredosCron.includes(authHeader);
+
+    const authed = ehCronRascunho || await verifyUserJwt(authHeader);
     if (!authed) return res.status(401).json({ error: 'Não autenticado no CRM.' });
 
     // ── graph-init: gera URL de autenticação ──────────────────────────────

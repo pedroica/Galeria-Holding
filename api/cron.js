@@ -685,6 +685,88 @@ async function jobFechamento(req, res) {
   return res.status(200).json({ok:true,token,link:linkRelatorio,...dados});
 }
 
+// ── job: rascunhos-matinais ──────────────────────────────────────────────────
+// Cria no Outlook os rascunhos dos itens já aprovados, de madrugada, para que
+// o dia comece com tudo pronto para revisar e enviar.
+// NÃO envia nada: usa graph-draft, nunca graph-send. O envio continua atrás do
+// JWT do usuário, por desenho.
+// Antes disso, criar rascunho era um clique manual ("📥 Criar rascunhos do lote")
+// e só 2 de 1.293 itens da fila chegaram a ter rascunho criado.
+async function jobRascunhosMatinais(req, res) {
+  const inicio = Date.now();
+  const falhas = [];
+  await logCron('rascunhos-matinais', 'info', 'início', null);
+
+  const credencial = (process.env.CRON_SECRET || '').trim() || (SUPA_KEY || '').trim();
+  if (!credencial) {
+    const ctx = { motivo: 'sem_credencial_para_chamar_enrich' };
+    await logCron('rascunhos-matinais', 'aviso', 'fim — pulado', ctx);
+    return res.status(200).json({ ok: true, pulado: true, ...ctx });
+  }
+
+  const cfgTeto = await sg('crm_configuracoes?chave=eq.rascunhos_matinais_max&select=valor&limit=1');
+  const teto = Array.isArray(cfgTeto) && cfgTeto[0]?.valor ? Number(cfgTeto[0].valor) : 25;
+
+  // Respeita a pausa de primeiros contatos: ela existe por decisão de negócio.
+  // Follow-up (etapa >= 2) continua, porque é conversa já iniciada.
+  const cfgPausa = await sg('crm_configuracoes?chave=eq.pausar_primeiros_contatos&select=valor&limit=1');
+  const pausado = String(Array.isArray(cfgPausa) && cfgPausa[0]?.valor).toLowerCase() === 'true';
+
+  const itens = await sg(
+    'crm_fila?status=eq.aprovado&canal=eq.email&outlook_message_id=is.null&apagado_em=is.null' +
+    '&select=id,assunto,corpo,etapa_cadencia,thread_ref,crm_decisores(email,nome)' +
+    '&order=aprovado_em.asc&limit=' + teto
+  );
+  const lista = (Array.isArray(itens) ? itens : []).filter(it => {
+    const email = it.crm_decisores && it.crm_decisores.email;
+    if (!email) return false;
+    if (pausado && Number(it.etapa_cadencia || 1) <= 1) return false;
+    return true;
+  });
+
+  if (!lista.length) {
+    const ctx = { criados: 0, candidatos: Array.isArray(itens) ? itens.length : 0, pausado, teto, ms: Date.now()-inicio };
+    await logCron('rascunhos-matinais', 'aviso', 'fim', ctx);
+    return res.status(200).json({ ok: true, ...ctx });
+  }
+
+  let criados = 0;
+  const LIMITE_MS = 45000;
+  for (const item of lista) {
+    if (Date.now() - inicio > LIMITE_MS) break;
+    try {
+      const r = await fetch(BASE_URL + '/api/enrich?provider=graph-draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + credencial },
+        body: JSON.stringify({
+          fila_id: item.id,
+          assunto: item.assunto || '',
+          corpo: item.corpo || '',
+          decisor: { email: item.crm_decisores.email, nome: item.crm_decisores.nome || '' },
+          etapa_cadencia: item.etapa_cadencia,
+          thread_ref: item.thread_ref || ''
+        })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.ok && (d.outlook_message_id || d.skipped)) { criados++; continue; }
+      const erro = d.error || ('HTTP ' + r.status);
+      falhas.push({ fila_id: item.id, erro: String(erro).slice(0, 200) });
+      await sp('crm_fila?id=eq.' + item.id, { rascunho_erro: String(erro).slice(0, 500) }, 'PATCH');
+    } catch (e) {
+      falhas.push({ fila_id: item.id, erro: e.message });
+    }
+    await new Promise(r => setTimeout(r, 150));
+  }
+
+  const ctx = {
+    criados, candidatos: lista.length, pausado, teto,
+    falhas: falhas.slice(0, 10), ms: Date.now()-inicio
+  };
+  console.log('[cron:rascunhos-matinais]', criados, 'rascunhos de', lista.length, 'candidatos');
+  await logCron('rascunhos-matinais', nivelTrabalho(criados), 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
 // ── handler principal ─────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   const { job } = req.query;
@@ -695,11 +777,12 @@ export default async function handler(req, res) {
       await logCron('higiene-fila', nivelTrabalho(h.arquivados), 'fim', h);
       return res.status(200).json({ ok: true, ...h });
     }
+    if (job === 'rascunhos-matinais')    return await jobRascunhosMatinais(req, res);
     if (job === 'gerar-fila-diario')     return await jobGerarFila(req, res);
     if (job === 'enriquecimento-diario') return await jobEnriquecimento(req, res);
     if (job === 'noticias-semanal')      return await jobNoticias(req, res);
     if (job === 'fechamento-sexta')      return await jobFechamento(req, res);
-    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta, higiene-fila' });
+    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta, higiene-fila, rascunhos-matinais' });
   } catch(e) {
     console.error('[cron:'+job+']', e.message);
     try { await logCron(job||'unknown', 'error', 'erro: '+e.message, null); } catch(_) {}

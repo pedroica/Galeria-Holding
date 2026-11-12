@@ -35,6 +35,12 @@ globalThis.fetch = async (url, opts = {}) => {
     <item><title><![CDATA[Notícia nova]]></title><link>https://novo.com/2</link><source>Valor</source><pubDate>Tue, 11 Nov 2026 11:00:00 GMT</pubDate></item>
     <item><title><![CDATA[Notícia nova 2]]></title><link>https://novo.com/3</link><source>Exame</source><pubDate>Tue, 11 Nov 2026 12:00:00 GMT</pubDate></item>
   </channel></rss>`, json: async () => ({}) };
+  if (u.includes('provider=graph-draft')) {
+    (globalThis.__graph ||= []).push({ provider: 'draft', body, auth: opts.headers?.Authorization });
+    if (globalThis.__draftFalha) return json({ error: 'Chrome indisponível' }, false, 502);
+    return json({ outlook_message_id: 'AAMk' + Math.random().toString(36).slice(2, 8), rascunho_criado_em: new Date().toISOString() });
+  }
+  if (u.includes('provider=graph-send')) { (globalThis.__graph ||= []).push({ provider: 'send' }); return json({ sent: true }); }
   if (u.includes('provider=lusha-domain')) { LUSHA.dominioChamadas.push(body); return json({ domain: 'alvo.com.br', source: 'prospecting' }); }
 
   // PostgREST mockado
@@ -158,6 +164,46 @@ ok(ins.every(e => e.body.criado_em), 'todo insert leva criado_em explícito (a r
 ok(r.payload?.duplicadas_evitadas === 1, `pulou a URL que a empresa já tinha (${r.payload?.duplicadas_evitadas})`);
 ok(r.payload?.inseridas === 2, `inseriu só as 2 novas (${r.payload?.inseridas})`);
 ok(!ins.some(e => e.body.url === 'https://ja.com/1'), 'não reinsere a URL duplicada');
+
+// ── T8 · agente matinal de rascunhos ───────────────────────────────────────
+console.log('\nT8 — rascunhos matinais');
+const filaAprovada = [
+  { id: 'a1', assunto: 'Oi', corpo: 'texto', etapa_cadencia: 1, crm_decisores: { email: 'x@a.com', nome: 'X' } },
+  { id: 'a2', assunto: 'Fup', corpo: 'texto', etapa_cadencia: 2, crm_decisores: { email: 'y@b.com', nome: 'Y' } },
+  { id: 'a3', assunto: 'Sem email', corpo: 'texto', etapa_cadencia: 1, crm_decisores: { email: null } }
+];
+const montaTabelas = pausa => ({ __escritas: [],
+  crm_configuracoes: q => q.includes('rascunhos_matinais_max') ? [{ valor: '25' }]
+    : q.includes('pausar_primeiros_contatos') ? [{ valor: pausa }] : [],
+  crm_fila: () => filaAprovada });
+
+globalThis.__graph = []; globalThis.__draftFalha = false;
+TABELAS = montaTabelas('false');
+r = await run('rascunhos-matinais', 'Bearer service-key-fake');
+ok(r.payload?.criados === 2, `cria rascunho para os 2 itens com e-mail (${r.payload?.criados})`);
+ok(!globalThis.__graph.some(g => g.provider === 'send'), 'NUNCA chama graph-send — só prepara');
+ok(globalThis.__graph.every(g => g.auth === 'Bearer service-key-fake'), 'autentica com a credencial do cron');
+ok(globalThis.__graph[0]?.body?.decisor?.email === 'x@a.com', 'manda o decisor no payload que o graph-draft espera');
+
+console.log('\nT9 — respeita pausar_primeiros_contatos');
+globalThis.__graph = [];
+TABELAS = montaTabelas('true');
+r = await run('rascunhos-matinais', 'Bearer service-key-fake');
+ok(r.payload?.criados === 1, `com a pausa ligada só o follow-up passa (${r.payload?.criados})`);
+ok(globalThis.__graph[0]?.body?.fila_id === 'a2', 'o que passou foi a etapa 2, não o primeiro contato');
+ok(r.payload?.pausado === true, 'reporta que estava pausado');
+
+console.log('\nT10 — falha do Outlook fica registrada');
+globalThis.__graph = []; globalThis.__draftFalha = true;
+TABELAS = montaTabelas('false');
+r = await run('rascunhos-matinais', 'Bearer service-key-fake');
+ok(r.payload?.criados === 0, 'não conta rascunho que falhou');
+const errPatch = esc().find(e => e.tabela === 'crm_fila' && e.method === 'PATCH' && e.body?.rascunho_erro);
+ok(!!errPatch, 'grava rascunho_erro na linha da fila');
+ok(/Chrome indispon/.test(errPatch?.body?.rascunho_erro || ''), 'guarda o erro real, não um genérico');
+const logM = CHAMADAS.filter(c => c.url.includes('crm_logs') && c.body?.mensagem?.startsWith('fim')).pop();
+ok(logM?.body?.nivel === 'aviso', '0 rascunhos criados registra aviso, não info');
+globalThis.__draftFalha = false;
 
 console.log(`\n${pass} passaram, ${fail} falharam`);
 process.exit(fail ? 1 : 0);
