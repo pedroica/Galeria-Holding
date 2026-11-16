@@ -15,6 +15,7 @@
     "test:cron": "node tests/cron-jobs.test.mjs",
     "test:enrich-auth": "node tests/enrich-auth.test.mjs",
     "test:fila": "node tests/fila-motor.test.mjs",
+    "test:enrich-lusha": "node tests/enrich-lusha.test.mjs",
     "test:e2e": "npx playwright test tests/lusha-e2e.playwright.mjs --reporter=list",
     "typecheck": "cd agent && npm run typecheck"
   },

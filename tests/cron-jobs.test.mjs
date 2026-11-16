@@ -113,7 +113,7 @@ console.log('\nT4 — enriquecimento resolve domínio ausente');
 TABELAS = { __escritas: [],
   crm_configuracoes: () => [{ valor: '10' }],
   crm_kanban: () => [],
-  crm_decisores: () => [{ id: 'd1', nome: 'Ana Souza', empresa_id: 'e1' }],
+  crm_decisores: q => q.includes('email=eq.') ? [] : [{ id: 'd1', nome: 'Ana Souza', empresa_id: 'e1' }],
   crm_empresas: () => [{ id: 'e1', nome: 'Alvo SA', dominio: null, website: null, site: null }],
   crm_empresa_agencia_estrelas: () => [{ empresa_id: 'e1', estrelas_manual: 5 }] };
 CHAMADAS = []; LUSHA.searchChamadas = []; LUSHA.revealChamadas = []; LUSHA.dominioChamadas = [];
@@ -126,8 +126,8 @@ ok(r.payload?.revelados === 1, `revelou o decisor (${r.payload?.revelados})`);
 ok(r.payload?.empresas_tentadas === 1, `empresas_tentadas agora conta tentativa, não sucesso (${r.payload?.empresas_tentadas})`);
 ok(r.payload?.creditos_usados === 6, `custo real 1 email + 5 telefone = 6 (recebeu ${r.payload?.creditos_usados})`);
 ok(r.payload?.creditos_restantes === 2520, 'lê o saldo da Lusha em vez de null');
-const decPatch = esc().find(e => e.tabela === 'crm_decisores' && e.method === 'PATCH');
-ok(decPatch?.body?.email === 'ana@alvo.com.br', 'grava o e-mail no decisor');
+const decPatch = esc().find(e => e.tabela === 'crm_decisores' && e.method === 'PATCH' && e.body?.email);
+ok(decPatch?.body?.email === 'ana@alvo.com.br', 'grava o e-mail no decisor (sobrenome bate)');
 
 // ── T5 · telefone só nas empresas 4-5 estrelas ─────────────────────────────
 console.log('\nT5 — telefone (5 créditos) só onde vale');

@@ -271,21 +271,32 @@ async function descobrirDominio(empresaId, nome) {
 // `if (!r.ok) return []` engolia o erro — era o caminho de ~88% das empresas.
 async function lushaSearchV3(dominio, falhas) {
   if (!LUSHA_KEY || !dominio) return [];
+  // País = Brasil (código ISO-2 'BR') para não revelar xarás de fora. O envelope
+  // de país pode variar entre versões da API; se der 400, refaz sem o filtro de
+  // país em vez de deixar o enriquecimento morrer calado.
+  const corpo = (comPais) => ({
+    filters: {
+      contacts: {
+        include: Object.assign(
+          { seniority: [9,10,8,6], departments: ['Marketing','General Management'] },
+          comPais ? { locations: [{ country: 'BR' }] } : {}
+        )
+      },
+      companies: { include: { domains: [dominio] } }
+    },
+    pagination: { page: 0, size: 5 }
+  });
+  const busca = (comPais) => fetch('https://api.lusha.com/v3/contacts/prospecting', {
+    method: 'POST',
+    headers: { api_key: LUSHA_KEY, 'Content-Type': 'application/json' },
+    body: JSON.stringify(corpo(comPais))
+  });
   try {
-    const r = await fetch('https://api.lusha.com/v3/contacts/prospecting', {
-      method: 'POST',
-      headers: { api_key: LUSHA_KEY, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        filters: {
-          contacts: { include: { seniority: [9,10,8,6], departments: ['Marketing','General Management'] } },
-          companies: { include: { domains: [dominio] } }
-        },
-        pagination: { page: 0, size: 5 }
-      })
-    });
+    let r = await busca(true);
+    if (r.status === 400) r = await busca(false);
     if (!r.ok) {
-      const corpo = await r.text().catch(() => '');
-      falhas.push({ etapa: 'search', dominio, status: r.status, corpo: corpo.slice(0, 200) });
+      const txt = await r.text().catch(() => '');
+      falhas.push({ etapa: 'search', dominio, status: r.status, corpo: txt.slice(0, 200) });
       return [];
     }
     const d = await r.json();
@@ -335,6 +346,47 @@ async function lushaCreditsV3(falhas) {
   }
 }
 
+// Upsert de uma config (chave única). valor vai como JSONB.
+async function upsertConfig(chave, valor) {
+  try {
+    await fetch(SUPA_URL + '/rest/v1/crm_configuracoes?on_conflict=chave', {
+      method: 'POST',
+      headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify({ chave, valor })
+    });
+  } catch (_) {}
+}
+
+// Lê uma lista de uma config que pode vir como array JSONB ou string JSON.
+function lerListaConfig(rows) {
+  const v = Array.isArray(rows) && rows[0] ? rows[0].valor : null;
+  if (Array.isArray(v)) return v.filter(Boolean);
+  if (typeof v === 'string') { try { const p = JSON.parse(v); return Array.isArray(p) ? p.filter(Boolean) : []; } catch { return []; } }
+  return [];
+}
+
+// Classifica um contato por cargo: 'gestao' (diretoria/C-level) ou 'marketing'.
+function departamentoDoContato(c) {
+  const t = String(c.title || c.jobTitle || '').toLowerCase();
+  if (/market|mkt|cmo|growth|brand|comunica|digital/.test(t)) return 'marketing';
+  if (/ceo|founder|s[óo]cio|owner|president|diretor|director|head|gerente geral|general manager|managing|coo|chief/.test(t)) return 'gestao';
+  return 'outro';
+}
+
+// Seleciona no máximo 1 de gestão + 1 de marketing (nunca 2 do mesmo).
+// Antes o reveal pegava os 2 primeiros da busca, podendo gastar em 2 do mesmo time.
+function selecionarContatos(contacts) {
+  const escolhidos = [];
+  const quero = { gestao: 1, marketing: 1 };
+  for (const c of contacts) {
+    const dep = departamentoDoContato(c);
+    const chave = dep === 'outro' ? (quero.gestao > 0 ? 'gestao' : 'marketing') : dep;
+    if (quero[chave] > 0) { escolhidos.push(c); quero[chave]--; }
+    if (escolhidos.length >= 2) break;
+  }
+  return escolhidos;
+}
+
 async function jobEnriquecimento(req, res) {
   const inicio = Date.now();
   const falhas = [];
@@ -356,6 +408,16 @@ async function jobEnriquecimento(req, res) {
   const cfgRows = await sg('crm_configuracoes?chave=eq.enriquecimento_diario_max&select=valor&limit=1');
   const teto = Array.isArray(cfgRows) && cfgRows[0]?.valor ? Number(cfgRows[0].valor) : 10;
 
+  // Teto diário de CRÉDITO (não de revelações), medido contra o saldo real.
+  // Um reveal com telefone custa 6 créditos (1 e-mail + 5 telefone).
+  const cfgLim = await sg('crm_configuracoes?chave=eq.lusha_daily_limit&select=valor&limit=1');
+  const tetoCreditos = Array.isArray(cfgLim) && cfgLim[0]?.valor ? Number(cfgLim[0].valor) : 60;
+
+  // Empresas que a Lusha já respondeu "sem contato": não reconsultar todo dia.
+  const cfgSemContato = await sg('crm_configuracoes?chave=eq.lusha_sem_contato&select=valor&limit=1');
+  const semContatoSet = new Set(lerListaConfig(cfgSemContato));
+  const semContatoNovos = [];
+
   const kanbanReunioes = await sg('crm_kanban?col=eq.reuniao&select=empresa_id&limit=500');
   const reunioesPorEmpresa = {};
   for (const k of (Array.isArray(kanbanReunioes) ? kanbanReunioes : [])) {
@@ -363,7 +425,9 @@ async function jobEnriquecimento(req, res) {
   }
 
   // Candidatos: decisores ativos sem e-mail. O filtro apagado_em faltava.
-  const semEmail = await sg('crm_decisores?email=is.null&apagado_em=is.null&select=id,nome,empresa_id,linkedin_url&order=ultimo_toque_em.desc.nullslast&limit=50');
+  // Rotação: os menos recentemente tentados vêm primeiro (nullsfirst = nunca
+  // tentados). Antes a mesma janela de 50 era reconsultada todo dia.
+  const semEmail = await sg('crm_decisores?email=is.null&apagado_em=is.null&select=id,nome,empresa_id,linkedin_url,enriquecimento_tentado_em&order=enriquecimento_tentado_em.asc.nullsfirst,ultimo_toque_em.desc.nullslast&limit=50');
   const decisoresSemEmail = Array.isArray(semEmail) ? semEmail : [];
   if (decisoresSemEmail.length === 0) {
     const ctx = { revelados: 0, teto, motivo: 'nenhum_decisor_sem_email', ms: Date.now()-inicio };
@@ -406,8 +470,11 @@ async function jobEnriquecimento(req, res) {
 
   for (const dec of decisoresSemEmail) {
     if (revelados >= teto) break;
+    if (creditosUsados >= tetoCreditos) break;          // teto diário de crédito
     if (Date.now() - inicio > LIMITE_MS) break;
     if ((reveladosPorEmpresa[dec.empresa_id] || 0) >= 2) continue;
+    if (semContatoSet.has(dec.empresa_id)) continue;    // empresa já marcada sem contato
+    if (empresasVistas.has(dec.empresa_id)) continue;   // uma busca por empresa por rodada
 
     const emp = empMap[dec.empresa_id] || {};
     let dominio = dominioDe(emp);
@@ -420,14 +487,22 @@ async function jobEnriquecimento(req, res) {
     }
     if (!dominio) { semDominio++; continue; }
 
-    if (!empresasVistas.has(dec.empresa_id)) { empresasVistas.add(dec.empresa_id); empresasTentadas++; }
+    empresasVistas.add(dec.empresa_id); empresasTentadas++;
 
     const contacts = await lushaSearchV3(dominio, falhas);
     await new Promise(r => setTimeout(r, 200));
-    if (!contacts.length) continue;
+    // Rotação: marca a empresa como tentada hoje (vai para o fim da fila amanhã).
+    await sp('crm_decisores?id=eq.' + dec.id, { enriquecimento_tentado_em: new Date().toISOString() }, 'PATCH');
+    if (!contacts.length) {
+      // Sem contato: registra para não reconsultar todo dia (item b).
+      if (!semContatoSet.has(dec.empresa_id)) { semContatoSet.add(dec.empresa_id); semContatoNovos.push(dec.empresa_id); }
+      continue;
+    }
 
     const comTelefone = (estrelasPorEmpresa[dec.empresa_id] || 0) >= 4;
-    const results = await lushaRevealV3(contacts, comTelefone, falhas);
+    // Máx. 1 de gestão + 1 de marketing (não 2 do mesmo time), waterfall off.
+    const selecionados = selecionarContatos(contacts);
+    const results = await lushaRevealV3(selecionados, comTelefone, falhas);
     await new Promise(r => setTimeout(r, 200));
 
     for (const result of results) {
@@ -439,34 +514,63 @@ async function jobEnriquecimento(req, res) {
       if (tel)   creditosUsados += CUSTO_TELEFONE;
       if (!email && !tel) continue;
 
+      // E-mail já usado por outro decisor → não duplica, não regrava.
+      if (email) {
+        const jaExiste = await sg('crm_decisores?email=eq.' + encodeURIComponent(email) + '&apagado_em=is.null&select=id&limit=1');
+        if (Array.isArray(jaExiste) && jaExiste.length) { falhas.push({ etapa: 'email_duplicado', empresa_id: dec.empresa_id }); continue; }
+      }
+
+      // Só grava num decisor cujo SOBRENOME bate com o do contato revelado.
+      // Sem correspondência, cria um NOVO decisor — jamais escreve o e-mail de
+      // uma pessoa em cima de outra (o antigo "|| dec" fazia exatamente isso).
       const nomeCompleto = [result.firstName, result.lastName].filter(Boolean).join(' ');
-      const decCorrespondente = decisoresSemEmail.find(d =>
-        d.empresa_id === dec.empresa_id &&
-        nomeCompleto && d.nome && result.lastName &&
+      const match = (nomeCompleto && result.lastName) ? decisoresSemEmail.find(d =>
+        d.empresa_id === dec.empresa_id && d.nome && !d.email &&
         d.nome.toLowerCase().includes(result.lastName.toLowerCase())
-      ) || dec;
+      ) : null;
 
-      const patch = { atualizado_em: new Date().toISOString(), fonte: 'lusha_v3' };
-      if (email) patch.email = email;
-      if (tel)   patch.wa   = tel;
-      if (linkedinUrl && !decCorrespondente.linkedin_url) patch.linkedin_url = linkedinUrl;
+      let gravou;
+      if (match) {
+        const patch = { atualizado_em: new Date().toISOString(), fonte: 'lusha_v3' };
+        if (email) patch.email = email;
+        if (tel)   patch.wa   = tel;
+        if (linkedinUrl && !match.linkedin_url) patch.linkedin_url = linkedinUrl;
+        gravou = await sp('crm_decisores?id=eq.' + match.id, patch, 'PATCH');
+        if (gravou && email) match.email = email;        // não reusar o mesmo match
+      } else if (nomeCompleto) {
+        gravou = await sp('crm_decisores', {
+          empresa_id: dec.empresa_id, nome: nomeCompleto,
+          cargo: result.title || result.jobTitle || null,
+          email: email || null, wa: tel || null, linkedin_url: linkedinUrl || null,
+          fonte: 'lusha_v3', atualizado_em: new Date().toISOString()
+        }, 'POST');
+      } else {
+        falhas.push({ etapa: 'reveal_sem_nome', empresa_id: dec.empresa_id });
+        continue;
+      }
 
-      const gravou = await sp('crm_decisores?id=eq.' + decCorrespondente.id, patch, 'PATCH');
-      if (!gravou) { falhas.push({ etapa: 'patch_decisor', decisor_id: decCorrespondente.id }); continue; }
+      if (!gravou) { falhas.push({ etapa: 'grava_decisor', empresa_id: dec.empresa_id }); continue; }
       revelados++;
       reveladosPorEmpresa[dec.empresa_id] = (reveladosPorEmpresa[dec.empresa_id] || 0) + 1;
       if (revelados >= teto) break;
     }
   }
 
+  // Persiste as empresas recém-marcadas "sem contato" (item b).
+  if (semContatoNovos.length) await upsertConfig('lusha_sem_contato', [...semContatoSet]);
+
   const saldoDepois = await lushaCreditsV3(falhas);
+  const saldoDepoisNum = saldoDepois?.credits?.remaining ?? saldoDepois?.credits?.balance ?? null;
+  const creditosReais = (creditosDisponiveis != null && saldoDepoisNum != null) ? (creditosDisponiveis - saldoDepoisNum) : null;
   const ctx_enrich = {
-    revelados, teto,
+    revelados, teto, teto_creditos: tetoCreditos,
     creditos_usados: creditosUsados,
-    creditos_restantes: saldoDepois?.credits?.remaining ?? saldoDepois?.credits?.balance ?? null,
+    creditos_reais_gastos: creditosReais,
+    creditos_restantes: saldoDepoisNum,
     empresas_tentadas: empresasTentadas,
     dominios_descobertos: dominiosDescobertos,
     sem_dominio: semDominio,
+    sem_contato_novos: semContatoNovos.length,
     falhas: falhas.slice(0, 10),
     ms: Date.now()-inicio
   };
