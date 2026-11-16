@@ -209,9 +209,49 @@ function renderBloco(b) {
 const CRED_CSS=`*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}:root{--azul:#1F6FE5;--cinza:#9B9BB4}body{background:#000;color:#fff;font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;overflow:hidden;width:100vw;height:100vh}.deck{width:100%;height:100%;position:relative}.page{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:center;padding:8vw;opacity:0;transition:opacity .4s;pointer-events:none;overflow:hidden}.page.active{opacity:1;pointer-events:auto}.page-capa{justify-content:flex-end;padding-bottom:10vh}.capa-agencia{font-size:clamp(36px,6vw,80px);font-weight:700;letter-spacing:-.02em;line-height:1}.capa-sub{font-size:clamp(14px,2vw,24px);color:var(--cinza);margin-top:1.5rem;font-weight:300}.capa-empresa{font-size:clamp(12px,1.5vw,18px);color:var(--cinza);margin-top:3rem;letter-spacing:.08em;text-transform:uppercase}.page-numeros{justify-content:center}.numeros-titulo{font-size:clamp(12px,1.5vw,20px);letter-spacing:.1em;text-transform:uppercase;color:var(--cinza);margin-bottom:6vh}.numeros-grid{display:flex;gap:6vw;flex-wrap:wrap;align-items:flex-end}.numero-item{display:flex;flex-direction:column}.numero-hero{font-size:clamp(56px,10vw,130px);font-weight:100;letter-spacing:-.04em;line-height:1}.numero-label{font-size:clamp(10px,1.2vw,16px);color:var(--cinza);margin-top:.5rem;font-weight:300;text-transform:uppercase;letter-spacing:.06em}.bloco-titulo,.case-titulo,.numeros-titulo,.fechamento-titulo{font-size:clamp(16px,2.5vw,36px);font-weight:700;line-height:1.2;margin-bottom:4vh}.corpo-texto{font-size:clamp(12px,1.4vw,20px);line-height:1.7;color:rgba(255,255,255,.8);font-weight:300;max-width:70ch}.corpo-texto p{margin-bottom:1.2em}.case-marca{font-size:clamp(10px,1.2vw,16px);letter-spacing:.08em;text-transform:uppercase;color:var(--cinza);margin-bottom:3vh}.case-resultado{font-size:clamp(18px,3vw,44px);font-weight:100;color:#fff;margin-top:4vh;letter-spacing:-.02em}.fechamento-wrapper{text-align:center}.fechamento-contato{font-size:clamp(12px,1.5vw,20px);color:var(--cinza);margin-top:4vh}.btn-link{color:var(--azul);text-decoration:none;font-size:clamp(10px,1.2vw,16px);letter-spacing:.06em;text-transform:uppercase;padding:.5rem 1.2rem;border:1px solid var(--azul);display:inline-block;margin-top:3vh;transition:all .2s}.btn-link:hover{background:var(--azul);color:#fff}.progress{position:fixed;bottom:0;left:0;height:2px;background:var(--azul);transition:width .4s;z-index:10}.slide-counter{position:fixed;bottom:1.5rem;right:2rem;font-size:10px;letter-spacing:.1em;color:rgba(255,255,255,.3)}.presentation-hint{position:fixed;bottom:1.5rem;left:2rem;font-size:10px;color:rgba(255,255,255,.2);letter-spacing:.06em}@media(max-width:768px){.page{padding:6vw 5vw}.numero-hero{font-size:clamp(40px,14vw,100px)}}`;
 const CRED_JS=`const pages=document.querySelectorAll('.page');const progress=document.querySelector('.progress');const counter=document.querySelector('.slide-counter');let cur=0;function go(n){n=Math.max(0,Math.min(pages.length-1,n));pages[cur].classList.remove('active');cur=n;pages[cur].classList.add('active');if(progress)progress.style.width=((cur+1)/pages.length*100)+'%';if(counter)counter.textContent=(cur+1)+' / '+pages.length;}document.addEventListener('keydown',function(e){if(e.key==='ArrowRight'||e.key==='ArrowDown'||e.key===' ')go(cur+1);if(e.key==='ArrowLeft'||e.key==='ArrowUp')go(cur-1);if(e.key==='Home')go(0);if(e.key==='End')go(pages.length-1);if(e.key==='f'||e.key==='F')document.documentElement.requestFullscreen&&document.documentElement.requestFullscreen();});let tx=0;document.addEventListener('touchstart',function(e){tx=e.touches[0].clientX;});document.addEventListener('touchend',function(e){var d=tx-e.changedTouches[0].clientX;if(Math.abs(d)>50)go(d>0?cur+1:cur-1);});go(0);`;
 
+// ── Relatório semanal: HTML público por token (rota /api/relatorio/:token) ────
+function relatorioErroHtml(msg) {
+  return '<html><body style="background:#060606;color:#fff;font-family:sans-serif;padding:4rem">' + escHtml(msg) + '</body></html>';
+}
+function renderRelatorioHtml(row) {
+  const d = (row && row.dados) || {};
+  const sem = ptDateRel(d.semana_inicio);
+  const kpi = (label, v) => `<div style="background:#0d0d1a;border:1px solid #1A1A2E;border-radius:10px;padding:16px 18px;min-width:140px"><div style="font-size:26px;font-weight:700;color:#FF6B2B">${escHtml(String(v ?? 0))}</div><div style="font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#9B9BB4;margin-top:4px">${escHtml(label)}</div></div>`;
+  const canais = Object.entries(d.por_canal || {}).map(([c, n]) => `<li>${escHtml(c)}: <b>${escHtml(String(n))}</b></li>`).join('') || '<li style="color:#555">sem envios</li>';
+  const ags = Object.entries(d.por_agencia || {}).map(([nome, v]) =>
+    `<tr><td style="padding:6px 12px">${escHtml(nome)}</td><td style="padding:6px 12px;text-align:right">${escHtml(String(v.enviados||0))}</td><td style="padding:6px 12px;text-align:right">${escHtml(String(v.respostas||0))}</td><td style="padding:6px 12px;text-align:right">${escHtml(String(v.reunioes||0))}</td></tr>`).join('');
+  const top5 = (d.top5 || []).map(n => `<li>${escHtml(String(n))}</li>`).join('') || '<li style="color:#555">—</li>';
+  return `<!DOCTYPE html><html lang="pt"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Relatório semanal — ${escHtml(sem)}</title>
+<style>body{background:#060606;color:#e8e8f0;font-family:'IBM Plex Mono',ui-monospace,monospace;margin:0;padding:32px 18px;max-width:860px;margin:0 auto}h1{font-family:'Syne',sans-serif;font-size:26px;color:#fff;margin:0 0 4px}.sub{color:#9B9BB4;font-size:13px;margin-bottom:24px}.grid{display:flex;flex-wrap:wrap;gap:12px;margin:18px 0}.resumo{background:#0d0d1a;border:1px solid #1A1A2E;border-radius:10px;padding:18px;line-height:1.6;color:#cfcfe0}h2{font-family:'Syne',sans-serif;font-size:15px;color:#60A5FA;margin:28px 0 10px;text-transform:uppercase;letter-spacing:.06em}table{border-collapse:collapse;width:100%;font-size:13px}th{color:#9B9BB4;font-weight:400;text-align:right;padding:6px 12px;border-bottom:1px solid #1A1A2E}th:first-child{text-align:left}ul{padding-left:18px;line-height:1.8}</style></head>
+<body><h1>Relatório semanal</h1><div class="sub">Semana de ${escHtml(sem)} · gerado em ${escHtml(ptDateRel(d.gerado_em))}${d.aviso ? ' · ' + escHtml(d.aviso) : ''}</div>
+<div class="resumo">${escHtml(d.resumo_texto || 'Sem resumo.')}</div>
+<div class="grid">${kpi('Reuniões', d.reunioes_total)}${kpi('Toques enviados', d.enviados_total)}${kpi('Respostas', d.respostas_total)}${kpi('Taxa resposta', (d.taxa_resposta_pct||0)+'%')}${kpi('Oport. criadas', d.oportunidades_criadas)}${kpi('Ganhas', d.oportunidades_ganhas)}${kpi('Empresas novas', d.empresas_novas)}</div>
+<h2>Por canal</h2><ul>${canais}</ul>
+<h2>Por agência</h2><table><thead><tr><th>Agência</th><th>Enviados</th><th>Respostas</th><th>Reuniões</th></tr></thead><tbody>${ags || '<tr><td style="padding:6px 12px;color:#555">—</td><td></td><td></td><td></td></tr>'}</tbody></table>
+<h2>Top 5 empresas quentes</h2><ul>${top5}</ul>
+</body></html>`;
+}
+function ptDateRel(iso) {
+  const s = String(iso || '').slice(0, 10);
+  const [y, m, dd] = s.split('-');
+  return (dd && m && y) ? `${dd}/${m}/${y}` : s;
+}
+
 // ── handler principal ─────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   const { action, token } = req.query;
+
+  // GET /api/relatorio/:token (via rewrite) — HTML público do relatório semanal
+  if (req.method === 'GET' && action === 'relatorio' && token) {
+    if (typeof token !== 'string' || !/^[a-f0-9]{8,64}$/.test(token)) {
+      return res.status(404).send(relatorioErroHtml('Relatório não encontrado.'));
+    }
+    const rows = await sg(`crm_relatorios?token=eq.${token}&select=dados,semana_inicio,gerado_em&limit=1`);
+    if (!rows || !rows[0]) return res.status(404).send(relatorioErroHtml('Relatório não encontrado ou expirado.'));
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 's-maxage=300,stale-while-revalidate');
+    return res.status(200).send(renderRelatorioHtml(rows[0]));
+  }
 
   // GET /api/fila?token=<hex32> — renderiza credencial HTML
   if (req.method === 'GET' && token) {

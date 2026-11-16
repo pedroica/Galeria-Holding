@@ -748,10 +748,9 @@ async function jobFechamento(req, res) {
   const now = new Date();
   const diaBRT = new Date(now.toLocaleString('en-US',{timeZone:'America/Sao_Paulo'}));
   const isSexta = diaBRT.getDay()===5;
-  const semSeg = semanaInicio(now);
+  const semSeg = new Date(inicioSemanaISO());   // início da semana em horário de São Paulo
 
-  const [kanbanRows, filaRows, agencias, empresasNovas, toquesSem, oportRows] = await Promise.all([
-    sg(`crm_kanban?select=id,col,agencia_id,atualizado_em&atualizado_em=gte.${semSeg.toISOString()}&limit=500`),
+  const [filaRows, agencias, empresasNovas, toquesSem, oportRows] = await Promise.all([
     sg(`crm_fila?select=id,canal,status,agencia_id,empresa_id&enviado_em=gte.${semSeg.toISOString()}&limit=2000`),
     sg('crm_agencias?select=id,nome&limit=20'),
     sg(`crm_empresas?criado_em=gte.${semSeg.toISOString()}&select=id,nome&limit=50`),
@@ -759,20 +758,26 @@ async function jobFechamento(req, res) {
     sg(`crm_oportunidades?criado_em=gte.${semSeg.toISOString()}&select=id,estagio,agencia_id&limit=500`)
   ]);
 
-  const reunioesSem = (Array.isArray(kanbanRows)?kanbanRows:[]).filter(c=>c.col==='reuniao');
-  const fila = Array.isArray(filaRows)?filaRows:[];
+  const fila = Array.isArray(filaRows) ? filaRows : [];
+  const toques = Array.isArray(toquesSem) ? toquesSem : [];
 
-  // Top 5 empresas mais quentes: soma de toques na semana + reuniões
+  // Reuniões e respostas vêm de crm_toques (crm_kanban é legada), por resultado.
+  const RESP = ['respondeu','resposta','reuniao_marcada','reuniao'];
+  const REU  = ['reuniao_marcada','reuniao'];
+  const respostasTouches = toques.filter(t => RESP.includes(t.resultado));
+  const reunioesTouches  = toques.filter(t => REU.includes(t.resultado));
+
+  // Mapa empresa→agência a partir da fila (o toque não carrega agência).
+  const empAg = {};
+  for (const f of fila) { if (f.empresa_id && f.agencia_id && !empAg[f.empresa_id]) empAg[f.empresa_id] = f.agencia_id; }
+
+  // Top 5 empresas mais quentes: toques (+2), itens de fila (+1), reunião (+5).
+  // Sempre por empresa_id — nunca somando agencia_id como se fosse empresa.
   const scoreEmpresa = {};
-  for (const f of fila) {
-    if (f.empresa_id) scoreEmpresa[f.empresa_id] = (scoreEmpresa[f.empresa_id]||0) + 1;
-  }
-  for (const t of (Array.isArray(toquesSem)?toquesSem:[])) {
-    if (t.empresa_id) scoreEmpresa[t.empresa_id] = (scoreEmpresa[t.empresa_id]||0) + 2;
-  }
-  for (const k of reunioesSem) {
-    if (k.agencia_id) scoreEmpresa[k.agencia_id] = (scoreEmpresa[k.agencia_id]||0) + 5;
-  }
+  const bump = (id, n) => { if (id) scoreEmpresa[id] = (scoreEmpresa[id]||0) + n; };
+  for (const f of fila) bump(f.empresa_id, 1);
+  for (const t of toques) bump(t.empresa_id, 2);
+  for (const t of reunioesTouches) bump(t.empresa_id, 5);
   const top5EmpIds = Object.entries(scoreEmpresa).sort((a,b)=>b[1]-a[1]).slice(0,5).map(([id])=>id);
   let top5Nomes = [];
   if (top5EmpIds.length > 0) {
@@ -782,23 +787,26 @@ async function jobFechamento(req, res) {
     top5Nomes = top5EmpIds.map(id => nomeMap[id]||id);
   }
 
-  const toques = Array.isArray(toquesSem) ? toquesSem : [];
-  const respostasTotal = toques.filter(t=>['respondeu','resposta','reuniao_marcada','reuniao'].includes(t.resultado)).length;
+  const respostasTotal = respostasTouches.length;
+  const reunioesTotal  = reunioesTouches.length;
+
+  // Por agência: enviados pela fila; respostas e reuniões pelo mapa empresa→agência.
+  const respPorAg = {}, reuPorAg = {};
+  for (const t of respostasTouches) { const ag = empAg[t.empresa_id]; if (ag) respPorAg[ag] = (respPorAg[ag]||0)+1; }
+  for (const t of reunioesTouches)  { const ag = empAg[t.empresa_id]; if (ag) reuPorAg[ag]  = (reuPorAg[ag]||0)+1; }
   const byAg = {};
   for (const ag of (Array.isArray(agencias)?agencias:[])) {
     const agFila = fila.filter(f=>f.agencia_id===ag.id);
     byAg[ag.nome||ag.id] = {
-      reunioes: reunioesSem.filter(c=>c.agencia_id===ag.id).length,
+      reunioes: reuPorAg[ag.id] || 0,
       enviados: agFila.length,
-      respostas: respostasTotal
+      respostas: respPorAg[ag.id] || 0
     };
   }
 
   // Por canal
   const porCanal = {};
-  for (const f of fila) {
-    if (f.canal) porCanal[f.canal] = (porCanal[f.canal]||0)+1;
-  }
+  for (const f of fila) { if (f.canal) porCanal[f.canal] = (porCanal[f.canal]||0)+1; }
 
   const oportArr = Array.isArray(oportRows) ? oportRows : [];
   const oportGanhas = oportArr.filter(o=>o.estagio==='Ganho').length;
@@ -807,10 +815,10 @@ async function jobFechamento(req, res) {
   const dados = {
     semana_inicio:       semSeg.toISOString().slice(0,10),
     gerado_em:           now.toISOString(),
-    reunioes_total:      reunioesSem.length,
+    reunioes_total:      reunioesTotal,
     enviados_total:      fila.length,
-    respostas_total:     fila.filter(x=>x.status==='respondido').length,
-    taxa_resposta_pct:   fila.length>0 ? Math.round(fila.filter(x=>x.status==='respondido').length/fila.length*100) : 0,
+    respostas_total:     respostasTotal,
+    taxa_resposta_pct:   fila.length>0 ? Math.round(respostasTotal/fila.length*100) : 0,
     empresas_novas:      Array.isArray(empresasNovas) ? empresasNovas.length : 0,
     por_canal:           porCanal,
     por_agencia:         byAg,
@@ -875,10 +883,12 @@ async function jobRascunhosMatinais(req, res) {
   const cfgPausa = await sg('crm_configuracoes?chave=eq.pausar_primeiros_contatos&select=valor&limit=1');
   const pausado = String(Array.isArray(cfgPausa) && cfgPausa[0]?.valor).toLowerCase() === 'true';
 
+  // rascunho_tentativas<3: item que falhou 3x sai da frente (e da fila de tentativas).
+  // Ordena por tentativas asc: os que nunca falharam vêm primeiro.
   const itens = await sg(
-    'crm_fila?status=eq.aprovado&canal=eq.email&outlook_message_id=is.null&apagado_em=is.null' +
-    '&select=id,assunto,corpo,etapa_cadencia,thread_ref,crm_decisores(email,nome)' +
-    '&order=aprovado_em.asc&limit=' + teto
+    'crm_fila?status=eq.aprovado&canal=eq.email&outlook_message_id=is.null&apagado_em=is.null&rascunho_tentativas=lt.3' +
+    '&select=id,assunto,corpo,etapa_cadencia,thread_ref,rascunho_tentativas,crm_decisores(email,nome)' +
+    '&order=rascunho_tentativas.asc,aprovado_em.asc&limit=' + teto
   );
   const lista = (Array.isArray(itens) ? itens : []).filter(it => {
     const email = it.crm_decisores && it.crm_decisores.email;
@@ -893,10 +903,11 @@ async function jobRascunhosMatinais(req, res) {
     return res.status(200).json({ ok: true, ...ctx });
   }
 
-  let criados = 0;
+  let criados = 0, pulados = 0;
   const LIMITE_MS = 45000;
   for (const item of lista) {
     if (Date.now() - inicio > LIMITE_MS) break;
+    const tentativa = (Number(item.rascunho_tentativas) || 0) + 1;
     try {
       const r = await fetch(BASE_URL + '/api/enrich?provider=graph-draft', {
         method: 'POST',
@@ -911,18 +922,21 @@ async function jobRascunhosMatinais(req, res) {
         })
       });
       const d = await r.json().catch(() => ({}));
-      if (r.ok && (d.outlook_message_id || d.skipped)) { criados++; continue; }
+      if (r.ok && d.outlook_message_id) { criados++; continue; }
+      if (r.ok && d.skipped) { pulados++; continue; }   // 'skipped' não é criado
       const erro = d.error || ('HTTP ' + r.status);
       falhas.push({ fila_id: item.id, erro: String(erro).slice(0, 200) });
-      await sp('crm_fila?id=eq.' + item.id, { rascunho_erro: String(erro).slice(0, 500) }, 'PATCH');
+      // Conta a tentativa: na 3ª falha o item deixa de ser candidato (filtro lt.3).
+      await sp('crm_fila?id=eq.' + item.id, { rascunho_erro: String(erro).slice(0, 500), rascunho_tentativas: tentativa }, 'PATCH');
     } catch (e) {
       falhas.push({ fila_id: item.id, erro: e.message });
+      await sp('crm_fila?id=eq.' + item.id, { rascunho_tentativas: tentativa }, 'PATCH');
     }
     await new Promise(r => setTimeout(r, 150));
   }
 
   const ctx = {
-    criados, candidatos: lista.length, pausado, teto,
+    criados, pulados, candidatos: lista.length, pausado, teto,
     falhas: falhas.slice(0, 10), ms: Date.now()-inicio
   };
   console.log('[cron:rascunhos-matinais]', criados, 'rascunhos de', lista.length, 'candidatos');
@@ -960,10 +974,13 @@ async function jobOportunidadesParadas(req, res) {
   const ultimoPedido = {};
   for (const e of (Array.isArray(eventos) ? eventos : [])) {
     const t = new Date(e.criado_em).getTime();
-    if (!ultimoEvento[e.oportunidade_id] || t > ultimoEvento[e.oportunidade_id]) ultimoEvento[e.oportunidade_id] = t;
     if (e.tipo === 'pedido_atualizacao') {
+      // O próprio pedido do cron NÃO conta como atividade: senão a cobrança de
+      // ontem zera o relógio de dias-parado e a oportunidade "destrava" sozinha.
       if (!ultimoPedido[e.oportunidade_id] || t > ultimoPedido[e.oportunidade_id]) ultimoPedido[e.oportunidade_id] = t;
+      continue;
     }
+    if (!ultimoEvento[e.oportunidade_id] || t > ultimoEvento[e.oportunidade_id]) ultimoEvento[e.oportunidade_id] = t;
   }
 
   const agora = Date.now();
@@ -988,7 +1005,9 @@ async function jobOportunidadesParadas(req, res) {
   const falhas = [];
   const porEstagio = {};
   const LIMITE_MS = 45000;
+  const MAX_COBRANCAS = 10;   // no máximo 10 cobranças por rodada (fundo do funil primeiro)
   for (const o of paradas) {
+    if (marcadas >= MAX_COBRANCAS) break;
     if (Date.now() - inicio > LIMITE_MS) break;
     const passoVencido = o.proximo_passo_em && new Date(o.proximo_passo_em).getTime() < agora;
     const texto = [

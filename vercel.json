@@ -21,6 +21,10 @@
       "destination": "/api/fila?token=:token"
     },
     {
+      "source": "/api/relatorio/:token",
+      "destination": "/api/fila?action=relatorio&token=:token"
+    },
+    {
       "source": "/api/whatsapp",
       "destination": "/api/enrich?provider=whatsapp"
     },
