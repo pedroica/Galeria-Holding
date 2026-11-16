@@ -235,7 +235,8 @@ export default async function handler(req, res) {
 
   // POST /api/fila — gerar fila de prospecção
   const authHeader = (req.headers.authorization || '').replace('Bearer ', '').trim();
-  const isCron = authHeader && ((CRON_SECRET && authHeader === CRON_SECRET) || (SUPA_KEY && authHeader === SUPA_KEY) || (SUPA_ANON && authHeader === SUPA_ANON));
+  // SUPA_ANON (chave pública do frontend) NÃO autentica cron — só CRON_SECRET ou service key.
+  const isCron = authHeader && ((CRON_SECRET && authHeader === CRON_SECRET) || (SUPA_KEY && authHeader === SUPA_KEY));
   const isJWT = !isCron && authHeader && await verifyJWT(authHeader);
   if (!isCron && !isJWT) return res.status(401).json({ error: 'Não autenticado' });
 

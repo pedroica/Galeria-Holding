@@ -26,9 +26,23 @@
   // pré-aquece a detecção
   try{ getProxyInfo(); }catch(e){}
 
+  // Anexa o JWT da sessão (se logado) às chamadas; nunca sobrescreve um header já presente.
+  function ghSessionJwt(){ try{ return (window.__supaSession && window.__supaSession.access_token) || ''; }catch(e){ return ''; } }
+  function ghAuthOpts(o){
+    var jwt = ghSessionJwt(); if(!jwt) return o||{};
+    var out = Object.assign({}, o||{});
+    var hh = Object.assign({}, out.headers||{});
+    if(!hh['Authorization'] && !hh['authorization']) hh['Authorization'] = 'Bearer ' + jwt;
+    out.headers = hh; return out;
+  }
+
   window.fetch = async function(url, opts){
     try{
       if(typeof url === 'string'){
+        // Endpoints internos que gastam crédito exigem auth → anexa o JWT da sessão.
+        if(url.indexOf('/api/enrich') === 0 || url.indexOf('/api/claude') === 0 || url.indexOf('/api/crawl') === 0 || url.indexOf('/api/hunter') === 0){
+          return origFetch(url, ghAuthOpts(opts));
+        }
         if(url.indexOf('https://api.anthropic.com/v1/messages') === 0){
           var p = await getProxyInfo();
           if(p && p.claude){

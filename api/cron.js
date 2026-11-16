@@ -11,7 +11,9 @@
 const SUPA_URL = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPA_CRM_SERVICE_KEY;
 const LUSHA_KEY = process.env.LUSHA_API_KEY || process.env.LUSHA_KEY;
-const BASE_URL = process.env.VERCEL_URL ? 'https://'+process.env.VERCEL_URL : 'https://galeria-holding-sage.vercel.app';
+// Domínio de produção estável para chamadas internas (VERCEL_URL é o deploy
+// específico, sujeito à proteção de deployment e quebra as chamadas internas).
+const BASE_URL = process.env.PROD_BASE_URL || 'https://galeria-holding-sage.vercel.app';
 
 async function authCheck(req, res, job) {
   const auth = req.headers.authorization || '';
@@ -213,9 +215,13 @@ function dominioDe(emp) {
 async function descobrirDominio(empresaId, nome) {
   if (!nome) return null;
   try {
+    const credencial = (process.env.CRON_SECRET || '').trim() || (SUPA_KEY || '').trim();
     const r = await fetch(BASE_URL + '/api/enrich?provider=lusha-domain', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + credencial
+      },
       body: JSON.stringify({ company: nome, empresaId })
     });
     if (!r.ok) return null;

@@ -258,6 +258,20 @@ export default async function handler(req, res) {
     });
   }
 
+  // ── Gate de autenticação: providers que gastam crédito ────────────────────
+  // Exigem JWT de usuário logado OU credencial de cron (CRON_SECRET / service key).
+  // Fecham por padrão: sem credencial válida → 401, nenhum crédito é gasto.
+  const PROTEGIDOS = new Set(['hunter', 'lusha', 'lusha-domain', 'lusha-search', 'lusha-reveal', 'claude', 'crawl']);
+  if (PROTEGIDOS.has(provider)) {
+    const authHeader = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+    const segredosCron = [(process.env.CRON_SECRET || '').trim(), (SUPA_SVC || '').trim()].filter(Boolean);
+    const okCron = authHeader && segredosCron.includes(authHeader);
+    const okJwt = !okCron && authHeader && await verifyUserJwt(authHeader);
+    if (!okCron && !okJwt) {
+      return res.status(401).json({ error: 'Não autenticado. Faça login para usar esta ferramenta.' });
+    }
+  }
+
   // ── Hunter ────────────────────────────────────────────────────────────────
   if (provider === 'hunter') {
     if (!HUNTER_KEY) return res.status(500).json({ error: 'HUNTER_KEY não configurada' });
