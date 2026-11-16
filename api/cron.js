@@ -74,31 +74,41 @@ const HIGIENE_MAX_POR_RODADA = 300;
 // corta em 8KB (414). Vai em lotes de 80 (~3KB), que passa com folga.
 const HIGIENE_LOTE = 80;
 
-async function higienizarFila() {
+async function higienizarFila(budgetMs = 20000) {
   const cfg = await sg('crm_configuracoes?chave=eq.higiene_fila_dias&select=valor&limit=1');
   const dias = Array.isArray(cfg) && cfg[0]?.valor ? Number(cfg[0].valor) : 7;
   const corte = new Date(Date.now() - dias*24*60*60*1000).toISOString();
-
-  const vencidos = await sg(
-    'crm_fila?status=eq.rascunho&apagado_em=is.null&gerado_em=lt.' + corte +
-    '&select=id&order=gerado_em.asc&limit=' + HIGIENE_MAX_POR_RODADA
-  );
-  const ids = (Array.isArray(vencidos) ? vencidos : []).map(r => r.id).filter(Boolean);
-  if (!ids.length) return { arquivados: 0, dias };
-
   const motivo = 'arquivado automaticamente: rascunho venceu sem aprovação (' + dias + ' dias)';
-  let arquivados = 0;
-  let lotesFalhos = 0;
-  for (let i = 0; i < ids.length; i += HIGIENE_LOTE) {
-    const lote = ids.slice(i, i + HIGIENE_LOTE);
-    const ok = await sp(
-      'crm_fila?id=in.(' + lote.join(',') + ')',
-      { status: 'pulado', motivo_pulo: motivo },
-      'PATCH'
+  const t0 = Date.now();
+
+  // Repete até esgotar os vencidos (uma só leva de 300 deixava milhares para trás)
+  // ou até acabar o orçamento de tempo da função. Cada leva muda status→'pulado',
+  // então a leva seguinte só traz vencidos ainda não arquivados.
+  let arquivados = 0, lotes = 0, lotesFalhos = 0, rodadas = 0;
+  while (Date.now() - t0 <= budgetMs) {
+    const vencidos = await sg(
+      'crm_fila?status=eq.rascunho&apagado_em=is.null&gerado_em=lt.' + corte +
+      '&select=id&order=gerado_em.asc&limit=' + HIGIENE_MAX_POR_RODADA
     );
-    if (ok) arquivados += lote.length; else lotesFalhos++;
+    const ids = (Array.isArray(vencidos) ? vencidos : []).map(r => r.id).filter(Boolean);
+    if (!ids.length) break;
+    rodadas++;
+    let arquivadosRodada = 0;
+    for (let i = 0; i < ids.length && Date.now() - t0 <= budgetMs; i += HIGIENE_LOTE) {
+      const lote = ids.slice(i, i + HIGIENE_LOTE);
+      const ok = await sp(
+        'crm_fila?id=in.(' + lote.join(',') + ')',
+        { status: 'pulado', motivo_pulo: motivo },
+        'PATCH'
+      );
+      lotes++;
+      if (ok) { arquivados += lote.length; arquivadosRodada += lote.length; } else lotesFalhos++;
+    }
+    // Leva menor que o teto = não há mais vencidos. Rodada que não arquivou nada
+    // (PATCH falhando) não deve girar em falso: encerra para não esgotar o tempo.
+    if (ids.length < HIGIENE_MAX_POR_RODADA || arquivadosRodada === 0) break;
   }
-  return { arquivados, dias, lotes: Math.ceil(ids.length / HIGIENE_LOTE), lotes_falhos: lotesFalhos };
+  return { arquivados, dias, lotes, lotes_falhos: lotesFalhos, rodadas };
 }
 
 // ── job: gerar-fila-diario ───────────────────────────────────────────────────
@@ -109,14 +119,19 @@ async function jobGerarFila(req, res) {
   // Limpa os vencidos ANTES do pré-check, senão a fila nunca desafoga sozinha.
   const higiene = await higienizarFila();
 
-  // Pré-check: menos de 30 rascunhos vivos na fila
-  const rascRows = await sg('crm_fila?status=eq.rascunho&apagado_em=is.null&select=id&limit=31');
+  // Contagem total de rascunhos vivos — só observabilidade. A trava real é por
+  // canal (abaixo), para que um canal cheio não impeça a geração nos outros.
+  const rascRows = await sg('crm_fila?status=eq.rascunho&apagado_em=is.null&select=id&limit=200');
   const qtdRascunhos = Array.isArray(rascRows) ? rascRows.length : 0;
-  if (qtdRascunhos >= 30) {
-    const ctx = { motivo: 'fila_cheia', qtdRascunhos, higiene, ms: Date.now()-inicio };
-    // 'aviso': fila cheia sem nada gerado é um problema a resolver, não um sucesso.
-    await logCron('gerar-fila-diario', 'aviso', 'fim — pulado', ctx);
-    return res.status(200).json({ ok:true, pulado:true, ...ctx });
+
+  // Pré-check por canal: no máx. 30 rascunhos vivos por canal, contando só os
+  // gerados nos últimos 7 dias (rascunho antigo que escapou da higiene não pode
+  // travar o canal para sempre).
+  const corte7d = new Date(Date.now() - 7*24*60*60*1000).toISOString();
+  async function rascunhosRecentes(canal) {
+    const rows = await sg('crm_fila?status=eq.rascunho&apagado_em=is.null&canal=eq.' + canal +
+      '&gerado_em=gte.' + corte7d + '&select=id&limit=31');
+    return Array.isArray(rows) ? rows.length : 0;
   }
 
   // Agências com ≥3 templates ativos por canal
@@ -155,18 +170,37 @@ async function jobGerarFila(req, res) {
       descartes[canal] = 'sem_agencia_com_3_templates';
       continue;
     }
+    const jaVivos = await rascunhosRecentes(canal);
+    if (jaVivos >= 30) {
+      descartes[canal] = 'fila_cheia (' + jaVivos + '+ rascunhos vivos < 7d)';
+      porCanal[canal] = 0;
+      continue;
+    }
     try {
+      const credGerar = (process.env.CRON_SECRET || '').trim() || (SUPA_KEY || '').trim();
       const r = await fetch(BASE_URL + '/api/fila', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + (process.env.CRON_SECRET || '') },
+        headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + credGerar },
         body: JSON.stringify({ canais: [canal], limite, sem_ia: true })
       });
-      const data = r.ok ? await r.json().catch(() => ({})) : {};
-      const gerados = data.gerados || 0;
-      porCanal[canal] = gerados;
-      totalGerados += gerados;
-      if (data.erros?.length) descartes[canal] = data.erros.slice(0, 3).map(String).join('; ');
+      if (r.ok) {
+        const data = await r.json().catch(() => ({}));
+        const gerados = data.gerados || 0;
+        porCanal[canal] = gerados;
+        totalGerados += gerados;
+        if (data.erros?.length) {
+          descartes[canal] = data.erros.slice(0, 3)
+            .map(e => (e && e.err) ? e.err : (typeof e === 'string' ? e : JSON.stringify(e)))
+            .join('; ');
+        }
+      } else {
+        // Antes virava {} e o erro sumia: agora vai para o descarte e para o log.
+        const txt = await r.text().catch(() => '');
+        porCanal[canal] = 0;
+        descartes[canal] = 'HTTP ' + r.status + (txt ? ': ' + txt.slice(0, 160) : '');
+      }
     } catch (e) {
+      porCanal[canal] = 0;
       descartes[canal] = e.message;
     }
   }
@@ -181,9 +215,10 @@ async function jobGerarFila(req, res) {
     porAgencia[item.agencia_id][item.canal] = (porAgencia[item.agencia_id][item.canal] || 0) + 1;
   }
 
-  const ctx = { gerados: totalGerados, qtdRascunhos, porCanal, porAgencia, descartes, ms: Date.now()-inicio };
+  const ctx = { gerados: totalGerados, qtdRascunhos, higiene, porCanal, porAgencia, descartes, ms: Date.now()-inicio };
   console.log('[cron:gerar-fila-diario]', totalGerados, 'gerados', JSON.stringify(porCanal));
-  await logCron('gerar-fila-diario', 'info', 'fim', ctx);
+  // Zero gerados é um aviso (algo travou), não um sucesso silencioso.
+  await logCron('gerar-fila-diario', totalGerados === 0 ? 'aviso' : 'info', 'fim', ctx);
   return res.status(200).json({ ok: true, ...ctx });
 }
 

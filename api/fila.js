@@ -9,7 +9,27 @@
 //           e os callers em block3.js foram atualizados para /api/fila
 
 import Anthropic from '@anthropic-ai/sdk';
+import { promises as dnsPromises } from 'dns';
 import { makeBlocklist } from '../lib/blocklist.js';
+
+// Checagem de MX do domínio do e-mail antes de enfileirar. Retorna:
+//   { ok:true }                    tem servidor de e-mail
+//   { ok:false, definitivo:true }  domínio não existe ou não tem MX → marcar inválido
+//   { ok:false, definitivo:false } falha transitória de DNS → não marcar, não bloquear
+// Testes injetam globalThis.__mxResolver para não depender de DNS real.
+async function checarMX(dominio) {
+  if (!dominio) return { ok: false, definitivo: true };
+  const resolver = globalThis.__mxResolver || ((d) => dnsPromises.resolveMx(d));
+  try {
+    const mx = await resolver(dominio);
+    if (Array.isArray(mx) && mx.length > 0) return { ok: true };
+    return { ok: false, definitivo: true };
+  } catch (e) {
+    const code = e && e.code;
+    const semRegistro = code === 'ENOTFOUND' || code === 'ENODATA';
+    return { ok: false, definitivo: semRegistro };
+  }
+}
 
 const SUPA_URL  = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
 const SUPA_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPA_CRM_SERVICE_KEY;
@@ -256,8 +276,13 @@ export default async function handler(req, res) {
   if (!Array.isArray(agencias) || agencias.length === 0) return res.status(200).json({ gerados: 0, erros: [] });
 
   const LIMITES = await limitesConfig();
+  // Pausa de primeiros contatos: decisão de negócio. Quando ligada, o gerador só
+  // cria follow-up (etapa >= 2) — conversa já iniciada —, nunca abordagem nova.
+  const cfgPausaRows = await sg('crm_configuracoes?chave=eq.pausar_primeiros_contatos&select=valor&limit=1');
+  const pausarPrimeiros = String(Array.isArray(cfgPausaRows) && cfgPausaRows[0]?.valor).toLowerCase() === 'true';
   const blRows = await sg('crm_blocklist?ativo=eq.true&apagado_em=is.null&select=nome_canonico,aliases,dominios,grupo_economico,ativo&limit=2000');
   const blocklist = makeBlocklist(blRows || []);
+  const mxCache = new Map();
   const restante = {};
   for (const c of canais) { const usados = await contadosHoje(c); restante[c] = Math.max(0, (LIMITES[c] || 50) - usados); }
 
@@ -270,6 +295,11 @@ export default async function handler(req, res) {
     const empresasVistas = new Set();
     const elegiveis = decisores.filter(d => {
       if (!elegivel(d)) { bloqueados.push({decisor:d.nome,motivo:'inelegivel'}); return false; }
+      if (pausarPrimeiros) {
+        const m = String(d.etapa_cadencia || '').match(/\d+/);
+        const etapaNum = m ? Number(m[0]) : 1;
+        if (etapaNum <= 1) { bloqueados.push({decisor:d.nome,motivo:'primeiros_contatos_pausados'}); return false; }
+      }
       if (empresasVistas.has(d.empresa_id)) { bloqueados.push({decisor:d.nome,motivo:'empresa_ja_na_fila'}); return false; }
       if (d.ultimo_toque_em && new Date(d.ultimo_toque_em) > new Date(semana)) { bloqueados.push({decisor:d.nome,motivo:'tocado_esta_semana'}); return false; }
       const emp = d.crm_empresas || {};
@@ -293,7 +323,19 @@ export default async function handler(req, res) {
       const emp = d.crm_empresas || {};
       // Dupla checagem da blocklist imediatamente antes de inserir em crm_fila
       if (emp.cliente_ativo || blocklist.isBlocked({ name: emp.nome, domain: emp.dominio, email: d.email })) { bloqueados.push({decisor:d.nome,motivo:'blocklist_pre_insert'}); continue; }
-      const canalList = canaisDisponiveis(d).filter(c => canais.includes(c) && (restante[c] || 0) > 0);
+      let canalList = canaisDisponiveis(d).filter(c => canais.includes(c) && (restante[c] || 0) > 0);
+      // MX: antes de um e-mail entrar na fila, confirma que o domínio recebe e-mail.
+      // Sem MX (definitivo) → marca email_valido=false e tira o canal e-mail.
+      if (canalList.includes('email') && d.email && d.email.includes('@')) {
+        const dom = d.email.split('@')[1].toLowerCase().trim();
+        let mx = mxCache.get(dom);
+        if (mx === undefined) { mx = await checarMX(dom); mxCache.set(dom, mx); }
+        if (!mx.ok) {
+          canalList = canalList.filter(c => c !== 'email');
+          bloqueados.push({ decisor:d.nome, motivo:(mx.definitivo?'sem_mx:':'mx_indef:')+dom });
+          if (mx.definitivo) await sp(`crm_decisores?id=eq.${d.id}`, { email_valido:false }, 'PATCH');
+        }
+      }
       if (canalList.length === 0) continue;
       const canal = canalList[0]; const etapa = d.etapa_cadencia || 'etapa1';
       const etapaStr = etapa.replace('etapa','');
