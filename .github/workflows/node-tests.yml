@@ -1,0 +1,48 @@
+name: Node tests
+
+# Testes de node unitários (fetch simulado), sem depender de produção nem de
+# segredos. Rodam também em branches claude/** — job próprio, separado do E2E.
+on:
+  push:
+    branches: [main, "feature/**", "chore/**", "fix/**", "claude/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  node-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Blocklist
+        run: npm run test:blocklist
+
+      - name: Cron jobs
+        run: npm run test:cron
+
+      - name: Fila motor
+        run: npm run test:fila
+
+      - name: Enrich auth gate
+        run: npm run test:enrich-auth
+
+      - name: Enrich Lusha
+        run: npm run test:enrich-lusha
+
+      - name: Bloco 5 (rascunhos/oportunidades/fechamento)
+        run: npm run test:bloco5
+
+      - name: Relatorio route
+        run: npm run test:relatorio
+
+      - name: Guard de leitura
+        run: npm run test:guard
