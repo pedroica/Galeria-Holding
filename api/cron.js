@@ -80,11 +80,14 @@ async function jobGerarFila(req, res) {
     return res.status(200).json({ ok:true, pulado:true, ...ctx });
   }
 
-  // Gerar por canal com limites: email=25, whatsapp=10, linkedin_convite=10
+  // Limites por canal lidos de crm_configuracoes (email_daily_max, whatsapp_daily_max, linkedin_daily_max)
+  const cfgRows = await sg('crm_configuracoes?chave=in.(email_daily_max,whatsapp_daily_max,linkedin_daily_max)&select=chave,valor');
+  const cfg = {}; for (const r of (Array.isArray(cfgRows) ? cfgRows : [])) cfg[r.chave] = Number(r.valor);
+  const lim = (k, def) => Number.isFinite(cfg[k]) ? cfg[k] : def;
   const canaisConfig = [
-    { canal: 'email',            limite: 25 },
-    { canal: 'whatsapp',         limite: 10 },
-    { canal: 'linkedin_convite', limite: 10 }
+    { canal: 'email',            limite: lim('email_daily_max', 25) },
+    { canal: 'whatsapp',         limite: lim('whatsapp_daily_max', 10) },
+    { canal: 'linkedin_convite', limite: lim('linkedin_daily_max', 10) }
   ];
   let totalGerados = 0;
   const porCanal   = {};

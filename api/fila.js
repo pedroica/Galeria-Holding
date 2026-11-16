@@ -9,6 +9,7 @@
 //           e os callers em block3.js foram atualizados para /api/fila
 
 import Anthropic from '@anthropic-ai/sdk';
+import { makeBlocklist } from '../lib/blocklist.js';
 
 const SUPA_URL  = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
 const SUPA_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPA_CRM_SERVICE_KEY;
@@ -36,7 +37,19 @@ async function verifyJWT(jwt) {
 }
 
 // ── gerar-fila helpers ───────────────────────────────────────────────────────
-const LIMITES = { email: 50, whatsapp: 80, linkedin_convite: 20, linkedin_mensagem: 20 };
+const DEFAULT_LIMITES = { email: 50, whatsapp: 80, linkedin_convite: 20, linkedin_mensagem: 20 };
+// Tetos diários lidos de crm_configuracoes (email_daily_max=15, whatsapp_daily_max=10, ...)
+async function limitesConfig() {
+  const rows = await sg('crm_configuracoes?chave=in.(email_daily_max,whatsapp_daily_max,linkedin_daily_max)&select=chave,valor');
+  const m = {}; for (const r of (Array.isArray(rows) ? rows : [])) m[r.chave] = Number(r.valor);
+  const pick = (k, def) => Number.isFinite(m[k]) ? m[k] : def;
+  return {
+    email: pick('email_daily_max', DEFAULT_LIMITES.email),
+    whatsapp: pick('whatsapp_daily_max', DEFAULT_LIMITES.whatsapp),
+    linkedin_convite: pick('linkedin_daily_max', DEFAULT_LIMITES.linkedin_convite),
+    linkedin_mensagem: pick('linkedin_daily_max', DEFAULT_LIMITES.linkedin_mensagem),
+  };
+}
 function inicioSemana() {
   const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
   const dia = now.getDay();
@@ -241,6 +254,9 @@ export default async function handler(req, res) {
   if (!Array.isArray(agencias) || agencias.length === 0) agencias = await sg('crm_agencias?select=*&order=nome.asc&limit=14');
   if (!Array.isArray(agencias) || agencias.length === 0) return res.status(200).json({ gerados: 0, erros: [] });
 
+  const LIMITES = await limitesConfig();
+  const blRows = await sg('crm_blocklist?ativo=eq.true&apagado_em=is.null&select=nome_canonico,aliases,dominios,grupo_economico,ativo&limit=2000');
+  const blocklist = makeBlocklist(blRows || []);
   const restante = {};
   for (const c of canais) { const usados = await contadosHoje(c); restante[c] = Math.max(0, (LIMITES[c] || 50) - usados); }
 
@@ -248,15 +264,19 @@ export default async function handler(req, res) {
   for (const ag of agencias) {
     if (totalGerado >= limite) break;
     const scoreMap = await estrelasPorEmpresa(ag.id);
-    const decisores = await sg(`crm_decisores?etapa_cadencia=neq.off&status=neq.inativo&select=*,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,sinal_recente_em,cliente_ativo,agencia_atendendo)&order=ultimo_toque_em.asc.nullsfirst&limit=2000`);
+    const decisores = await sg(`crm_decisores?etapa_cadencia=neq.off&status=neq.inativo&select=*,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,sinal_recente_em,cliente_ativo,agencia_atendendo,dominio)&order=ultimo_toque_em.asc.nullsfirst&limit=2000`);
     if (!Array.isArray(decisores)) continue;
     const empresasVistas = new Set();
     const elegiveis = decisores.filter(d => {
       if (!elegivel(d)) { bloqueados.push({decisor:d.nome,motivo:'inelegivel'}); return false; }
       if (empresasVistas.has(d.empresa_id)) { bloqueados.push({decisor:d.nome,motivo:'empresa_ja_na_fila'}); return false; }
       if (d.ultimo_toque_em && new Date(d.ultimo_toque_em) > new Date(semana)) { bloqueados.push({decisor:d.nome,motivo:'tocado_esta_semana'}); return false; }
-      const emp = d.crm_empresas;
-      if (emp && emp.cliente_ativo && emp.agencia_atendendo && emp.agencia_atendendo !== ag.id) { bloqueados.push({decisor:d.nome,motivo:'cliente_ativo_outra_agencia'}); return false; }
+      const emp = d.crm_empresas || {};
+      // BLOCKLIST: empresa/domínio/e-mail de cliente da holding → nunca abordar
+      const bl = blocklist.check({ name: emp.nome, domain: emp.dominio, email: d.email });
+      if (bl.blocked) { bloqueados.push({decisor:d.nome,motivo:'blocklist:'+bl.entryName+'/'+bl.reason}); return false; }
+      // Cliente ativo da holding = bloqueado automaticamente (qualquer agência)
+      if (emp.cliente_ativo) { bloqueados.push({decisor:d.nome,motivo:'cliente_ativo'}); return false; }
       empresasVistas.add(d.empresa_id);
       return true;
     }).sort((a,b) => {
@@ -270,6 +290,8 @@ export default async function handler(req, res) {
       if (totalGerado >= limite) break;
       if (Date.now() - inicioFila > LIMITE_FILA_MS) { erros.push({empresa:'timeout',decisor:'',err:'wall-clock 50s atingido'}); break; }
       const emp = d.crm_empresas || {};
+      // Dupla checagem da blocklist imediatamente antes de inserir em crm_fila
+      if (emp.cliente_ativo || blocklist.isBlocked({ name: emp.nome, domain: emp.dominio, email: d.email })) { bloqueados.push({decisor:d.nome,motivo:'blocklist_pre_insert'}); continue; }
       const canalList = canaisDisponiveis(d).filter(c => canais.includes(c) && (restante[c] || 0) > 0);
       if (canalList.length === 0) continue;
       const canal = canalList[0]; const etapa = d.etapa_cadencia || 'etapa1';
