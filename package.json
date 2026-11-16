@@ -18,6 +18,7 @@
     "test:enrich-lusha": "node tests/enrich-lusha.test.mjs",
     "test:bloco5": "node tests/cron-bloco5.test.mjs",
     "test:relatorio": "node tests/relatorio-route.test.mjs",
+    "test:guard": "node tests/cron-guard.test.mjs",
     "test:e2e": "npx playwright test tests/lusha-e2e.playwright.mjs --reporter=list",
     "typecheck": "cd agent && npm run typecheck"
   },

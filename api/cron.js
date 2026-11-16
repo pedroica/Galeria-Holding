@@ -39,9 +39,19 @@ async function authCheck(req, res, job) {
   return true;
 }
 
+// Retorna null em falha (NÃO [] — senão uma leitura que falhou vira "sem dados"
+// e o job segue sobre uma base vazia). Quem não distingue continua coagindo p/ [].
 async function sg(path) {
-  const r = await fetch(SUPA_URL+'/rest/v1/'+path, { headers: { apikey:SUPA_KEY, Authorization:'Bearer '+SUPA_KEY } });
-  return r.ok ? r.json() : [];
+  try {
+    const r = await fetch(SUPA_URL+'/rest/v1/'+path, { headers: { apikey:SUPA_KEY, Authorization:'Bearer '+SUPA_KEY } });
+    return r.ok ? await r.json() : null;
+  } catch (_) { return null; }
+}
+// Encerra o job quando uma leitura crítica falha: registra 'error' e para.
+async function erroLeitura(job, res, inicio, detalhe) {
+  const ctx = { erro: 'leitura_banco_falhou', detalhe: detalhe || null, ms: Date.now()-inicio };
+  await logCron(job, 'error', 'fim — leitura do banco falhou', ctx);
+  return res.status(500).json({ ok: false, ...ctx });
 }
 async function sp(path, body, method='POST') {
   const r = await fetch(SUPA_URL+'/rest/v1/'+path, { method, headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'return=minimal'}, body:JSON.stringify(body) });
@@ -136,6 +146,7 @@ async function jobGerarFila(req, res) {
 
   // Agências com ≥3 templates ativos por canal
   const templates = await sg('crm_templates?ativo=eq.true&select=agencia_id,canal&limit=500');
+  if (templates === null) return erroLeitura('gerar-fila-diario', res, inicio, 'crm_templates');
   const agCanalCount = {};
   for (const t of (Array.isArray(templates) ? templates : [])) {
     const key = t.agencia_id + ':' + t.canal;
@@ -428,6 +439,7 @@ async function jobEnriquecimento(req, res) {
   // Rotação: os menos recentemente tentados vêm primeiro (nullsfirst = nunca
   // tentados). Antes a mesma janela de 50 era reconsultada todo dia.
   const semEmail = await sg('crm_decisores?email=is.null&apagado_em=is.null&select=id,nome,empresa_id,linkedin_url,enriquecimento_tentado_em&order=enriquecimento_tentado_em.asc.nullsfirst,ultimo_toque_em.desc.nullslast&limit=50');
+  if (semEmail === null) return erroLeitura('enriquecimento-diario', res, inicio, 'crm_decisores');
   const decisoresSemEmail = Array.isArray(semEmail) ? semEmail : [];
   if (decisoresSemEmail.length === 0) {
     const ctx = { revelados: 0, teto, motivo: 'nenhum_decisor_sem_email', ms: Date.now()-inicio };
@@ -626,6 +638,7 @@ async function jobNoticias(req, res) {
 
   // Todas as empresas com ≥3 estrelas
   const scoreRows = await sg('crm_empresa_agencia_estrelas?or=(estrelas_manual.gte.3,estrelas_calculadas.gte.3)&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=1000');
+  if (scoreRows === null) return erroLeitura('noticias-semanal', res, inicio, 'crm_empresa_agencia_estrelas');
   const empMap = {};
   for (const r of (Array.isArray(scoreRows)?scoreRows:[])) {
     const eff=r.estrelas_manual!=null?Number(r.estrelas_manual):Number(r.estrelas_calculadas||0);
@@ -758,6 +771,7 @@ async function jobFechamento(req, res) {
     sg(`crm_oportunidades?criado_em=gte.${semSeg.toISOString()}&select=id,estagio,agencia_id&limit=500`)
   ]);
 
+  if (filaRows === null || toquesSem === null) return erroLeitura('fechamento-sexta', res, inicio, 'crm_fila/crm_toques');
   const fila = Array.isArray(filaRows) ? filaRows : [];
   const toques = Array.isArray(toquesSem) ? toquesSem : [];
 
@@ -890,6 +904,7 @@ async function jobRascunhosMatinais(req, res) {
     '&select=id,assunto,corpo,etapa_cadencia,thread_ref,rascunho_tentativas,crm_decisores(email,nome)' +
     '&order=rascunho_tentativas.asc,aprovado_em.asc&limit=' + teto
   );
+  if (itens === null) return erroLeitura('rascunhos-matinais', res, inicio, 'crm_fila');
   const lista = (Array.isArray(itens) ? itens : []).filter(it => {
     const email = it.crm_decisores && it.crm_decisores.email;
     if (!email) return false;
@@ -961,6 +976,7 @@ async function jobOportunidadesParadas(req, res) {
   const corte = Date.now() - dias*24*60*60*1000;
 
   const opps = await sg('crm_oportunidades?apagado_em=is.null&select=id,titulo,estagio,empresa_id,valor_estimado,proximo_passo,proximo_passo_em,aberta_em&limit=500');
+  if (opps === null) return erroLeitura('oportunidades-paradas', res, inicio, 'crm_oportunidades');
   const ativas = (Array.isArray(opps) ? opps : []).filter(o => !ESTAGIOS_FORA.includes(o.estagio));
   if (!ativas.length) {
     const ctx = { marcadas: 0, motivo: 'nenhuma_oportunidade_ativa', ms: Date.now()-inicio };
