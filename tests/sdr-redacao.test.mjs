@@ -1,6 +1,6 @@
 // tests/sdr-redacao.test.mjs — Bloco C: redação (lib/sdr-redacao.js), parte pura.
 // Rodar: node tests/sdr-redacao.test.mjs
-import { contarPalavras, temTravessaoPontuacao, expressoesEncontradas, validarForma, escolherCase, construirPromptRedacao } from '../lib/sdr-redacao.js';
+import { mesclarCases, contarPalavras, temTravessaoPontuacao, expressoesEncontradas, validarForma, escolherCase, construirPromptRedacao } from '../lib/sdr-redacao.js';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log((c ? '  ✓ ' : '  ✗ FALHOU: ') + m); };
@@ -46,6 +46,17 @@ const p = construirPromptRedacao({
 });
 ok(/Acme lança linha X/.test(p.user) && /brand lift recorde/.test(p.user), 'prompt inclui o fato do dossiê e o resultado do case');
 ok(/travessão/i.test(p.system) && /Pedro Ica/.test(p.system), 'system fixa regra de travessão e assinatura');
+
+console.log('\nRedação — banco de cases vivo');
+const kv = mesclarCases(knowledge, [
+  { titulo: 'Case Novo', marca: 'X', resultado: '+52% de novas contas', agencia_id: 'g', agencias_secundarias: ['v'], tags: ['banco'] },
+  { titulo: 'Proj', marca: 'Y', resultado: 'Proposta, não resultado: R$ 4 por asset', agencia_id: 'g' },
+  { titulo: 'Sem num', marca: 'Z', resultado: 'Sem métricas divulgadas.', agencia_id: 'g' },
+  { titulo: 'Case Tech', marca: 'dup', resultado: 'x', agencia_id: 'g' }
+], { g: 'galeria', v: 'vitrine' });
+ok(kv.cases_destaque.length === 4, 'entra o novo e o sem métrica; sai a projeção e a duplicata');
+ok(kv.cases_destaque.find(c => c.titulo === 'Sem num').resultado === '', 'case sem métrica entra sem número');
+ok(escolherCase(kv, { setor: 'banco', agenciaSlug: 'vitrine' }).titulo === 'Case Novo', 'agência secundária do case conta na escolha');
 
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
 process.exit(fail ? 1 : 0);
