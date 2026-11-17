@@ -180,4 +180,4 @@ Ainda não há leads aceitos, então o custo por **lead aceito** só existe depo
   2. Outlook reconectado.
   3. Infraestrutura enxuta de e-mail.
   4. Cases das 4 agências sem case.
-  5. Mais fato público por lead: 28% é o maior gargalo; sinais do Lusha e notícias semanais ajudam, e subir para 50% corta pela metade o volume de leads necessário.
+  5. Mais fato público por lead: 28% é o maior gargalo; sinais do Lusha e notícias semanais ajudam, e subir para 50% reduz em ~44% o volume de leads necessário (225 para 126 por reunião).
