@@ -596,3 +596,25 @@ test.describe('Pipeline — mover oportunidade para outra agência', () => {
   });
 
 });
+
+// SDR: as leituras com embed dos jobs rodam no banco real (limit=0, sem ler nem
+// escrever dados). Pega FK faltando, coluna renomeada ou embed ambíguo, que os
+// testes com fetch simulado não enxergam (foi assim que o bug das FKs passou).
+test.describe('SDR — embeds dos jobs contra o banco real', () => {
+  const CONSULTAS = {
+    dossie: 'crm_sdr_estado?select=id,empresa_id,decisor_id,crm_empresas:empresa_id(id,nome,dominio),crm_decisores:decisor_id(nome)',
+    redacao: 'crm_sdr_estado?select=id,sombra,agencia_motivo,dia_cadencia,crm_decisores:decisor_id(nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)',
+    tela_amostra: 'crm_sdr_mensagens?select=id,custo_qc_usd,crm_agencias:agencia_id(nome,slug),crm_empresas:empresa_id(nome),crm_decisores:decisor_id(nome,cargo),crm_dossies:dossie_id(sinais)',
+    tela_respostas: 'crm_sdr_respostas?select=id,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(nome)',
+    selecao: 'crm_decisores?select=id,opt_out,respondeu,pausa_ate_em,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,dominio,cliente_ativo)',
+    topo: 'crm_oportunidades?select=empresa_id,crm_agencias:agencia_id(slug),crm_empresas:empresa_id(id,nome,setor,segmento_detalhe)',
+    cases: 'crm_cases?select=titulo,agencias_secundarias,crm_agencias:agencia_id(slug)'
+  };
+  for (const [nome, q] of Object.entries(CONSULTAS)) {
+    test(`embed SDR: ${nome}`, async () => {
+      test.skip(!SUPA_SVC, 'sem service key');
+      const r = await fetch(`${SUPA_URL}/rest/v1/${q}&limit=0`, { headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC } });
+      expect(r.status, await r.text()).toBe(200);
+    });
+  }
+});
