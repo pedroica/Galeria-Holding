@@ -19,7 +19,7 @@
     "test:bloco5": "node tests/cron-bloco5.test.mjs",
     "test:relatorio": "node tests/relatorio-route.test.mjs",
     "test:guard": "node tests/cron-guard.test.mjs",
-    "test:sdr": "node tests/sdr-auth.test.mjs",
+    "test:sdr": "node tests/sdr-auth.test.mjs && node tests/sdr-dossie.test.mjs && node tests/sdr-selecao.test.mjs",
     "test:e2e": "npx playwright test tests/lusha-e2e.playwright.mjs --reporter=list",
     "typecheck": "cd agent && npm run typecheck",
     "test:gh-core": "node tests/gh-core-auth.test.mjs",

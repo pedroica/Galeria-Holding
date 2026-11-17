@@ -8,6 +8,10 @@
 //
 // vercel.json crons apontam para /api/cron?job=<nome>
 
+import { makeBlocklist } from '../lib/blocklist.js';
+import { selecionarLote } from '../lib/sdr-selecao.js';
+import { montarDossie } from '../lib/sdr-dossie.js';
+
 const SUPA_URL = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
 const SUPA_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPA_CRM_SERVICE_KEY;
 const LUSHA_KEY = process.env.LUSHA_API_KEY || process.env.LUSHA_KEY;
@@ -57,6 +61,20 @@ async function erroLeitura(job, res, inicio, detalhe) {
 }
 async function sp(path, body, method='POST') {
   const r = await fetch(SUPA_URL+'/rest/v1/'+path, { method, headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'return=minimal'}, body:JSON.stringify(body) });
+  return r.ok;
+}
+// Insert que devolve a representação (p/ pegar o id gerado).
+async function spRet(path, body) {
+  const r = await fetch(SUPA_URL+'/rest/v1/'+path, { method:'POST', headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'return=representation'}, body:JSON.stringify(body) });
+  if (!r.ok) return null;
+  const j = await r.json().catch(()=>null);
+  return Array.isArray(j) && j[0] ? j[0] : null;
+}
+// Upsert por conflito (idempotente): merge-duplicates no índice único indicado.
+async function spUpsert(path, body, onConflict) {
+  const r = await fetch(SUPA_URL+'/rest/v1/'+path+(path.includes('?')?'&':'?')+'on_conflict='+onConflict, {
+    method:'POST', headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(body)
+  });
   return r.ok;
 }
 // Um job que termina sem fazer nada não pode registrar 'info'.
@@ -1063,6 +1081,125 @@ async function jobOportunidadesParadas(req, res) {
   return res.status(200).json({ ok: true, ...ctx });
 }
 
+// ── SDR: job sdr-selecao (seção 4.2) ──────────────────────────────────────────
+// Escolhe o lote do dia e por qual agência cada abordagem sai; grava em
+// crm_sdr_estado (etapa 'selecionado'). Não envia nada. Idempotente (upsert).
+async function jobSdrSelecao(req, res) {
+  const inicio = Date.now();
+  await logCron('sdr-selecao', 'info', 'início', null);
+
+  const cfg = await sg('crm_configuracoes?chave=eq.sdr_lote_max&select=valor&limit=1');
+  const loteMax = Array.isArray(cfg) && cfg[0]?.valor ? Number(cfg[0].valor) : 30;
+
+  const decisores = await sg('crm_decisores?etapa_cadencia=neq.off&status=neq.inativo&apagado_em=is.null&select=id,nome,cargo,empresa_id,email,wa,email_valido,status,etapa_cadencia,ultimo_toque_em,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,dominio,cliente_ativo)&order=ultimo_toque_em.asc.nullsfirst&limit=800');
+  if (decisores === null) return erroLeitura('sdr-selecao', res, inicio, 'crm_decisores');
+  const candidatos = (Array.isArray(decisores) ? decisores : []).map(d => ({ ...d, empresa: d.crm_empresas || {} }));
+
+  const empIds = [...new Set(candidatos.map(d => d.empresa_id).filter(Boolean))].slice(0, 300);
+  const estrelas = {};
+  if (empIds.length) {
+    const er = await sg(`crm_empresa_agencia_estrelas?empresa_id=in.(${empIds.join(',')})&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=2000`);
+    for (const r of (Array.isArray(er) ? er : [])) { const v = Number(r.estrelas_manual ?? r.estrelas_calculadas ?? 0) || 0; if (v > (estrelas[r.empresa_id] || 0)) estrelas[r.empresa_id] = v; }
+  }
+  const blRows = await sg('crm_blocklist?ativo=eq.true&apagado_em=is.null&select=nome_canonico,aliases,dominios,grupo_economico,ativo&limit=2000');
+  const blocklist = makeBlocklist(blRows || []);
+
+  // Empresa tocada por qualquer agência nos últimos 30 dias (via crm_fila, que tem agencia_id).
+  const corte30 = new Date(Date.now() - 30 * 86400000).toISOString();
+  const filaTocou = await sg(`crm_fila?status=in.(aprovado,enviado)&enviado_em=gte.${corte30}&select=empresa_id,agencia_id&limit=4000`);
+  const toquesEmpresa30d = {};
+  for (const t of (Array.isArray(filaTocou) ? filaTocou : [])) { if (t.empresa_id) (toquesEmpresa30d[t.empresa_id] ||= []).push({ agencia_id: t.agencia_id }); }
+
+  const dossies = {};
+  if (empIds.length) {
+    const dr = await sg(`crm_dossies?empresa_id=in.(${empIds.join(',')})&apagado_em=is.null&expira_em=gte.${new Date().toISOString()}&select=empresa_id,sinais&limit=1000`);
+    for (const r of (Array.isArray(dr) ? dr : [])) dossies[r.empresa_id] = { sinais: r.sinais || [], tem_sinal: (r.sinais || []).length > 0 };
+  }
+  const agencias = await sg('crm_agencias?select=id,slug,nome&limit=30') || [];
+
+  const semanaISO = inicioSemanaISO();
+  const filaSemana = await sg(`crm_fila?status=in.(aprovado,enviado)&gerado_em=gte.${semanaISO}&select=empresa_id&limit=1000`);
+  const primeirosContatoSemana = [...new Set((Array.isArray(filaSemana) ? filaSemana : []).map(r => r.empresa_id).filter(Boolean))];
+
+  const { lote, upsell, excluidos, total_elegiveis } = selecionarLote({
+    candidatos, estrelas, blocklist, toquesEmpresa30d, dossies, agencias,
+    primeirosContatoSemana, config: { lote_max: loteMax }, agora: Date.now()
+  });
+
+  const dataLote = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' })).toISOString().slice(0, 10);
+  let gravados = 0;
+  for (const item of lote) {
+    const ok = await spUpsert('crm_sdr_estado', {
+      decisor_id: item.decisor_id, empresa_id: item.empresa_id, agencia_id: item.agencia_id || null,
+      agencia_motivo: item.agencia_motivo || null, data_lote: dataLote, dia_cadencia: item.dia_cadencia || 0,
+      canal: null, etapa: 'selecionado', status: 'ativo', atualizado_em: new Date().toISOString()
+    }, 'decisor_id,data_lote,dia_cadencia');
+    if (ok) gravados++;
+  }
+
+  const ctx = { selecionados: lote.length, gravados, upsell: upsell.length, excluidos: excluidos.length, total_elegiveis, lote_max: loteMax, ms: Date.now() - inicio };
+  await logCron('sdr-selecao', nivelTrabalho(gravados), 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
+// Coleta fontes públicas do dossiê (4.3). Ordem: crm_noticias (120d), Google News
+// por empresa e por decisor, imprensa de marketing (busca site-scoped via News).
+async function coletarFontes(emp, decisorNome) {
+  const itens = [];
+  const corte = new Date(Date.now() - 120 * 86400000).toISOString().slice(0, 10);
+  if (emp.id) {
+    const nots = await sg(`crm_noticias?empresa_id=eq.${emp.id}&data=gte.${corte}&apagado_em=is.null&select=titulo,url,fonte,data,resumo&limit=30`);
+    for (const n of (Array.isArray(nots) ? nots : [])) itens.push({ ...n, origem: 'crm_noticias' });
+  }
+  if (emp.nome) {
+    for (const n of await buscarNoticias({ nome: emp.nome })) itens.push({ ...n, data: n.publicado_em, origem: 'google_news' });
+    for (const n of await buscarNoticias({ nome: emp.nome + ' marketing' })) itens.push({ ...n, data: n.publicado_em, origem: 'imprensa' });
+    if (decisorNome) for (const n of await buscarNoticias({ nome: decisorNome + ' ' + emp.nome })) itens.push({ ...n, data: n.publicado_em, origem: 'google_news_decisor' });
+  }
+  return itens;
+}
+
+// ── SDR: job sdr-dossie (seção 4.3) ───────────────────────────────────────────
+// Monta e cacheia (14 dias) o dossiê das empresas do lote selecionado, em lotes
+// pequenos que cabem no tempo da função. Avança o estado do lead para 'dossie'.
+async function jobSdrDossie(req, res) {
+  const inicio = Date.now();
+  const lote = Math.max(1, Math.min(10, Number(req.query.lote) || 5));
+  await logCron('sdr-dossie', 'info', 'início', { lote });
+  const LIMITE_MS = 50000;
+
+  const estados = await sg(`crm_sdr_estado?etapa=eq.selecionado&status=eq.ativo&select=id,empresa_id,decisor_id,crm_empresas:empresa_id(id,nome,dominio),crm_decisores:decisor_id(nome)&order=criado_em.asc&limit=${lote * 3}`);
+  if (estados === null) return erroLeitura('sdr-dossie', res, inicio, 'crm_sdr_estado');
+  const porEmpresa = {};
+  for (const e of (Array.isArray(estados) ? estados : [])) { if (e.empresa_id && !porEmpresa[e.empresa_id]) porEmpresa[e.empresa_id] = e; }
+  const empresas = Object.values(porEmpresa).slice(0, lote);
+
+  let montados = 0, semSinal = 0, reusados = 0;
+  const agora = new Date().toISOString();
+  for (const est of empresas) {
+    if (Date.now() - inicio > LIMITE_MS) break;
+    const emp = est.crm_empresas || {};
+    const existe = await sg(`crm_dossies?empresa_id=eq.${est.empresa_id}&apagado_em=is.null&expira_em=gte.${agora}&select=id&order=criado_em.desc&limit=1`);
+    let dossieId = (Array.isArray(existe) && existe[0]) ? existe[0].id : null;
+    if (dossieId) {
+      reusados++;
+    } else {
+      const itens = await coletarFontes({ id: est.empresa_id, nome: emp.nome, dominio: emp.dominio }, est.crm_decisores && est.crm_decisores.nome);
+      const dossie = montarDossie({ id: est.empresa_id, nome: emp.nome }, itens, { janelaDias: 120 });
+      const row = await spRet('crm_dossies', { empresa_id: est.empresa_id, sinais: dossie.sinais, fontes: dossie.fontes, resumo: dossie.resumo });
+      dossieId = row ? row.id : null;
+      if (!dossie.tem_sinal) semSinal++;
+      montados++;
+    }
+    if (dossieId) await sp(`crm_sdr_estado?empresa_id=eq.${est.empresa_id}&etapa=eq.selecionado`, { etapa: 'dossie', dossie_id: dossieId, atualizado_em: agora }, 'PATCH');
+    await new Promise(r => setTimeout(r, 120));
+  }
+
+  const ctx = { empresas: empresas.length, montados, reusados, sem_sinal: semSinal, ms: Date.now() - inicio };
+  await logCron('sdr-dossie', nivelTrabalho(montados + reusados), 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
 // ── handler principal ─────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   const { job } = req.query;
@@ -1079,7 +1216,9 @@ export default async function handler(req, res) {
     if (job === 'enriquecimento-diario') return await jobEnriquecimento(req, res);
     if (job === 'noticias-semanal')      return await jobNoticias(req, res);
     if (job === 'fechamento-sexta')      return await jobFechamento(req, res);
-    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta, higiene-fila, rascunhos-matinais, oportunidades-paradas' });
+    if (job === 'sdr-selecao')           return await jobSdrSelecao(req, res);
+    if (job === 'sdr-dossie')            return await jobSdrDossie(req, res);
+    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta, higiene-fila, rascunhos-matinais, oportunidades-paradas, sdr-selecao, sdr-dossie' });
   } catch(e) {
     console.error('[cron:'+job+']', e.message);
     try { await logCron(job||'unknown', 'error', 'erro: '+e.message, null); } catch(_) {}
