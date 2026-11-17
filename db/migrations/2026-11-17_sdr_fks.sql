@@ -16,3 +16,11 @@ alter table public.crm_sdr_mensagens add constraint crm_sdr_mensagens_dossie_fk 
 alter table public.crm_dossies       add constraint crm_dossies_empresa_fk       foreign key (empresa_id) references public.crm_empresas(id)   not valid;
 alter table public.crm_sdr_respostas add constraint crm_sdr_respostas_empresa_fk foreign key (empresa_id) references public.crm_empresas(id)   not valid;
 notify pgrst, 'reload schema';
+
+-- Chave da Anthropic no Vault (nome 'anthropic_api_key'), lida só pelo service_role
+-- quando a env da Vercel estiver ausente ou inválida.
+create or replace function public.sdr_anthropic_key()
+returns text language sql security definer set search_path = public, vault
+as $$ select decrypted_secret from vault.decrypted_secrets where name = 'anthropic_api_key' limit 1 $$;
+revoke all on function public.sdr_anthropic_key() from public, anon, authenticated;
+grant execute on function public.sdr_anthropic_key() to service_role;
