@@ -1238,11 +1238,36 @@ async function jobSdrDossie(req, res) {
 // Structured outputs garantem o JSON no formato do schema (sem parse frágil).
 // Fallback de recusa no servidor ligado: se o modelo declinar, a própria API
 // tenta o modelo de fallback na mesma chamada.
-let _anthropic = null;
-function clienteLLM() {
-  if (!_anthropic) _anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY, timeout: 45000, maxRetries: 1 });
-  return _anthropic;
+// Chave da Anthropic: a da env da Vercel; se faltar ou for recusada (401), cai
+// para a guardada no Vault do Supabase ('anthropic_api_key', RPC só service_role).
+// Assim trocar a chave não depende da conta da Vercel. Nunca é logada.
+const _clientes = new Map();
+let _envRecusada = false, _vaultCache = { valor: undefined, ate: 0 };
+function clienteLLM(chave) {
+  if (!_clientes.has(chave)) _clientes.set(chave, new Anthropic({ apiKey: chave, timeout: 45000, maxRetries: 1 }));
+  return _clientes.get(chave);
 }
+let _vaultEmCurso = null;
+async function chaveVault() {
+  if (_vaultCache.ate > Date.now()) return _vaultCache.valor;
+  if (_vaultEmCurso) return _vaultEmCurso;            // chamadas paralelas esperam a mesma consulta
+  _vaultEmCurso = _lerChaveVault().finally(() => { _vaultEmCurso = null; });
+  return _vaultEmCurso;
+}
+async function _lerChaveVault() {
+  let v = null;
+  try {
+    const r = await fetch(SUPA_URL + '/rest/v1/rpc/sdr_anthropic_key', { method: 'POST', headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json' }, body: '{}' });
+    if (r.ok) { const j = await r.json().catch(() => null); v = typeof j === 'string' && j.length > 20 ? j : null; }
+  } catch (_) {}
+  _vaultCache = { valor: v, ate: Date.now() + 10 * 60 * 1000 };
+  return v;
+}
+async function chaveLLM() {
+  if (ANTHROPIC_KEY && !_envRecusada) return ANTHROPIC_KEY;
+  return await chaveVault();
+}
+async function temChaveLLM() { return !!(await chaveLLM()); }
 const SCHEMA_MSG = {
   type: 'object',
   properties: { assunto: { type: 'string' }, corpo: { type: 'string' } },
@@ -1262,8 +1287,10 @@ const PRECO_IN = 4 / 1e6, PRECO_OUT = 20 / 1e6;
 async function gerarJSON({ system, user, schema, effort }) {
   // Gancho de teste: permite simular o modelo sem rede (nunca definido em produção).
   if (typeof globalThis.__SDR_LLM_MOCK === 'function') return globalThis.__SDR_LLM_MOCK({ system, user, schema });
+  const chave = await chaveLLM();
+  if (!chave) return { obj: null, erro: 'sem chave da Anthropic (env e Vault)', usage: {}, custo: 0, modelo: MODELO_SDR };
   try {
-    const r = await clienteLLM().beta.messages.create({
+    const r = await clienteLLM(chave).beta.messages.create({
       model: MODELO_SDR,
       max_tokens: 8000,
       betas: ['server-side-fallback-2026-07-01'],
@@ -1280,6 +1307,11 @@ async function gerarJSON({ system, user, schema, effort }) {
     try { obj = JSON.parse(txt); } catch (_) {}
     return { obj, erro: obj ? null : 'json_invalido', usage, custo, modelo: r.model };
   } catch (e) {
+    // Chave da env recusada: marca e tenta de novo uma vez com a do Vault.
+    if (e && e.status === 401 && chave === ANTHROPIC_KEY) {
+      _envRecusada = true;   // chamadas paralelas também caem aqui e refazem com a do Vault
+      if (await chaveVault()) return gerarJSON({ system, user, schema, effort });
+    }
     return { obj: null, erro: String(e && e.message || e).slice(0, 200), usage: {}, custo: 0, modelo: MODELO_SDR };
   }
 }
@@ -1330,9 +1362,9 @@ async function jobSdrRedacao(req, res) {
   const inicio = Date.now();
   const lote = Math.max(1, Math.min(6, Number(req.query.lote) || 4));
   await logCron('sdr-redacao', 'info', 'início', { lote });
-  if (!ANTHROPIC_KEY) {
-    await logCron('sdr-redacao', 'aviso', 'fim — pulado', { motivo: 'ANTHROPIC_API_KEY ausente' });
-    return res.status(200).json({ ok: true, pulado: true, motivo: 'ANTHROPIC_API_KEY ausente' });
+  if (!(await temChaveLLM())) {
+    await logCron('sdr-redacao', 'aviso', 'fim — pulado', { motivo: 'sem chave da Anthropic (env e Vault)' });
+    return res.status(200).json({ ok: true, pulado: true, motivo: 'sem chave da Anthropic (env e Vault)' });
   }
   const estados = await sg(`crm_sdr_estado?etapa=eq.dossie&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,agencia_motivo,dia_cadencia,dossie_id,crm_decisores:decisor_id(nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote}`);
   if (estados === null) return erroLeitura('sdr-redacao', res, inicio, 'crm_sdr_estado');
@@ -1407,9 +1439,9 @@ async function jobSdrQualidade(req, res) {
   const inicio = Date.now();
   const lote = Math.max(1, Math.min(8, Number(req.query.lote) || 5));
   await logCron('sdr-qualidade', 'info', 'início', { lote });
-  if (!ANTHROPIC_KEY) {
-    await logCron('sdr-qualidade', 'aviso', 'fim — pulado', { motivo: 'ANTHROPIC_API_KEY ausente' });
-    return res.status(200).json({ ok: true, pulado: true, motivo: 'ANTHROPIC_API_KEY ausente' });
+  if (!(await temChaveLLM())) {
+    await logCron('sdr-qualidade', 'aviso', 'fim — pulado', { motivo: 'sem chave da Anthropic (env e Vault)' });
+    return res.status(200).json({ ok: true, pulado: true, motivo: 'sem chave da Anthropic (env e Vault)' });
   }
   const estados = await sg(`crm_sdr_estado?etapa=eq.redigido&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,canal,dia_cadencia,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=atualizado_em.asc&limit=${lote}`);
   if (estados === null) return erroLeitura('sdr-qualidade', res, inicio, 'crm_sdr_estado');
