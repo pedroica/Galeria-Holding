@@ -258,6 +258,20 @@ export default async function handler(req, res) {
     });
   }
 
+  // ── Gate de autenticação: providers que gastam crédito ────────────────────
+  // Exigem JWT de usuário logado OU credencial de cron (CRON_SECRET / service key).
+  // Fecham por padrão: sem credencial válida → 401, nenhum crédito é gasto.
+  const PROTEGIDOS = new Set(['hunter', 'lusha', 'lusha-domain', 'lusha-search', 'lusha-reveal', 'claude', 'crawl']);
+  if (PROTEGIDOS.has(provider)) {
+    const authHeader = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+    const segredosCron = [(process.env.CRON_SECRET || '').trim(), (SUPA_SVC || '').trim()].filter(Boolean);
+    const okCron = authHeader && segredosCron.includes(authHeader);
+    const okJwt = !okCron && authHeader && await verifyUserJwt(authHeader);
+    if (!okCron && !okJwt) {
+      return res.status(401).json({ error: 'Não autenticado. Faça login para usar esta ferramenta.' });
+    }
+  }
+
   // ── Hunter ────────────────────────────────────────────────────────────────
   if (provider === 'hunter') {
     if (!HUNTER_KEY) return res.status(500).json({ error: 'HUNTER_KEY não configurada' });
@@ -567,7 +581,25 @@ export default async function handler(req, res) {
     if (!SUPA_SVC)     return res.status(500).json({ error: 'SUPA_CRM_SERVICE_KEY não configurado.' });
 
     const authHeader = (req.headers.authorization || '').replace('Bearer ','');
-    const authed = await verifyUserJwt(authHeader);
+
+    // O cron matinal de rascunhos precisa chamar graph-draft sem JWT de usuário.
+    // Esta exceção vale SÓ para graph-draft: criar rascunho não manda nada para
+    // fora. graph-send, graph-init, graph-disconnect e graph-sync continuam
+    // exigindo o JWT do Pedro — a regra "nunca envie e-mails automaticamente"
+    // fica garantida pelo próprio controle de acesso, não só por convenção.
+    // As duas env vars de service key são aliases, mas cron.js e enrich.js as
+    // resolvem em ordens opostas. Aceita ambas para o bearer do cron não deixar
+    // de bater caso uma delas seja rotacionada sozinha.
+    const segredosCron = [
+      (process.env.CRON_SECRET || '').trim(),
+      (process.env.SUPA_CRM_SERVICE_KEY || '').trim(),
+      (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim()
+    ].filter(Boolean);
+    const ehCronRascunho = provider === 'graph-draft'
+      && authHeader
+      && segredosCron.includes(authHeader);
+
+    const authed = ehCronRascunho || await verifyUserJwt(authHeader);
     if (!authed) return res.status(401).json({ error: 'Não autenticado no CRM.' });
 
     // ── graph-init: gera URL de autenticação ──────────────────────────────

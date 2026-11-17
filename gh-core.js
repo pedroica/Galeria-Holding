@@ -26,18 +26,59 @@
   // pré-aquece a detecção
   try{ getProxyInfo(); }catch(e){}
 
+  // Anexa o JWT da sessão (se logado) às chamadas internas que gastam crédito.
+  // Mantém um Authorization válido já presente; substitui bearer vazio
+  // ("Bearer ", "Bearer undefined", "Bearer null"), que o gate do servidor recusaria.
+  // Aceita headers como objeto simples ou instância de Headers sem perder nenhum.
+  function ghSessionJwt(){ try{ return (window.__supaSession && window.__supaSession.access_token) || ''; }catch(e){ return ''; } }
+  function ghHeadersToObj(h){
+    var obj = {};
+    if(!h) return obj;
+    if(typeof Headers !== 'undefined' && h instanceof Headers){ h.forEach(function(v,k){ obj[k] = v; }); return obj; }
+    if(Array.isArray(h)){ h.forEach(function(kv){ obj[kv[0]] = kv[1]; }); return obj; }
+    return Object.assign(obj, h);
+  }
+  function ghBearerVazio(v){
+    var t = String(v||'').replace(/^Bearer\s*/i,'').trim();
+    return !t || t === 'undefined' || t === 'null';
+  }
+  function ghAuthOpts(o){
+    var out = Object.assign({}, o||{});
+    var hh = ghHeadersToObj(out.headers);
+    var chave = Object.keys(hh).filter(function(k){ return k.toLowerCase() === 'authorization'; })[0];
+    if(chave && !ghBearerVazio(hh[chave])){ out.headers = hh; return out; }
+    var jwt = ghSessionJwt();
+    if(chave) delete hh[chave];
+    if(jwt) hh['Authorization'] = 'Bearer ' + jwt;
+    out.headers = hh; return out;
+  }
+  // Normaliza URL relativa ou absoluta do próprio domínio para o path ("/api/...").
+  function ghPathInterno(url){
+    try{
+      if(url.indexOf('/api/') === 0) return url;
+      var u = new URL(url, window.location.href);
+      if(u.origin === window.location.origin && u.pathname.indexOf('/api/') === 0) return u.pathname + u.search;
+    }catch(e){}
+    return '';
+  }
+  var GH_INTERNOS = ['/api/enrich', '/api/claude', '/api/crawl', '/api/hunter'];
+
   window.fetch = async function(url, opts){
     try{
       if(typeof url === 'string'){
+        // Endpoints internos que gastam crédito exigem auth → anexa o JWT da sessão.
+        var pathInterno = ghPathInterno(url);
+        if(pathInterno && GH_INTERNOS.some(function(p){ return pathInterno.indexOf(p) === 0; })){
+          return origFetch(url, ghAuthOpts(opts));
+        }
         if(url.indexOf('https://api.anthropic.com/v1/messages') === 0){
           var p = await getProxyInfo();
           if(p && p.claude){
             var o = Object.assign({}, opts||{});
-            var h = Object.assign({}, o.headers||{});
-            delete h['x-api-key']; delete h['anthropic-version'];
-            delete h['anthropic-dangerous-direct-browser-access'];
+            var h = ghHeadersToObj(o.headers);
+            Object.keys(h).forEach(function(k){ var kl = k.toLowerCase(); if(kl === 'x-api-key' || kl === 'anthropic-version' || kl === 'anthropic-dangerous-direct-browser-access') delete h[k]; });
             o.headers = h;
-            return origFetch('/api/enrich?provider=claude', o);
+            return origFetch('/api/enrich?provider=claude', ghAuthOpts(o));
           }
         } else if(url.indexOf('https://api.hunter.io/') === 0){
           var p2 = await getProxyInfo();
@@ -45,17 +86,17 @@
             var u = new URL(url);
             u.searchParams.delete('api_key');
             var mode = u.pathname.indexOf('email-verifier') >= 0 ? 'verify' : 'domain';
-            return origFetch('/api/enrich?provider=hunter&mode=' + mode + '&' + u.searchParams.toString(), opts);
+            return origFetch('/api/enrich?provider=hunter&mode=' + mode + '&' + u.searchParams.toString(), ghAuthOpts(opts));
           }
         } else if(url.indexOf('https://api.lusha.com/') === 0){
           var p3 = await getProxyInfo();
           if(p3 && p3.lusha){
             var u2 = new URL(url);
             var o2 = Object.assign({}, opts||{});
-            var h2 = Object.assign({}, o2.headers||{});
+            var h2 = ghHeadersToObj(o2.headers);
             delete h2['api_key'];
             o2.headers = h2;
-            return origFetch('/api/enrich?provider=lusha&' + u2.searchParams.toString(), o2);
+            return origFetch('/api/enrich?provider=lusha&' + u2.searchParams.toString(), ghAuthOpts(o2));
           }
         }
       }

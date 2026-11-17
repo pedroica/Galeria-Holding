@@ -10,7 +10,7 @@ import { deflateRawSync } from 'node:zlib';
 
 const SUPA_URL    = process.env.SUPA_CRM_URL || 'https://uetltlnjmobeiunxfsqi.supabase.co';
 const SUPA_SVC    = process.env.SUPA_CRM_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-const CRON_SECRET = process.env.CRON_SECRET;
+const CRON_SECRET = (process.env.CRON_SECRET || '').trim();
 const BUCKET      = 'backups';
 const RETENTION   = 30; // dias
 
@@ -178,8 +178,9 @@ function toCSV(rows) {
 // ── Auth helpers ───────────────────────────────────────────────────────────────
 
 function isCronOrService(req) {
-  const auth = (req.headers.authorization || '').replace('Bearer ', '');
-  return (CRON_SECRET && auth === CRON_SECRET) || auth === SUPA_SVC;
+  const auth = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+  if (!auth) return false;
+  return (CRON_SECRET && auth === CRON_SECRET) || (SUPA_SVC && auth === SUPA_SVC.trim());
 }
 
 async function resolveAuth(req) {

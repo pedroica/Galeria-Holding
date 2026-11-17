@@ -208,6 +208,22 @@
       return { rows, canais: [...canalSet].sort() };
     }, [filaEnviados, agencias]);
 
+    // Crons que FECHARAM o dia (mensagem começa com 'fim') em 'aviso' ou 'error'.
+    const cronAlertas = useMemo(() => {
+      const brt = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Sao_Paulo' }));
+      const hoje = brt.toISOString().slice(0, 10);
+      const vistos = {};
+      for (const l of cronLogs) {
+        if (!(l.criado_em || '').startsWith(hoje)) continue;
+        if (!(l.mensagem || '').startsWith('fim')) continue;
+        if (l.nivel === 'aviso' || l.nivel === 'error') {
+          const job = (l.origem || '').replace('cron:', '');
+          if (!vistos[job] || l.nivel === 'error') vistos[job] = l.nivel; // error prevalece
+        }
+      }
+      return Object.entries(vistos).map(([job, nivel]) => ({ job, nivel }));
+    }, [cronLogs]);
+
     const mono  = { fontFamily: 'IBM Plex Mono,monospace' };
     const card  = { background: '#0d0d1a', border: '.5px solid #1A1A2E', borderRadius: 6, padding: 12, marginBottom: 16 };
     const title = { fontSize: 10, color: '#555', letterSpacing: '.5px', textTransform: 'uppercase', marginBottom: 10, ...mono };
@@ -220,6 +236,16 @@
       style: { flex: 1, overflow: 'auto', padding: '16px 24px', background: '#060606' }
     },
       React.createElement('div', { style: { fontSize: 13, color: '#F5F5F5', marginBottom: 16, ...mono } }, 'ATIVIDADE'),
+
+      // Aviso vermelho: cron fechou o dia em 'aviso' ou 'error'
+      cronAlertas.length > 0 && React.createElement('div', {
+        style: { background: 'rgba(239,68,68,.12)', border: '1px solid #EF4444', borderRadius: 8, padding: '10px 14px', marginBottom: 16, color: '#EF4444', fontSize: 11, lineHeight: 1.5, ...mono }
+      },
+        React.createElement('strong', null, '⚠ ' + cronAlertas.length + ' cron(s) fecharam o dia com problema'),
+        React.createElement('div', { style: { marginTop: 4, color: '#FCA5A5' } },
+          cronAlertas.map(a => a.job + ' (' + a.nivel + ')').join('  ·  ')
+        )
+      ),
 
       // Oportunidades counters
       React.createElement('div', { style: { display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap' } },
