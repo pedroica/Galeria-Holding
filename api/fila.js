@@ -11,6 +11,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { promises as dnsPromises } from 'dns';
 import { makeBlocklist } from '../lib/blocklist.js';
+import { tokenSdrValido } from '../lib/sdr-auth.js';
 
 // Checagem de MX do domínio do e-mail antes de enfileirar. Retorna:
 //   { ok:true }                    tem servidor de e-mail
@@ -301,7 +302,9 @@ export default async function handler(req, res) {
   const isCron = authHeader && (
     (CRON_SECRET && authHeader === CRON_SECRET) ||
     (SDR_CRON_SECRET && authHeader === SDR_CRON_SECRET) ||
-    (SUPA_KEY && authHeader === SUPA_KEY.trim())
+    (SUPA_KEY && authHeader === SUPA_KEY.trim()) ||
+    // Relógio do SDR: segredo do Vault (JWT tem pontos; o segredo não).
+    (!authHeader.includes('.') && await tokenSdrValido(authHeader, { supaUrl: SUPA_URL, serviceKey: SUPA_KEY }))
   );
   const isJWT = !isCron && authHeader && await verifyJWT(authHeader);
   if (!isCron && !isJWT) return res.status(401).json({ error: 'Não autenticado' });

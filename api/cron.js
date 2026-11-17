@@ -23,6 +23,7 @@ import { podeEnviar, slotsDoDia, proximoPasso, corpoFinal, htmlDeTexto, horaBRT,
 import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTemplate } from '../lib/canais-envio.js';
 import { obterTokenGraph } from '../lib/graph-token.js';
 import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
+import { tokenSdrValido } from '../lib/sdr-auth.js';
 import { crossSell, sinaisDeCompra } from '../lib/sdr-topo.js';
 
 // Base de conhecimento (agências, cases com números exatos). Carregada no cold start.
@@ -50,7 +51,9 @@ async function authCheck(req, res, job) {
   // SDR_CRON_SECRET autentica as chamadas vindas do pg_cron/pg_net do Supabase.
   const aceitos = [secret, (process.env.SDR_CRON_SECRET || '').trim(), (SUPA_KEY || '').trim()].filter(Boolean);
   const recebido = auth.replace(/^Bearer\s+/i, '').trim();
-  if (!aceitos.length || !recebido || !aceitos.includes(recebido)) {
+  // Relógio do SDR: Bearer validado contra o Vault (independe de env na Vercel).
+  const okVault = !aceitos.includes(recebido) && recebido ? await tokenSdrValido(recebido, { supaUrl: SUPA_URL, serviceKey: SUPA_KEY }) : false;
+  if (!okVault && (!aceitos.length || !recebido || !aceitos.includes(recebido))) {
     const hint = !secret
       ? 'CRON_SECRET ausente — configure a variável na Vercel'
       : (auth ? `bearer present, prefix=${auth.slice(0, 15)}` : 'no Authorization header');
