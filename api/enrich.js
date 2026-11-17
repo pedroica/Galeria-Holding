@@ -5,6 +5,8 @@ import { randomBytes, createHmac, timingSafeEqual } from 'crypto';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { classificarResposta } from '../lib/sdr-respostas.js';
+import { aplicarResposta } from '../lib/sdr-acoes.js';
 
 const HUNTER_KEY      = process.env.HUNTER_KEY;
 const LUSHA_KEY       = process.env.LUSHA_KEY;
@@ -925,9 +927,30 @@ export default async function handler(req, res) {
 
     const { responderWhatsApp } = await import('./copiloto.js');
 
+    // Adaptador do banco (service key) para registrar respostas de prospects.
+    const svcH = { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json' };
+    const dbSdr = {
+      get: async (p) => { const r = await fetch(SUPA_URL + '/rest/v1/' + p, { headers: svcH }); return r.ok ? r.json() : null; },
+      send: async (p, b, m) => (await fetch(SUPA_URL + '/rest/v1/' + p, { method: m || 'POST', headers: Object.assign({ Prefer: 'return=minimal' }, svcH), body: JSON.stringify(b) })).ok,
+      insertRet: async (p, b) => { const r = await fetch(SUPA_URL + '/rest/v1/' + p, { method: 'POST', headers: Object.assign({ Prefer: 'return=representation' }, svcH), body: JSON.stringify(b) }); const j = r.ok ? await r.json().catch(() => null) : null; return Array.isArray(j) && j[0] ? j[0] : null; },
+      insertNovo: async (p, b) => { const r = await fetch(SUPA_URL + '/rest/v1/' + p, { method: 'POST', headers: Object.assign({ Prefer: 'resolution=ignore-duplicates,return=representation' }, svcH), body: JSON.stringify(b) }); const j = r.ok ? await r.json().catch(() => null) : null; return Array.isArray(j) && j[0] ? j[0] : null; }
+    };
+
     for (const msg of recebidas) {
       try {
         if (!msg.de || !WA_PERMITIDOS.some(function (p) { return p === msg.de || cauda(p) === cauda(msg.de); })) {
+          // Fora da allowlist do copiloto: pode ser um prospect respondendo ao SDR.
+          // Registra (SAIR = opt-out, resposta = para a cadência). NUNCA responde.
+          if (msg.de && msg.texto) {
+            const ds = await dbSdr.get('crm_decisores?apagado_em=is.null&wa=like.*' + cauda(msg.de) + '&select=id,nome,email,wa,empresa_id,crm_empresas!empresa_id(nome)&limit=1');
+            const d = Array.isArray(ds) && ds[0];
+            if (d) {
+              const cls = classificarResposta({ remetente: msg.de, assunto: '', preview: msg.texto });
+              await aplicarResposta(dbSdr, { decisor: d, cls: cls.tipo === 'bounce' ? { tipo: 'indefinido', confianca: 'baixa', evidencia: '' } : cls,
+                canal: 'whatsapp', externalId: 'wa:' + msg.id, remetente: msg.de, assunto: 'WhatsApp', texto: msg.texto, recebidoEm: new Date().toISOString() });
+              continue;
+            }
+          }
           console.warn('[wa] número fora da allowlist');
           continue; // silêncio: nem confirmamos que o número existe
         }
@@ -948,6 +971,14 @@ export default async function handler(req, res) {
         const sess = await supaReq('/rest/v1/crm_wa_sessoes?select=mensagens&telefone=eq.' + encodeURIComponent(msg.de))
           .catch(function () { return []; });
         const historico = (sess[0] && Array.isArray(sess[0].mensagens)) ? sess[0].mensagens : [];
+
+        // "pausar" desliga o Piloto Automático na hora e cancela os envios agendados.
+        if (/^\s*pausar( tudo)?\s*[.!]*\s*$/i.test(msg.texto)) {
+          const rp = await fetch(SUPA_URL + '/rest/v1/rpc/sdr_pausar_tudo', { method: 'POST', headers: svcH, body: JSON.stringify({ origem: 'whatsapp' }) });
+          const jr = rp.ok ? await rp.json().catch(() => ({})) : null;
+          await enviarWa(msg.de, jr ? `Pausado. Piloto Automático desligado e ${jr.agendados_cancelados || 0} envio(s) agendado(s) cancelado(s). Nada sai até você religar.` : 'Não consegui pausar pelo banco. Use o botão Pausar tudo na tela agora.');
+          continue;
+        }
 
         // /novo zera a conversa sem precisar de botão.
         if (/^\/(novo|limpar|reset)\b/i.test(msg.texto.trim())) {

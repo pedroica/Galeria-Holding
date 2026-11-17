@@ -53,3 +53,13 @@ As 5 causas apontadas na missão foram conferidas no código atual da `main`:
 - **"Não agora" pausa a pessoa por 90 dias** (`pausa_ate_em`) e a seleção passou a respeitar essa pausa. Porquê: volta na hora certa sem ser esquecida.
 - **Bounce com WhatsApp cadastrado não encerra a cadência:** o próximo toque cai para o WhatsApp. Porquê: o e-mail errado não invalida o contato.
 - **Coluna `opt_out` criada em `crm_decisores`.** Porquê: a seleção já checava `opt_out`, mas a coluna não existia; agora o pedido de saída fica gravado e é respeitado.
+- **Bloco D: envio em dois jobs (sdr-agendar às 07h BRT, sdr-envio a cada 5 min das 07h às 11h BRT) com a guarda conferida duas vezes**, a segunda relendo o banco no instante do envio. Porquê: se o Pedro apertar "Pausar tudo" entre o agendamento e o envio, nada sai.
+- **Janela de envio 07:30-11:00 BRT** (valor já gravado em `sdr_janelas`). Porquê: manhã é quando decisor lê e-mail; mantido o que estava configurado.
+- **Aquecimento: 15 e-mails/dia na primeira semana, +5 por semana, teto `email_daily_max`; envio para se o bounce de 7 dias passar de 2%.** Porquê: proteger a reputação do domínio do Pedro.
+- **Toda mensagem automática leva uma linha de saída** ("responder remover" no e-mail, "responda SAIR" no WhatsApp). Porquê: guarda da missão (opt-out funcionando antes de qualquer envio) e boa prática anti-spam.
+- **E-mail sai pelo `/me/sendMail` do Graph com a assinatura em texto "Pedro Ica"**, sem a imagem PNG. Porquê: a imagem fica no servidor do enrich e duplicá-la no cron aumenta o risco sem ganho de resposta; dá para ligar depois.
+- **WhatsApp só sai com modelo aprovado pela Meta**; o job `sdr-wa-modelos` submete 4 modelos e grava o aprovado sozinho. Porquê: primeiro contato no WhatsApp Business exige modelo; enquanto não houver, o D3 fica barrado e o lead segue por e-mail.
+- **Resposta de prospect pelo WhatsApp é tratada como a do e-mail** (SAIR = opt-out, qualquer resposta para a cadência) e **nunca recebe resposta automática**. "pausar" vindo do número do Pedro aciona o botão de pânico. Porquê: regra 3 do CLAUDE.md.
+- **Botão "⏸ Pausar tudo" fica na barra do topo, em todas as telas**, vermelho quando o Piloto está ligado. Porquê: pânico tem que estar a um clique de qualquer lugar.
+- **Constraint de `crm_logs.nivel` ampliada para aceitar `aviso` e `error`.** Porquê: achado ao testar o botão de pânico em produção: só `info` era aceito, então todo aviso/erro dos crons sumia em silêncio e a tela Atividade nunca mostrava alerta.
+- **Follow-ups (D3/D7/D14) nascem como `aguardando` com a data já no próximo dia útil** e a seleção da noite os promove quando vencem. Porquê: o mesmo fluxo de dossiê, redação e QC vale para o follow-up, sem caminho paralelo.

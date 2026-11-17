@@ -17,8 +17,12 @@ import { selecionarLote } from '../lib/sdr-selecao.js';
 import { montarDossie } from '../lib/sdr-dossie.js';
 import { escolherCase, construirPromptRedacao, construirPromptAvaliacao } from '../lib/sdr-redacao.js';
 import { checagensCodigo, decisao } from '../lib/sdr-qualidade.js';
-import { classificarResposta, acaoPara, extrairEmails } from '../lib/sdr-respostas.js';
+import { classificarResposta, extrairEmails } from '../lib/sdr-respostas.js';
+import { aplicarResposta } from '../lib/sdr-acoes.js';
+import { podeEnviar, slotsDoDia, proximoPasso, corpoFinal, htmlDeTexto, horaBRT, tetoEmailHoje } from '../lib/sdr-envio.js';
+import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTemplate } from '../lib/canais-envio.js';
 import { obterTokenGraph } from '../lib/graph-token.js';
+import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
 
 // Base de conhecimento (agências, cases com números exatos). Carregada no cold start.
 let KNOWLEDGE = { agencias: [], cases_destaque: [] };
@@ -1105,6 +1109,9 @@ async function jobSdrSelecao(req, res) {
   const inicio = Date.now();
   await logCron('sdr-selecao', 'info', 'início', null);
 
+  // Follow-ups vencidos (D3/D7/D14 criados pelo sdr-envio) entram no fluxo de hoje.
+  const hojeFu = new Date().toISOString().slice(0, 10);
+  await sp(`crm_sdr_estado?etapa=eq.aguardando&status=eq.ativo&data_lote=lte.${hojeFu}`, { etapa: 'selecionado', atualizado_em: new Date().toISOString() }, 'PATCH');
   const cfg = await sg('crm_configuracoes?chave=eq.sdr_lote_max&select=valor&limit=1');
   const loteMax = Array.isArray(cfg) && cfg[0]?.valor ? Number(cfg[0].valor) : 30;
 
@@ -1453,6 +1460,8 @@ async function spNovo(path, body) {
   return Array.isArray(j) && j[0] ? j[0] : null;   // vazio = já existia
 }
 
+const DB_ADAPT = { get: (p) => sg(p), send: (p, b, m) => sp(p, b, m), insertRet: (p, b) => spRet(p, b), insertNovo: (p, b) => spNovo(p, b) };
+
 async function jobSdrRespostas(req, res) {
   const inicio = Date.now();
   const lote = Math.max(1, Math.min(100, Number(req.query.lote) || 50));
@@ -1498,66 +1507,190 @@ async function jobSdrRespostas(req, res) {
     const d = Array.isArray(ds) && ds[0];
     if (!d) { cont.ignoradas++; continue; }
 
-    const reg = await spNovo('crm_sdr_respostas?on_conflict=graph_message_id', {
-      graph_message_id: m.id, conversation_id: m.conversationId || null, decisor_id: d.id, empresa_id: d.empresa_id,
-      remetente, assunto: (m.subject || '').slice(0, 300), preview: (m.bodyPreview || '').slice(0, 1000),
-      recebido_em: m.receivedDateTime || agora, tipo: cls.tipo, confianca: cls.confianca, evidencia: (cls.evidencia || '').slice(0, 200)
+    const r = await aplicarResposta(DB_ADAPT, {
+      decisor: d, cls, canal: 'email', externalId: m.id, conversationId: m.conversationId, remetente,
+      assunto: m.subject, texto: m.bodyPreview, recebidoEm: m.receivedDateTime
     });
-    if (!reg) continue;   // já processada antes (idempotente)
+    if (!r) continue;   // já processada antes (idempotente)
     cont.de_decisores++; cont[cls.tipo] = (cont[cls.tipo] || 0) + 1;
-    const ac = acaoPara(cls.tipo);
-    const acoes = [];
-
-    if (ac.resultado_toque) {
-      await sp('crm_toques', { decisor_id: d.id, empresa_id: d.empresa_id, canal: 'email', direcao: 'recebido',
-        assunto: (m.subject || '').slice(0, 500), resumo: (cls.tipo + ': ' + (m.bodyPreview || '')).slice(0, 500),
-        data: m.receivedDateTime || agora, fonte: 'outlook', resultado: ac.resultado_toque });
-      acoes.push('toque');
-    }
-    if (ac.marcar_email_invalido) {
-      await sp(`crm_decisores?id=eq.${d.id}`, { email_valido: false, atualizado_em: agora }, 'PATCH');
-      await sp(`crm_fila?decisor_id=eq.${d.id}&canal=eq.email&status=in.(rascunho,aprovado)`, { status: 'pulado', motivo_pulo: 'bounce: e-mail inválido' }, 'PATCH');
-      if (!d.wa) await sp(`crm_sdr_estado?decisor_id=eq.${d.id}&status=eq.ativo`, { status: 'bounce', motivo: 'e-mail voltou e não há WhatsApp', atualizado_em: agora }, 'PATCH');
-      acoes.push('email_invalido');
-    }
-    if (ac.opt_out) {
-      await sp(`crm_decisores?id=eq.${d.id}`, { opt_out: true, opt_out_em: agora, etapa_cadencia: 'off', atualizado_em: agora }, 'PATCH');
-      acoes.push('opt_out');
-    }
-    if (ac.parar_cadencia && cls.tipo !== 'bounce') {
-      await sp(`crm_sdr_estado?decisor_id=eq.${d.id}&status=eq.ativo`, { status: cls.tipo === 'opt_out' ? 'opt_out' : 'respondeu', motivo: 'resposta: ' + cls.tipo, atualizado_em: agora }, 'PATCH');
-      await sp(`crm_fila?decisor_id=eq.${d.id}&status=in.(rascunho,aprovado)`, { status: 'pulado', motivo_pulo: 'respondeu (' + cls.tipo + ')' }, 'PATCH');
-      await sp(`crm_fila?decisor_id=eq.${d.id}&status=eq.enviado`, { status: 'respondido' }, 'PATCH');
-      if (cls.tipo !== 'opt_out') {
-        const patch = { respondeu: true, status: 'respondeu', atualizado_em: agora };
-        if (ac.pausar_dias) patch.pausa_ate_em = new Date(Date.now() + ac.pausar_dias * 86400000).toISOString();
-        await sp(`crm_decisores?id=eq.${d.id}`, patch, 'PATCH');
-      }
-      acoes.push('cadencia_parada');
-    }
-    let opId = null;
-    if (ac.oportunidade && d.empresa_id) {
-      const abertas = await sg(`crm_oportunidades?empresa_id=eq.${d.empresa_id}&apagado_em=is.null&fechada_em=is.null&estagio=not.in.(Perdido,Pausado)&select=id&limit=1`);
-      if (Array.isArray(abertas) && abertas.length) { opId = abertas[0].id; acoes.push('oportunidade_existente'); }
-      else if (Array.isArray(abertas)) {
-        const est = await sg(`crm_sdr_estado?decisor_id=eq.${d.id}&select=agencia_id&order=criado_em.desc&limit=1`);
-        const op = await spRet('crm_oportunidades', {
-          empresa_id: d.empresa_id, agencia_id: (Array.isArray(est) && est[0] && est[0].agencia_id) || null,
-          titulo: ((d.crm_empresas && d.crm_empresas.nome) || 'Empresa') + ': resposta de ' + (d.nome || remetente),
-          estagio: 'Contato direto', origem: 'fila',
-          proximo_passo: 'Responder ' + (d.nome || '') + ' e marcar a primeira reunião',
-          proximo_passo_em: agora.slice(0, 10)
-        });
-        if (op) { opId = op.id; cont.oportunidades++; acoes.push('oportunidade_criada'); }
-      }
-    }
-    await sp(`crm_sdr_respostas?id=eq.${reg.id}`, { acao: acoes.join(','), oportunidade_id: opId }, 'PATCH');
+    if (r.oportunidade_criada) cont.oportunidades++;
   }
 
   if (ultimo !== desde) await spUpsert('crm_configuracoes', { chave: 'sdr_inbox_cursor', valor: ultimo }, 'chave');
   const paraPedro = cont.interesse + cont.indicacao + cont.nao_agora + cont.indefinido + cont.opt_out;
   const ctx = { ...cont, para_o_pedro_ler: paraPedro, ms: Date.now() - inicio };
   await logCron('sdr-respostas', paraPedro > 0 ? 'aviso' : nivelTrabalho(msgs.length), paraPedro > 0 ? `fim — ${paraPedro} resposta(s) para o Pedro ler` : 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
+// ── SDR: envio (Bloco D) ──────────────────────────────────────────────────────
+// Regra 3 do CLAUDE.md: só envia com sdr_piloto_automatico=true E QC aprovado E
+// dentro da janela/dia útil/fora de feriado E abaixo do teto/aquecimento. A guarda
+// é conferida ao agendar e de novo, relida do banco, no instante de cada envio.
+async function cfgEnvio() {
+  const rows = await sg('crm_configuracoes?chave=in.(sdr_piloto_automatico,sdr_feriados,sdr_janelas,sdr_email_aquecimento,sdr_aquecimento_desde,email_daily_max,whatsapp_daily_max,sdr_envio_intervalo_min,sdr_wa_template,sdr_cadencia)&select=chave,valor');
+  if (!Array.isArray(rows)) return null;
+  const m = {}; for (const r of rows) m[r.chave] = r.valor;
+  return {
+    piloto: m.sdr_piloto_automatico === true || m.sdr_piloto_automatico === 'true',
+    feriados: Array.isArray(m.sdr_feriados) ? m.sdr_feriados : [],
+    janela: (m.sdr_janelas && m.sdr_janelas.envios) || '07:30-11:00',
+    aquecimento: m.sdr_email_aquecimento || { inicio: 15, passo_semanal: 5, bounce_max_pct: 2 },
+    aquecimentoDesde: typeof m.sdr_aquecimento_desde === 'string' ? m.sdr_aquecimento_desde : null,
+    emailDailyMax: Number(m.email_daily_max) || 50,
+    waDailyMax: Number(m.whatsapp_daily_max) || 10,
+    intervalo: m.sdr_envio_intervalo_min || { min: 3, max: 9 },
+    waTemplate: (m.sdr_wa_template && m.sdr_wa_template.nome) ? m.sdr_wa_template : null,
+    cadencia: Array.isArray(m.sdr_cadencia) ? m.sdr_cadencia : [{ dia: 0, canal: 'email' }]
+  };
+}
+async function enviadosHojePorCanal(agora) {
+  const { data } = horaBRT(agora);
+  const inicioDiaUtc = new Date(new Date(data + 'T03:00:00Z')).toISOString();
+  const rows = await sg(`crm_fila?status=in.(enviado,respondido)&enviado_em=gte.${inicioDiaUtc}&select=canal&limit=2000`);
+  const c = { email: 0, whatsapp: 0 };
+  for (const r of (Array.isArray(rows) ? rows : [])) if (c[r.canal] !== undefined) c[r.canal]++;
+  return c;
+}
+async function bouncePct7d() {
+  const desde = new Date(Date.now() - 7 * 86400000).toISOString();
+  const env = await sg(`crm_toques?canal=eq.email&direcao=eq.enviado&data=gte.${desde}&select=id&limit=5000`);
+  const bnc = await sg(`crm_toques?canal=eq.email&resultado=eq.bounce&data=gte.${desde}&select=id&limit=5000`);
+  const n = Array.isArray(env) ? env.length : 0;
+  return n ? Math.round(((Array.isArray(bnc) ? bnc.length : 0) / n) * 1000) / 10 : 0;
+}
+
+// sdr-agendar: de manhã, distribui os rascunhos aprovados no QC em horários da janela.
+async function jobSdrAgendar(req, res) {
+  const inicio = Date.now();
+  const agora = new Date();
+  await logCron('sdr-agendar', 'info', 'início', null);
+  const cfg = await cfgEnvio();
+  if (!cfg) return erroLeitura('sdr-agendar', res, inicio, 'crm_configuracoes');
+  const { data } = horaBRT(agora);
+  if (!cfg.piloto) {
+    const prontos = await sg(`crm_sdr_estado?etapa=eq.rascunho&status=eq.ativo&select=id&limit=500`);
+    const ctx = { piloto: false, rascunhos_aguardando_pedro: Array.isArray(prontos) ? prontos.length : 0, ms: Date.now() - inicio };
+    await logCron('sdr-agendar', 'aviso', 'fim — piloto desligado: rascunhos aguardam o Pedro', ctx);
+    return res.status(200).json({ ok: true, ...ctx });
+  }
+  if (!cfg.aquecimentoDesde) await spUpsert('crm_configuracoes', { chave: 'sdr_aquecimento_desde', valor: agora.toISOString() }, 'chave');
+  const estados = await sg(`crm_sdr_estado?etapa=eq.rascunho&status=eq.ativo&data_lote=lte.${data}&select=id,canal,fila_id&order=criado_em.asc&limit=200`);
+  if (estados === null) return erroLeitura('sdr-agendar', res, inicio, 'crm_sdr_estado');
+  const env = await enviadosHojePorCanal(agora);
+  const tetos = { email: tetoEmailHoje({ aquecimento: cfg.aquecimento, desde: cfg.aquecimentoDesde || agora.toISOString(), tetoGlobal: cfg.emailDailyMax, agora }), whatsapp: cfg.waDailyMax };
+  const porCanal = { email: [], whatsapp: [] };
+  for (const e of estados) {
+    const c = e.canal === 'whatsapp' ? 'whatsapp' : 'email';
+    if (c === 'whatsapp' && !cfg.waTemplate) continue;
+    if (porCanal[c].length + env[c] < tetos[c]) porCanal[c].push(e);
+  }
+  let agendados = 0;
+  for (const c of ['email', 'whatsapp']) {
+    const slots = slotsDoDia({ n: porCanal[c].length, dataISO: data, janela: cfg.janela, intervalo: cfg.intervalo });
+    for (let i = 0; i < slots.length; i++) {
+      const e = porCanal[c][i];
+      const ok = await sp(`crm_sdr_estado?id=eq.${e.id}&etapa=eq.rascunho`, { etapa: 'agendado', agendado_para: slots[i].toISOString(), atualizado_em: agora.toISOString() }, 'PATCH');
+      if (ok && e.fila_id) await sp(`crm_fila?id=eq.${e.fila_id}&status=eq.rascunho`, { status: 'aprovado', aprovado_em: agora.toISOString() }, 'PATCH');
+      if (ok) agendados++;
+    }
+  }
+  const ctx = { piloto: true, candidatos: estados.length, agendados, tetos, ja_enviados_hoje: env, ms: Date.now() - inicio };
+  await logCron('sdr-agendar', nivelTrabalho(agendados), 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
+// sdr-envio: a cada 5 min na janela, envia o que venceu. Relê tudo a cada item.
+async function jobSdrEnvio(req, res) {
+  const inicio = Date.now();
+  const lote = Math.max(1, Math.min(10, Number(req.query.lote) || 3));
+  await logCron('sdr-envio', 'info', 'início', { lote });
+  const agoraIso = new Date().toISOString();
+  const devidos = await sg(`crm_sdr_estado?etapa=eq.agendado&status=eq.ativo&agendado_para=lte.${agoraIso}&select=id,decisor_id,empresa_id,agencia_id,agencia_motivo,dossie_id,canal,dia_cadencia,fila_id&order=agendado_para.asc&limit=${lote}`);
+  if (devidos === null) return erroLeitura('sdr-envio', res, inicio, 'crm_sdr_estado');
+  let enviados = 0, barrados = 0, erros = 0; const motivos = {};
+  let graph = null;
+
+  for (const e of devidos) {
+    const agora = new Date();
+    const cfg = await cfgEnvio();                        // segunda guarda: relida agora
+    const ds = await sg(`crm_decisores?id=eq.${e.decisor_id}&select=id,nome,email,wa,email_valido,opt_out,respondeu`);
+    const msgs = await sg(`crm_sdr_mensagens?estado_id=eq.${e.id}&escolhida=eq.true&select=id,assunto,corpo,aprovado_autonomo&limit=1`);
+    const fila = e.fila_id ? await sg(`crm_fila?id=eq.${e.fila_id}&select=id,assunto,corpo,status`) : null;
+    const decisor = Array.isArray(ds) && ds[0];
+    const msg = Array.isArray(msgs) && msgs[0];
+    const f = Array.isArray(fila) && fila[0];
+    const canal = e.canal === 'whatsapp' ? 'whatsapp' : 'email';
+    const env = await enviadosHojePorCanal(agora);
+    const g = cfg ? podeEnviar({ cfg, agora, canal, enviadosHoje: env[canal], bouncePct7d: canal === 'email' ? await bouncePct7d() : 0, msg, decisor }) : { ok: false, motivos: ['configuração ilegível'] };
+    if (f && f.status !== 'aprovado') { g.ok = false; g.motivos.push('item da fila não está aprovado (' + f.status + ')'); }
+    if (!g.ok) {
+      barrados++; for (const mo of g.motivos) motivos[mo] = (motivos[mo] || 0) + 1;
+      // Fora da janela/teto: volta para rascunho (amanhã reagenda). Piloto desligado: idem.
+      await sp(`crm_sdr_estado?id=eq.${e.id}`, { etapa: 'rascunho', agendado_para: null, motivo: 'envio barrado: ' + g.motivos.join('; ').slice(0, 400), atualizado_em: agora.toISOString() }, 'PATCH');
+      continue;
+    }
+    // Texto final: o que está na fila (o Pedro pode ter editado) ou a versão escolhida.
+    const assunto = (f && f.assunto) || msg.assunto || '';
+    const corpo = corpoFinal((f && f.corpo) || msg.corpo, canal);
+    let r;
+    if (canal === 'email') {
+      if (!graph) graph = await obterTokenGraph({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY });
+      r = graph ? await enviarEmailGraph(graph.token, { para: decisor.email, assunto, html: htmlDeTexto(corpo) }) : { ok: false, erro: 'Outlook não conectado' };
+    } else {
+      const tk = process.env.WHATSAPP_CLOUD_TOKEN, ph = process.env.WHATSAPP_PHONE_NUMBER_ID;
+      r = (tk && ph) ? await enviarWhatsAppTemplate({ token: tk, phoneId: ph, para: normalizarWa(decisor.wa), template: cfg.waTemplate.nome, idioma: cfg.waTemplate.idioma,
+        parametros: parametrosTemplate(String(decisor.nome || '').split(/\s+/)[0], (f && f.corpo) || msg.corpo) }) : { ok: false, erro: 'WhatsApp Cloud API não configurada' };
+    }
+    const ts = new Date().toISOString();
+    if (!r.ok) {
+      erros++;
+      await sp(`crm_sdr_estado?id=eq.${e.id}`, { etapa: 'erro', ultimo_erro: r.erro, atualizado_em: ts }, 'PATCH');
+      if (f) await sp(`crm_fila?id=eq.${f.id}`, { rascunho_erro: r.erro }, 'PATCH');
+      continue;
+    }
+    enviados++;
+    if (f) await sp(`crm_fila?id=eq.${f.id}`, { status: 'enviado', enviado_em: ts, rascunho_erro: null }, 'PATCH');
+    await sp('crm_toques', { decisor_id: e.decisor_id, empresa_id: e.empresa_id, canal, direcao: 'enviado', assunto: assunto.slice(0, 500),
+      resumo: ('SDR D' + (e.dia_cadencia || 0)).slice(0, 500), texto_enviado: corpo.slice(0, 4000), data: ts, fonte: 'sistema', resultado: 'enviado', agencia_id: e.agencia_id ? String(e.agencia_id) : null });
+    await sp(`crm_decisores?id=eq.${e.decisor_id}`, { ultimo_toque_em: ts }, 'PATCH');
+    await sp(`crm_sdr_estado?id=eq.${e.id}`, { etapa: 'enviado', enviado_em: ts, atualizado_em: ts }, 'PATCH');
+    const prox = proximoPasso({ cadencia: cfg.cadencia, diaAtual: e.dia_cadencia || 0, dataEnvioISO: horaBRT(new Date(ts)).data, feriados: cfg.feriados });
+    if (prox) await spUpsert('crm_sdr_estado', { decisor_id: e.decisor_id, empresa_id: e.empresa_id, agencia_id: e.agencia_id, agencia_motivo: e.agencia_motivo,
+      dossie_id: e.dossie_id, dia_cadencia: prox.dia, data_lote: prox.data, etapa: 'aguardando', status: 'ativo' }, 'decisor_id,data_lote,dia_cadencia');
+  }
+  const ctx = { devidos: devidos.length, enviados, barrados, erros, motivos, ms: Date.now() - inicio };
+  await logCron('sdr-envio', erros ? 'error' : (devidos.length ? nivelTrabalho(enviados) : 'info'), 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
+// sdr-wa-modelos: submete os modelos de WhatsApp à Meta (idempotente) e, quando o
+// primeiro-contato for APROVADO, grava sdr_wa_template para o envio poder usá-lo.
+// Precisa de WHATSAPP_CLOUD_TOKEN e WHATSAPP_WABA_ID. Não envia mensagem a ninguém.
+async function jobSdrWaModelos(req, res) {
+  const inicio = Date.now();
+  const tk = process.env.WHATSAPP_CLOUD_TOKEN, waba = process.env.WHATSAPP_WABA_ID;
+  if (!tk || !waba) {
+    const ctx = { faltando: [!tk && 'WHATSAPP_CLOUD_TOKEN', !waba && 'WHATSAPP_WABA_ID'].filter(Boolean) };
+    await logCron('sdr-wa-modelos', 'aviso', 'fim — pulado: falta configuração', ctx);
+    return res.status(200).json({ ok: true, pulado: true, ...ctx });
+  }
+  const base = 'https://graph.facebook.com/v21.0/' + waba + '/message_templates';
+  const H = { Authorization: 'Bearer ' + tk, 'Content-Type': 'application/json' };
+  const lista = await fetch(base + '?fields=name,status,language&limit=200', { headers: H }).then(r => r.ok ? r.json() : null).catch(() => null);
+  const existentes = {}; for (const t of ((lista && lista.data) || [])) existentes[t.name + '|' + t.language] = t.status;
+  const resultado = [];
+  for (const m of MODELOS_WA) {
+    const st = existentes[m.name + '|' + m.language];
+    if (st) { resultado.push({ nome: m.name, status: st }); continue; }
+    const r = await fetch(base, { method: 'POST', headers: H, body: JSON.stringify(payloadMeta(m)) });
+    const j = await r.json().catch(() => ({}));
+    resultado.push({ nome: m.name, status: r.ok ? (j.status || 'PENDING') : 'ERRO', erro: r.ok ? undefined : JSON.stringify(j.error || j).slice(0, 200) });
+  }
+  const aprovado = resultado.find(x => x.nome === 'sdr_primeiro_contato' && x.status === 'APPROVED');
+  if (aprovado) await spUpsert('crm_configuracoes', { chave: 'sdr_wa_template', valor: { nome: 'sdr_primeiro_contato', idioma: 'pt_BR' } }, 'chave');
+  const ctx = { modelos: resultado, primeiro_contato_aprovado: !!aprovado, ms: Date.now() - inicio };
+  await logCron('sdr-wa-modelos', resultado.some(x => x.status === 'ERRO') ? 'error' : 'info', 'fim', ctx);
   return res.status(200).json({ ok: true, ...ctx });
 }
 
@@ -1582,7 +1715,10 @@ export default async function handler(req, res) {
     if (job === 'sdr-redacao')           return await jobSdrRedacao(req, res);
     if (job === 'sdr-qualidade')         return await jobSdrQualidade(req, res);
     if (job === 'sdr-respostas')         return await jobSdrRespostas(req, res);
-    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta, higiene-fila, rascunhos-matinais, oportunidades-paradas, sdr-selecao, sdr-dossie, sdr-redacao, sdr-qualidade, sdr-respostas' });
+    if (job === 'sdr-agendar')           return await jobSdrAgendar(req, res);
+    if (job === 'sdr-envio')             return await jobSdrEnvio(req, res);
+    if (job === 'sdr-wa-modelos')        return await jobSdrWaModelos(req, res);
+    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta, higiene-fila, rascunhos-matinais, oportunidades-paradas, sdr-selecao, sdr-dossie, sdr-redacao, sdr-qualidade, sdr-respostas, sdr-agendar, sdr-envio, sdr-wa-modelos' });
   } catch(e) {
     console.error('[cron:'+job+']', e.message);
     try { await logCron(job||'unknown', 'error', 'erro: '+e.message, null); } catch(_) {}
