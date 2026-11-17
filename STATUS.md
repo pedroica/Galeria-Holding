@@ -99,3 +99,10 @@ Todas as 109 oportunidades têm origem `abordagem_direta` (relacionamento do Ped
 
 - **Relógio autenticado pelo Vault, sem depender da Vercel.** O servidor manda o Bearer recebido para a RPC `sdr_cron_token_valido` (só service_role), que compara dentro do banco e responde true/false. Porquê: o segredo nunca sai do Vault nem passa pelo servidor; a outra conta da Vercel deixa de ser bloqueio. `SDR_CRON_SECRET` na env segue aceito se um dia for preenchido.
 - **Cache de 5 minutos só para token aprovado** (guardado como sha256) e **falha fechada** se o banco não responder. Porquê: evita uma consulta por chamada sem travar rotação de segredo nem abrir o endpoint numa queda.
+- **Relógio validado em produção:** disparo real do pg_cron (`sdr_invoke('sdr-agendar')`) voltou 200, com início e fim gravados no `crm_logs`. O relógio segue dormente.
+- **Modo Sombra virou uma chave própria (`sdr_modo_sombra`, nasce ligada).** Tudo roda e é marcado `sombra=true`, mas nada vai para a fila de aprovação nem para agendamento/envio. Porquê: provar qualidade sem encher a fila do Pedro de rascunhos de teste.
+- **Rodar o Modo Sombra por chamada direta, sem ligar o relógio.** Porquê: o item 2 pede a prova; ligar o relógio continua sendo decisão do Pedro.
+- **Câmbio fixo de R$ 5,40 por dólar para o custo** (`sdr_usd_brl`). Porquê: só para o placar; ajustável no banco.
+- **Limpeza da carteira só com sugestões** (`classificacao_sugerida`, `duplicata_de`, `setor_sugerido`, `setor_fonte`). 103 registros: 77 clientes reais, 13 campanhas, 6 duplicatas, 7 indefinidos; 45 setores vazios preenchidos como sugestão. Nada apagado, mesclado ou sobrescrito. Porquê: mesclar é decisão do Pedro (item 3e).
+- **Setor inferido pelo domínio ou pela marca conhecida, com a fonte registrada.** Os dados de Lusha no banco não têm setor nem porte (headcount vazio em toda a carteira). Porquê: transparência sobre de onde veio cada sugestão.
+- **Seleção intercala as empresas do grupo (round-robin pelo score).** Porquê: 1.661 das 2.033 empresas elegíveis caem na Holding/Galeria por falta de setor; sem intercalar, o lote diário seria quase só delas e as outras 8 não teriam fila própria.

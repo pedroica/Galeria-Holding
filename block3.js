@@ -6831,13 +6831,14 @@ function SdrView() {
   function carregar() {
     setLoading(true);
     Promise.all([
-      supaFetch('/rest/v1/crm_configuracoes?chave=in.(sdr_piloto_automatico,sdr_relogio_ativo,sdr_amostra_aprovada,sdr_wa_template)&select=chave,valor'),
+      supaFetch('/rest/v1/crm_configuracoes?chave=in.(sdr_piloto_automatico,sdr_relogio_ativo,sdr_amostra_aprovada,sdr_wa_template,sdr_modo_sombra,sdr_usd_brl)&select=chave,valor'),
       supaFetch('/rest/v1/crm_sdr_respostas?lida_pelo_pedro=eq.false&tipo=neq.auto_resposta&select=id,tipo,assunto,preview,recebido_em,remetente,acao,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(nome)&order=recebido_em.desc&limit=50'),
-      supaFetch('/rest/v1/crm_sdr_mensagens?escolhida=eq.true&select=id,canal,assunto,corpo,nota_media,aprovado_autonomo,motivo_qc,sinal_url,angulo,criado_em,crm_empresas:empresa_id(nome),crm_decisores:decisor_id(nome,cargo)&order=criado_em.desc&limit=20'),
+      supaFetch('/rest/v1/crm_sdr_mensagens?sombra=eq.true&select=id,estado_id,escolhida,canal,assunto,corpo,nota_media,nota_aderencia,nota_especificidade,nota_naturalidade,nota_clareza,nota_risco,aprovado_autonomo,motivo_qc,sinal_url,sinal_tipo,case_titulo,angulo,custo_usd,custo_qc_usd,criado_em,crm_agencias:agencia_id(nome,slug),crm_empresas:empresa_id(nome),crm_decisores:decisor_id(nome,cargo),crm_dossies:dossie_id(sinais)&order=criado_em.desc&limit=1000'),
       supaFetch('/rest/v1/crm_sdr_topo?status=eq.novo&select=id,fonte,empresa_id,nome,dominio,agencia_slug,motivo,score,dados&order=score.desc&limit=100')
     ]).then(function (r) {
       var cfg = {}; arr(r[0]).forEach(function (x) { cfg[x.chave] = x.valor; });
-      setD({ cfg: cfg, resp: arr(r[1]), amostra: arr(r[2]), topo: arr(r[3]) }); setLoading(false);
+      var todas = arr(r[2]);
+      setD({ cfg: cfg, resp: arr(r[1]), todas: todas, amostra: SdrView.amostra(todas), placar: SdrView.placar(todas, Number(cfg.sdr_usd_brl) || 5.4), topo: arr(r[3]) }); setLoading(false);
     }).catch(function () { setLoading(false); });
   }
   React.useEffect(carregar, []);
@@ -6899,6 +6900,17 @@ function SdrView() {
           btn('Marcar como lida', function () { marcarLida(r.id); }));
       })),
 
+    d.placar && d.placar.geradas > 0 && React.createElement('div', { style: card, 'data-testid': 'sdr-placar' }, h('Placar do Modo Sombra'),
+      React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 18, marginBottom: 10 } },
+        [['versões geradas', d.placar.geradas], ['leads avaliados', d.placar.leads], ['aprovados no QC', d.placar.aprovados], ['retidos', d.placar.retidos],
+         ['reprovação', d.placar.taxaReprovacao + '%'], ['nota média', d.placar.notaMedia], ['custo por aprovada', 'R$ ' + d.placar.custoPorAprovadaBRL]].map(function (x) {
+          return React.createElement('div', { key: x[0] }, React.createElement('div', { style: { fontSize: 18, color: '#F5F5F5', fontFamily: "'Syne',sans-serif" } }, String(x[1])), React.createElement('div', { style: { fontSize: 9, color: '#9B9BB4' } }, x[0]));
+        })),
+      React.createElement('div', { style: { color: '#9B9BB4', marginBottom: 4 } }, 'Motivos de retenção:'),
+      d.placar.motivos.map(function (m) { return React.createElement('div', { key: m[0] }, '· ' + m[0] + ': ' + m[1]); }),
+      React.createElement('div', { style: { color: '#9B9BB4', margin: '8px 0 4px' } }, 'Por empresa do grupo (leads · aprovados · nota média):'),
+      d.placar.porAgencia.map(function (a) { return React.createElement('div', { key: a.nome }, '· ' + a.nome + ': ' + a.leads + ' · ' + a.aprovados + ' · ' + a.nota); })),
+
     React.createElement('div', { style: card }, h('Amostra do Modo Sombra (' + d.amostra.length + '/20)'),
       React.createElement('div', { style: { color: '#9B9BB4', marginBottom: 8 } }, 'As últimas mensagens escolhidas pelo SDR, com nota do controle de qualidade e a fonte do fato. Aprovar libera o botão de ligar o Piloto; não envia nada.'),
       d.amostra.length === 0 ? React.createElement('div', { style: { color: '#555' } }, 'Ainda não há mensagens. Elas aparecem depois das noites de Modo Sombra (relógio ligado, piloto desligado).') :
@@ -6908,6 +6920,10 @@ function SdrView() {
           React.createElement('b', null, (m.crm_decisores && m.crm_decisores.nome) || ''), ' · ', (m.crm_empresas && m.crm_empresas.nome) || '',
           m.assunto && React.createElement('div', { style: { color: '#F5F5F5', marginTop: 4 } }, 'Assunto: ' + m.assunto),
           React.createElement('div', { style: { whiteSpace: 'pre-wrap', margin: '4px 0', color: '#D0D0E0' } }, m.corpo),
+          (function () { var sg = ((m.crm_dossies && m.crm_dossies.sinais) || []).find(function (x) { return x.url === m.sinal_url; });
+            return sg ? React.createElement('div', { style: { color: '#9B9BB4', fontSize: 10, borderLeft: '2px solid #2D2D44', paddingLeft: 8, margin: '4px 0' } }, 'Dossiê [' + sg.tipo + '] ' + (sg.fonte || '') + ' ' + (sg.data || '') + ': "' + String(sg.trecho || sg.fato || '').slice(0, 240) + '"') : null; })(),
+          React.createElement('div', { style: { fontSize: 10, color: '#9B9BB4' } }, 'Agência: ' + ((m.crm_agencias && m.crm_agencias.nome) || '?') + ' · Case: ' + (m.case_titulo || 'nenhum (sem número)') +
+            (m.nota_media == null ? '' : ' · notas A' + m.nota_aderencia + ' E' + m.nota_especificidade + ' N' + m.nota_naturalidade + ' C' + m.nota_clareza + ' risco ' + m.nota_risco)),
           m.sinal_url && React.createElement('a', { href: m.sinal_url, target: '_blank', rel: 'noopener', style: { color: '#60A5FA', fontSize: 9 } }, 'fonte do fato'),
           !m.aprovado_autonomo && m.motivo_qc && React.createElement('div', { style: { color: '#FBBF24', fontSize: 9 } }, 'QC: ' + m.motivo_qc.slice(0, 220)));
       }),
@@ -6927,6 +6943,40 @@ function SdrView() {
       }))
   );
 }
+
+// Amostra: as escolhidas, aprovadas primeiro, intercalando empresas do grupo (até 20).
+SdrView.amostra = function (todas) {
+  var esc = todas.filter(function (m) { return m.escolhida; });
+  esc.sort(function (a, b) { return (Number(b.aprovado_autonomo) - Number(a.aprovado_autonomo)) || ((b.nota_media || 0) - (a.nota_media || 0)); });
+  var grupos = {}, ordem = [];
+  esc.forEach(function (m) { var k = (m.crm_agencias && m.crm_agencias.slug) || '?'; if (!grupos[k]) { grupos[k] = []; ordem.push(k); } grupos[k].push(m); });
+  var out = [];
+  for (var i = 0; out.length < 20; i++) { var add = false; ordem.forEach(function (k) { if (grupos[k][i] && out.length < 20) { out.push(grupos[k][i]); add = true; } }); if (!add) break; }
+  return out;
+};
+// Placar: versões, leads, aprovados/retidos (pela escolhida de cada lead), motivos, nota por agência e custo.
+SdrView.placar = function (todas, cambio) {
+  var esc = todas.filter(function (m) { return m.escolhida; });
+  var aprov = esc.filter(function (m) { return m.aprovado_autonomo; }).length;
+  var custo = todas.reduce(function (s, m) { return s + Number(m.custo_usd || 0) + Number(m.custo_qc_usd || 0); }, 0);
+  var motivos = {};
+  esc.filter(function (m) { return !m.aprovado_autonomo; }).forEach(function (m) {
+    var parte = String(m.motivo_qc || '').split('||').pop();
+    parte.split('|').forEach(function (p) { var k = p.trim().replace(/\s*\(.*$/, '').replace(/\d+(\.\d+)?/g, 'N').slice(0, 60); if (k) motivos[k] = (motivos[k] || 0) + 1; });
+  });
+  var ag = {};
+  esc.forEach(function (m) { var k = (m.crm_agencias && m.crm_agencias.nome) || '?'; ag[k] = ag[k] || { nome: k, leads: 0, aprovados: 0, soma: 0 }; ag[k].leads++; ag[k].soma += Number(m.nota_media || 0); if (m.aprovado_autonomo) ag[k].aprovados++; });
+  var notas = esc.map(function (m) { return Number(m.nota_media || 0); });
+  return {
+    geradas: todas.length, leads: esc.length, aprovados: aprov, retidos: esc.length - aprov,
+    taxaReprovacao: esc.length ? Math.round(((esc.length - aprov) / esc.length) * 100) : 0,
+    notaMedia: notas.length ? Math.round(notas.reduce(function (a, b) { return a + b; }, 0) / notas.length * 10) / 10 : 0,
+    custoBRL: Math.round(custo * cambio * 100) / 100,
+    custoPorAprovadaBRL: aprov ? (Math.round(custo * cambio / aprov * 100) / 100).toFixed(2) : '–',
+    motivos: Object.entries(motivos).sort(function (a, b) { return b[1] - a[1]; }).slice(0, 8),
+    porAgencia: Object.values(ag).map(function (a) { return { nome: a.nome, leads: a.leads, aprovados: a.aprovados, nota: Math.round(a.soma / a.leads * 10) / 10 }; }).sort(function (a, b) { return b.leads - a.leads; })
+  };
+};
 
 // E1 — Tela Hoje: progresso diário, aprovações pendentes, reuniões do dia
 function TelaHoje() {

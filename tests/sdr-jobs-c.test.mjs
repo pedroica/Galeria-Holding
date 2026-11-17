@@ -89,5 +89,13 @@ r = await chamar('sdr-qualidade');
 ok(r.body.retidos === 1 && r.body.aprovados_qc === 0, 'nota < 8 → retido para o Pedro');
 ok(escritas.some(e => e.u.includes('crm_sdr_estado?id=eq.1') && e.body.etapa === 'avaliado' && /especificidade/.test(e.body.motivo)), 'motivo da retenção registrado');
 
+console.log('\nModo Sombra');
+reset(); notas = { aderencia: 9, especificidade: 9, naturalidade: 9, clareza: 9, risco: 1, motivo: 'bom' };
+db.estadosRedigido = [estado(1, { sombra: true })];
+db.mensagens = [{ id: 'm1', assunto: 'Acme e a linha X', corpo, sinal_url: 'https://x/1', canal: 'email', angulo: 'fato', versao: 1, etapa: 'etapa1' }];
+r = await chamar('sdr-qualidade');
+ok(r.body.aprovados_qc === 1 && !escritas.some(e => e.u.includes('crm_fila')), 'sombra: avalia e aprova, mas NÃO cria item na fila');
+ok(escritas.some(e => e.u.includes('crm_sdr_mensagens?id=eq.m1') && 'custo_qc_usd' in e.body), 'grava o custo do avaliador por mensagem');
+
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
 process.exit(fail ? 1 : 0);
