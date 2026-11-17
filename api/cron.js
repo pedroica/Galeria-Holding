@@ -96,9 +96,9 @@ async function spRet(path, body) {
   return Array.isArray(j) && j[0] ? j[0] : null;
 }
 // Upsert por conflito (idempotente): merge-duplicates no índice único indicado.
-async function spUpsert(path, body, onConflict) {
+async function spUpsert(path, body, onConflict, ignorar = false) {
   const r = await fetch(SUPA_URL+'/rest/v1/'+path+(path.includes('?')?'&':'?')+'on_conflict='+onConflict, {
-    method:'POST', headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'resolution=merge-duplicates,return=minimal'}, body:JSON.stringify(body)
+    method:'POST', headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:(ignorar?'resolution=ignore-duplicates':'resolution=merge-duplicates')+',return=minimal'}, body:JSON.stringify(body)
   });
   return r.ok;
 }
@@ -1167,7 +1167,7 @@ async function jobSdrSelecao(req, res) {
       decisor_id: item.decisor_id, empresa_id: item.empresa_id, agencia_id: item.agencia_id || null,
       agencia_motivo: item.agencia_motivo || null, data_lote: dataLote, dia_cadencia: item.dia_cadencia || 0,
       canal: null, etapa: 'selecionado', status: 'ativo', sombra, atualizado_em: new Date().toISOString()
-    }, 'decisor_id,data_lote,dia_cadencia');
+    }, 'decisor_id,data_lote,dia_cadencia', true);   // rodar de novo no mesmo dia não reinicia quem já avançou
     if (ok) gravados++;
   }
 

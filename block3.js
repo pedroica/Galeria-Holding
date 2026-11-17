@@ -6834,11 +6834,12 @@ function SdrView() {
       supaFetch('/rest/v1/crm_configuracoes?chave=in.(sdr_piloto_automatico,sdr_relogio_ativo,sdr_amostra_aprovada,sdr_wa_template,sdr_modo_sombra,sdr_usd_brl)&select=chave,valor'),
       supaFetch('/rest/v1/crm_sdr_respostas?lida_pelo_pedro=eq.false&tipo=neq.auto_resposta&select=id,tipo,assunto,preview,recebido_em,remetente,acao,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(nome)&order=recebido_em.desc&limit=50'),
       supaFetch('/rest/v1/crm_sdr_mensagens?sombra=eq.true&select=id,estado_id,escolhida,canal,assunto,corpo,nota_media,nota_aderencia,nota_especificidade,nota_naturalidade,nota_clareza,nota_risco,aprovado_autonomo,motivo_qc,sinal_url,sinal_tipo,case_titulo,angulo,custo_usd,custo_qc_usd,criado_em,crm_agencias:agencia_id(nome,slug),crm_empresas:empresa_id(nome),crm_decisores:decisor_id(nome,cargo),crm_dossies:dossie_id(sinais)&order=criado_em.desc&limit=1000'),
-      supaFetch('/rest/v1/crm_sdr_topo?status=eq.novo&select=id,fonte,empresa_id,nome,dominio,agencia_slug,motivo,score,dados&order=score.desc&limit=100')
+      supaFetch('/rest/v1/crm_sdr_topo?status=eq.novo&select=id,fonte,empresa_id,nome,dominio,agencia_slug,motivo,score,dados&order=score.desc&limit=100'),
+      supaFetch('/rest/v1/crm_pedidos_internos?status=eq.rascunho&select=id,agencia_slug,destinatario_email,assunto,corpo&order=agencia_slug')
     ]).then(function (r) {
       var cfg = {}; arr(r[0]).forEach(function (x) { cfg[x.chave] = x.valor; });
       var todas = arr(r[2]);
-      setD({ cfg: cfg, resp: arr(r[1]), todas: todas, amostra: SdrView.amostra(todas), placar: SdrView.placar(todas, Number(cfg.sdr_usd_brl) || 5.4), topo: arr(r[3]) }); setLoading(false);
+      setD({ cfg: cfg, resp: arr(r[1]), todas: todas, amostra: SdrView.amostra(todas), placar: SdrView.placar(todas, Number(cfg.sdr_usd_brl) || 5.4), topo: arr(r[3]), pedidos: arr(r[4]) }); setLoading(false);
     }).catch(function () { setLoading(false); });
   }
   React.useEffect(carregar, []);
@@ -6859,6 +6860,10 @@ function SdrView() {
     supaFetch('/rest/v1/crm_configuracoes?chave=eq.sdr_piloto_automatico', { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ valor: true }) })
       .then(function () { setMsg('Piloto Automático LIGADO.'); carregar(); });
   }
+  function pedidoEnviado(p) {
+    supaFetch('/rest/v1/crm_pedidos_internos?id=eq.' + p.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'enviado', enviado_em: new Date().toISOString() }) }).then(carregar);
+  }
+  function copiar(t) { try { navigator.clipboard.writeText(t); setMsg('Texto copiado.'); } catch (_) { window.prompt('Copie o texto:', t); } }
   function decidirTopo(t, status) {
     var p = supaFetch('/rest/v1/crm_sdr_topo?id=eq.' + t.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: status, atualizado_em: new Date().toISOString() }) });
     if (status === 'aceito' && !t.empresa_id && t.nome) {
@@ -6928,6 +6933,18 @@ function SdrView() {
           !m.aprovado_autonomo && m.motivo_qc && React.createElement('div', { style: { color: '#FBBF24', fontSize: 9 } }, 'QC: ' + m.motivo_qc.slice(0, 220)));
       }),
       d.amostra.length > 0 && !amostraOk && React.createElement('div', { style: { marginTop: 10 } }, btn('Aprovar amostra', aprovarAmostra, '#34D399'))),
+
+    (d.pedidos || []).length > 0 && React.createElement('div', { style: card, 'data-testid': 'sdr-pedidos' }, h('Pedidos de case para as agências (' + d.pedidos.length + ')'),
+      React.createElement('div', { style: { color: '#9B9BB4', marginBottom: 8 } }, 'Rascunhos prontos. O sistema não envia: você abre no Outlook, escolhe o destinatário e envia.'),
+      d.pedidos.map(function (p) {
+        var mailto = 'mailto:' + encodeURIComponent(p.destinatario_email || '') + '?subject=' + encodeURIComponent(p.assunto) + '&body=' + encodeURIComponent(p.corpo);
+        return React.createElement('div', { key: p.id, style: { borderTop: '.5px solid #1A1A2E', padding: '8px 0' } },
+          pill(p.agencia_slug, '#FF6B2B'), React.createElement('b', null, p.assunto),
+          React.createElement('div', { style: { whiteSpace: 'pre-wrap', color: '#D0D0E0', margin: '6px 0', maxHeight: 140, overflow: 'auto' } }, p.corpo),
+          React.createElement('a', { href: mailto, style: { textDecoration: 'none' } }, btn('Abrir no Outlook', function () {}, '#60A5FA')),
+          btn('Copiar texto', function () { copiar(p.corpo); }),
+          btn('Marquei como enviado', function () { pedidoEnviado(p); }, '#34D399'));
+      })),
 
     React.createElement('div', { style: card }, h('Topo de funil (' + d.topo.length + ' novos)'),
       React.createElement('div', { style: { color: '#9B9BB4', marginBottom: 8 } }, 'Cross-sell (cliente de uma agência, lead para outra), sinais de compra e empresas parecidas com os melhores clientes. Aceitar coloca na frente da próxima seleção.'),
