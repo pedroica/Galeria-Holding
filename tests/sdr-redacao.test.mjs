@@ -53,6 +53,7 @@ ok(escolherCase({ cases_destaque: [{ titulo: 'Netflix', agencia_slug: '404', tag
 ok(escolherCase({ cases_destaque: [{ titulo: 'Gallo', agencia_slug: 'galeria', tags: ['alimentos', 'cpg'] }] }, { setor: 'Alimentos e bebidas', agenciaSlug: 'holding' }).titulo === 'Gallo', 'casa setor sem acento/maiúscula e de outra agência');
 ok(expressoesEncontradas('Tenho uma ideia de bolso para vocês', null).includes('ideia de bolso'), '"ideia de bolso" virou expressão proibida');
 const pr = construirPromptRedacao({ dossie: { sinais: [] }, nome: 'Alexandre', cargo: 'CEO', empresa: { nome: 'X' }, agencia: { nome: 'Galeria', slug: 'galeria' }, caso: null, etapa: 'D0', canal: 'email', angulo: 'fato' });
+ok(/temas sensíveis/.test(pr.system) && /importar para o cargo/.test(pr.system) && /mais de 6 reprova/.test(pr.system), 'prompt: sem humor sensível, gancho do cargo, assunto com limite explícito');
 ok(/apelido/.test(pr.system) && !/"ideia de bolso"\)/.test(pr.system) && /mire em/.test(pr.system), 'prompt: sem apelido, sem rótulo de ideia, alvo de tamanho com margem');
 
 console.log('\nRedação — banco de cases vivo');
