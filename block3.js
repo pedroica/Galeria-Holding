@@ -6833,7 +6833,7 @@ function SdrView() {
     Promise.all([
       supaFetch('/rest/v1/crm_configuracoes?chave=in.(sdr_piloto_automatico,sdr_relogio_ativo,sdr_amostra_aprovada,sdr_wa_template,sdr_modo_sombra,sdr_usd_brl)&select=chave,valor'),
       supaFetch('/rest/v1/crm_sdr_respostas?lida_pelo_pedro=eq.false&tipo=neq.auto_resposta&select=id,tipo,assunto,preview,recebido_em,remetente,acao,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(nome)&order=recebido_em.desc&limit=50'),
-      supaFetch('/rest/v1/crm_sdr_mensagens?sombra=eq.true&select=id,estado_id,escolhida,canal,assunto,corpo,nota_media,nota_aderencia,nota_especificidade,nota_naturalidade,nota_clareza,nota_risco,aprovado_autonomo,motivo_qc,sinal_url,sinal_tipo,case_titulo,angulo,custo_usd,custo_qc_usd,criado_em,crm_agencias:agencia_id(nome,slug),crm_empresas:empresa_id(nome),crm_decisores:decisor_id(nome,cargo),crm_dossies:dossie_id(sinais)&order=criado_em.desc&limit=1000'),
+      supaFetch('/rest/v1/crm_sdr_mensagens?sombra=eq.true&arquivada=eq.false&select=id,estado_id,escolhida,canal,assunto,corpo,nota_media,nota_aderencia,nota_especificidade,nota_naturalidade,nota_clareza,nota_risco,aprovado_autonomo,motivo_qc,sinal_url,sinal_tipo,case_titulo,angulo,custo_usd,custo_qc_usd,criado_em,crm_agencias:agencia_id(nome,slug),crm_empresas:empresa_id(nome),crm_decisores:decisor_id(nome,cargo),crm_dossies:dossie_id(sinais)&order=criado_em.desc&limit=1000'),
       supaFetch('/rest/v1/crm_sdr_topo?status=eq.novo&select=id,fonte,empresa_id,nome,dominio,agencia_slug,motivo,score,dados&order=score.desc&limit=100'),
       supaFetch('/rest/v1/crm_pedidos_internos?status=eq.rascunho&select=id,agencia_slug,destinatario_email,assunto,corpo&order=agencia_slug')
     ]).then(function (r) {

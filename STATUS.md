@@ -181,3 +181,21 @@ Ainda não há leads aceitos, então o custo por **lead aceito** só existe depo
   3. Infraestrutura enxuta de e-mail.
   4. Cases das 4 agências sem case.
   5. Mais fato público por lead: 28% é o maior gargalo; sinais do Lusha e notícias semanais ajudam, e subir para 50% reduz em ~44% o volume de leads necessário (225 para 126 por reunião).
+
+## Fase 2: Modo Sombra, rodada 1 (chave da Anthropic no Vault)
+
+- **Chave da Anthropic gravada no Vault** (`anthropic_api_key`) a pedido do Pedro e aceita pela API. Ela foi colada no chat; a recomendação continua sendo trocá-la por uma chave de API nova e salvar direto no Vault.
+- **Rodada 1:** 6 leads avaliados, **2 aprovados (33%)**, nota média 8,4. Os motivos foram consistentes, com origem no prompt e no código:
+  1. "ideia de bolso" (rótulo que vinha do próprio prompt) penalizado em quase todas.
+  2. Case sem relação (Netflix para SaaS fiscal, McDonald's para companhia aérea).
+  3. Checagem de números dava falso positivo com número que vinha da notícia do dossiê.
+  4. Tamanho estourando a faixa por poucas palavras.
+  5. Apelido com CEO ("Alê").
+- **Ajustes da rodada 2:**
+  1. Prompt sem o rótulo; "ideia de bolso" vira expressão proibida.
+  2. Case só com aderência real de setor (usa o setor sugerido da limpeza); sem aderência, sem case e sem número.
+  3. Número vale se estiver no case ou no dossiê.
+  4. Alvo de tamanho no meio da faixa.
+  5. Proibido apelido.
+  - A rodada 1 é arquivada (`arquivada=true`), não apagada. Porquê: a regra é refazer o prompt se a reprovação passar de 30%.
+- **Custo real:** ~US$ 0,026 por versão redigida (1.900 tokens de entrada, 950 de saída, incluindo o raciocínio do modelo) e ~US$ 0,03 por avaliação. Por lead com fato: 3 versões + 3 avaliações ≈ US$ 0,17 ≈ R$ 0,92. A estimativa da fase 1 (R$ 440/mês) estava baixa demais no custo por chamada, mas só lead com fato vai para o modelo (28%). Na meta de ~1.700 leads selecionados por mês, isso dá ~480 leads com fato × R$ 0,92 ≈ **R$ 440/mês**, dentro do teto de R$ 500.
