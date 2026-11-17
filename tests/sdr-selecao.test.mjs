@@ -59,5 +59,17 @@ const muitos = Array.from({ length: 50 }, (_, i) => d({ id: 'm' + i, nome: 'M' +
 const r3 = selecionarLote({ candidatos: muitos, estrelas: {}, blocklist, toquesEmpresa30d: {}, dossies: {}, agencias: AG, primeirosContatoSemana: [], config: { lote_max: 10 }, agora: hoje });
 ok(r3.lote.length === 10, 'lote_max=10 respeitado (' + r3.lote.length + ')');
 
+console.log('\nFila própria por empresa (intercalação)');
+{
+  const mk = (id, setor) => ({ id: 'd' + id, nome: 'N' + id, empresa_id: 'e' + id, email: id + '@x.com', crm_empresas: { nome: 'Emp' + id, setor }, ultimo_toque_em: null });
+  const cands = [mk(1, 'alimentos'), mk(2, 'alimentos'), mk(3, 'alimentos'), mk(4, 'alimentos'), mk(5, 'varejo'), mk(6, 'tecnologia')];
+  const ags = [{ slug: 'holding', id: 'h' }, { slug: 'vitrine', id: 'v' }, { slug: '404', id: 'q' }];
+  const r = selecionarLote({ candidatos: cands, agencias: ags, config: { lote_max: 3 }, agora: Date.now() });
+  const slugs = r.lote.map(x => x.agencia_slug).sort().join(',');
+  ok(slugs === '404,holding,vitrine', 'lote de 3 com 3 agências, não 3 da Holding (' + slugs + ')');
+  const r2 = selecionarLote({ candidatos: cands, agencias: ags, config: { lote_max: 3, intercalar_agencias: false }, agora: Date.now() });
+  ok(r2.lote.length === 3, 'intercalação pode ser desligada');
+}
+
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
 process.exit(fail ? 1 : 0);
