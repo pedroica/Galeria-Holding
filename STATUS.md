@@ -109,3 +109,75 @@ Todas as 109 oportunidades têm origem `abordagem_direta` (relacionamento do Ped
 - **Correção: chaves estrangeiras nas tabelas do SDR.** Sem FK, a API do Supabase não fazia os joins e todo job a partir do dossiê falhava em produção; os testes unitários simulavam o banco e não pegaram. Adicionadas como NOT VALID e criado teste no e2e (que roda com a service key) com as consultas reais dos jobs. Porquê: achado na primeira rodada real do Modo Sombra.
 - **A chave da Anthropic na Vercel está inválida** (a API devolve 401 "invalid x-api-key"). A redação e o QC não rodam em produção com ela. Contorno no código: se a chave da env faltar ou for recusada, o servidor usa a chave guardada no Vault do Supabase com o nome `anthropic_api_key` (RPC só service_role, cache de 10 min). Porquê: trocar a chave passa a depender só do Supabase, não da outra conta da Vercel. **Falta alguém com acesso ao console da Anthropic gerar uma chave e salvá-la no Vault.** O copiloto de WhatsApp e a geração com IA da fila usam a mesma variável e provavelmente estão parados também.
 - **Seleção rodada de novo no mesmo dia não reinicia quem já avançou** (upsert passa a ignorar duplicata). Porquê: ao ampliar o lote do Modo Sombra, os 30 leads já com dossiê voltaram para 'selecionado'.
+
+## Fase 2: entregabilidade (item 4)
+
+**Auditoria de `galeriaholding.co` (17/11, DNS público):**
+- SPF `v=spf1 include:spf.protection.outlook.com -all` (estrito, correto para M365).
+- DKIM ativo: o seletor 1 publica a chave RSA; o seletor 2 vazio é normal na rotação do M365.
+- DMARC `p=quarantine` com relatórios para `monitorar.dmarc@`.
+- MX no Exchange Online.
+- Fora da Spamhaus DBL. A URIBL recusou a consulta por resolvedor público, então não foi possível checar.
+- `galeria.ag` está com DMARC `p=none` (mais fraco); não deve ser usado para frio.
+- **Outlook não está conectado ao CRM** (nenhum refresh token em `crm_oauth_tokens`). Sem reconectar na tela Fila, nada sai por e-mail e as respostas não são lidas.
+
+**Teto seguro no domínio principal:** até 40 e-mails frios por dia, chegando lá pela curva já configurada (15 na 1ª semana, +5 por semana, 6 semanas). Para se passar de 2% de bounce em 7 dias. Porquê: é o domínio corporativo do grupo; uma queima de reputação derruba o e-mail de todo mundo.
+
+**Para escalar, proposta (preços estimados, sem checagem online, porque o sandbox não acessa a web):**
+
+| fase | infraestrutura | envios/dia após aquecimento | custo/mês estimado |
+|---|---|---|---|
+| hoje | domínio principal, 1 caixa | 40 | R$ 0 |
+| enxuta | + 3 domínios secundários (ex.: galeriaholding.com.br e variações) × 2 caixas M365 Basic + ferramenta de aquecimento | +180 (6 × 30) em 4 semanas | ~R$ 450 (caixas ~R$ 240, aquecimento ~R$ 200, domínios ~R$ 10) |
+| completa | 9 domínios (1 por empresa) × 2 caixas + aquecimento | +540 (18 × 30) em 4 semanas | ~R$ 1.000 a 1.300 |
+
+Cronograma da enxuta: semana 1 compra dos domínios + SPF/DKIM/DMARC; semanas 1 a 4 aquecimento sem frio; semana 5 em diante 10/dia por caixa, +5 por semana até 30. A completa passa de R$ 500 e entra como pergunta para o Pedro.
+
+## Fase 2: topo de funil em escala (item 6)
+
+Créditos Lusha nesta fase: **65 de 800** (saldo 2.374).
+
+| fonte | créditos | candidatos úteis | créditos por candidato |
+|---|---|---|---|
+| lookalike GAIA (sementes de alimentos) | 10 | 34 | 0,3 |
+| lookalike Galeria (consumo massivo) | 10 | 19 | 0,5 |
+| lookalike Galeria e 404 com sementes misturadas | 20 | 0 (ruído: México, Portugal, empresas de 1 a 10 pessoas) | perdido |
+| sinais Lusha (25 empresas sem fato público) | 25 | 6 fortes (vagas de marketing, crescimento) | 4,2 |
+| cross-sell da base limpa | 0 | 21 | 0 |
+
+Ainda não há leads aceitos, então o custo por **lead aceito** só existe depois que o Pedro aceitar na tela SDR. Ele é calculado de `crm_sdr_topo.dados.creditos` dos aceitos.
+
+- **Lookalike só serve com sementes de um perfil.** Porquê: sementes misturadas (banco + fast food + streaming) devolveram ruído.
+- **Sinal do Lusha entra como prioridade, não como fato da mensagem.** Porquê: vaga e quadro de funcionários não têm URL pública e a regra de lastro exige fonte verificável.
+- **Parei em 65 créditos.** Porquê: o gargalo é a chave da Anthropic, não lead. Gastar o resto antes de medir resposta seria comprar volume sem saber a conversão.
+
+## Fase 2: matemática do funil (item 5)
+
+**Medido:**
+- Linha de base do outbound: 52 empresas contatadas, 3 respostas (5,8%), 0 oportunidades.
+- No Modo Sombra, só **37% dos leads têm fato público com fonte** (11 de 30 no primeiro lote). Sem fato, o lead não vai para o modelo, e isso é o funil real.
+- A aprovação no QC ainda não pôde ser medida (chave da Anthropic inválida). Premissa até lá: 70%.
+
+**Conta reversa por reunião:**
+- 1 reunião = 1,4 resposta positiva (70% marcam).
+- 1,4 positiva = 3,5 respostas (40% das respostas são positivas).
+- 3,5 respostas = 44 decisores contatados (8% de resposta com fato e QC; premissa a validar).
+- 44 contatados = 63 que passaram no QC ÷ 0,7, que exigem 170 selecionados (37% com fato).
+- **≈ 170 leads selecionados e 132 e-mails (3 por pessoa) por reunião.**
+
+| empresa | reuniões/mês (meta) | leads selecionados/semana | e-mails/dia úteis |
+|---|---|---|---|
+| Galeria + Holding | 2 | 79 | 12 |
+| GAIA | 1 | 40 | 6 |
+| 404 | 1 | 40 | 6 |
+| Milà, Caramelo, Catalyst, Vitrine, GUX, A.gente, Mantiqueira | 0,5 cada (3,5) | 138 | 21 |
+| **total** | **7,5** | **297** | **45** |
+
+- **3x em 90 dias:** a linha de base é 0 reunião de outbound por mês, então "3x" vira meta absoluta. Proposta: **~7 reuniões/mês a partir do 3º mês.** Isso dá 45 e-mails por dia útil, acima do teto do domínio principal (40). **Fecha só com a infraestrutura enxuta** (+180/dia), que também dá folga para dobrar.
+- **Lusha:** 297 leads por semana = cerca de 1.300 por mês. Os decisores já estão no banco (3.121 com 2.760 e-mails); o Lusha só entra para revelar quem falta (1 crédito por e-mail). O saldo de 2.374 cobre cerca de 2 meses de reposição se metade precisar de reveal.
+- **O que falta para fechar:**
+  1. Chave da Anthropic válida no Vault (sem ela não sai mensagem).
+  2. Outlook reconectado.
+  3. Infraestrutura enxuta de e-mail.
+  4. Cases das 4 agências sem case.
+  5. Mais fato público por lead (37% é baixo; sinais do Lusha e notícias semanais ajudam).
