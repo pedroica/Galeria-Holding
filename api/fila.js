@@ -36,6 +36,7 @@ const SUPA_KEY  = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPA_CRM_
 const SUPA_ANON = process.env.SUPA_CRM_ANON_KEY || 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const CRON_SECRET   = (process.env.CRON_SECRET || '').trim();
+const SDR_CRON_SECRET = (process.env.SDR_CRON_SECRET || '').trim();
 
 // ── helpers Supabase ─────────────────────────────────────────────────────────
 async function sg(path) {
@@ -295,8 +296,13 @@ export default async function handler(req, res) {
 
   // POST /api/fila — gerar fila de prospecção
   const authHeader = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
-  // SUPA_ANON (chave pública do frontend) NÃO autentica cron — só CRON_SECRET ou service key.
-  const isCron = authHeader && ((CRON_SECRET && authHeader === CRON_SECRET) || (SUPA_KEY && authHeader === SUPA_KEY.trim()));
+  // SUPA_ANON (chave pública do frontend) NÃO autentica cron — só CRON_SECRET,
+  // SDR_CRON_SECRET (pg_cron/pg_net) ou a service key.
+  const isCron = authHeader && (
+    (CRON_SECRET && authHeader === CRON_SECRET) ||
+    (SDR_CRON_SECRET && authHeader === SDR_CRON_SECRET) ||
+    (SUPA_KEY && authHeader === SUPA_KEY.trim())
+  );
   const isJWT = !isCron && authHeader && await verifyJWT(authHeader);
   if (!isCron && !isJWT) return res.status(401).json({ error: 'Não autenticado' });
 

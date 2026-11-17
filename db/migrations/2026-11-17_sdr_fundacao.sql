@@ -1,0 +1,5 @@
+-- Bloco A (Fundação) do SDR omnichannel. Tudo aditivo. Aplicada em produção 2026-11-17.
+-- Cria crm_dossies (cache de dossiê, 14 dias), crm_sdr_estado (estado por lead,
+-- idempotente/retomável), RLS no padrão autenticado_tudo, e as chaves sdr_* em
+-- crm_configuracoes (ON CONFLICT DO NOTHING preserva edições do Pedro).
+-- Ver o SQL completo no histórico de migrações do Supabase (mesmo nome).

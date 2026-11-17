@@ -21,7 +21,8 @@ async function authCheck(req, res, job) {
   // Falha fechado: sem CRON_SECRET configurado, só a service key passa.
   // Antes, `if (secret && ...)` deixava o endpoint aberto a qualquer um quando
   // a variável estava vazia — e este endpoint gasta créditos Lusha.
-  const aceitos = [secret, (SUPA_KEY || '').trim()].filter(Boolean);
+  // SDR_CRON_SECRET autentica as chamadas vindas do pg_cron/pg_net do Supabase.
+  const aceitos = [secret, (process.env.SDR_CRON_SECRET || '').trim(), (SUPA_KEY || '').trim()].filter(Boolean);
   const recebido = auth.replace(/^Bearer\s+/i, '').trim();
   if (!aceitos.length || !recebido || !aceitos.includes(recebido)) {
     const hint = !secret
