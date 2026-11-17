@@ -2,7 +2,8 @@
   "_meta": {
     "source": "reconstruído do CRM (crm_agencias + crm_cases + crm_configuracoes) em 2026-09-23",
     "project": "Galeria Holding CRM",
-    "supabase": "uetltlnjmobeiunxfsqi"
+    "supabase": "uetltlnjmobeiunxfsqi",
+    "icp_atualizado_em": "2026-11-17"
   },
   "holding": {
     "nome": "Galeria Holding",
@@ -65,8 +66,47 @@
       "cor": "#E8C97A",
       "descricao": "Agência integrada de performance e criatividade. Maior agência do grupo.",
       "especialidade": "Campanhas integradas, brand building, performance, mídia, criação, plataformas de marca de longo prazo",
-      "clientes_referencia": ["McDonald's (Méqui)", "Itaú", "Natura", "Havaianas", "Vivo", "Gallo", "Kavak", "Betnacional"],
-      "tipo": "agencia_principal"
+      "clientes_referencia": [
+        "McDonald's (Méqui)",
+        "Itaú",
+        "Natura",
+        "Havaianas",
+        "Vivo",
+        "Gallo",
+        "Kavak",
+        "Betnacional"
+      ],
+      "tipo": "agencia_principal",
+      "icp": {
+        "setores": [
+          "consumo massivo",
+          "food service",
+          "varejo",
+          "banco",
+          "telecom",
+          "beleza",
+          "automotivo",
+          "apostas"
+        ],
+        "porte": "grandes anunciantes (verba de mídia relevante, 500+ funcionários)",
+        "cargos": [
+          "CMO",
+          "Diretor(a) de Marketing",
+          "Head de Marketing",
+          "VP de Marketing",
+          "Diretor(a) de Comunicação",
+          "Gerente de Marca"
+        ],
+        "sinais_gatilho": [
+          "troca_cmo",
+          "concorrencia_agencia",
+          "lancamento",
+          "rebranding",
+          "campanha_nova",
+          "data_comercial"
+        ],
+        "angulo": "plataforma de marca de longo prazo com performance; prova em resultado de negócio"
+      }
     },
     {
       "id": "14a057af-31c6-4606-8236-4c97d8067335",
@@ -75,8 +115,36 @@
       "cor": "#7EB8D4",
       "descricao": "Agência de inovação, tech e novos modelos. Cases premiados em Cannes e Clio.",
       "especialidade": "Inovação, IA generativa, tech, novos modelos de comunicação, estúdio criativo escalável",
-      "clientes_referencia": ["Netflix", "Google", "Natura"],
-      "tipo": "agencia"
+      "clientes_referencia": [
+        "Netflix",
+        "Google",
+        "Natura"
+      ],
+      "tipo": "agencia",
+      "icp": {
+        "setores": [
+          "tecnologia",
+          "streaming",
+          "entretenimento",
+          "startups",
+          "marcas que lançam produto digital"
+        ],
+        "porte": "marcas que querem inovação de formato, de scale-ups a multinacionais",
+        "cargos": [
+          "CMO",
+          "Diretor(a) de Marketing",
+          "Head de Marketing",
+          "VP de Marketing",
+          "Head de Inovação",
+          "Diretor(a) de Brand"
+        ],
+        "sinais_gatilho": [
+          "lancamento",
+          "campanha_nova",
+          "ma_investimento"
+        ],
+        "angulo": "ideia que vira assunto (earned media) e produção escalável com IA"
+      }
     },
     {
       "id": "910f125d-82f7-4fbc-889d-2eb9b33d8198",
@@ -85,7 +153,32 @@
       "cor": "#FB923C",
       "descricao": "Agência de influência estratégica.",
       "especialidade": "Influenciadores, creators, conteúdo estratégico, relações com creators",
-      "tipo": "agencia"
+      "tipo": "agencia",
+      "icp": {
+        "setores": [
+          "beleza",
+          "moda",
+          "lifestyle",
+          "bebidas",
+          "consumo jovem"
+        ],
+        "porte": "marcas com investimento recorrente em creators",
+        "cargos": [
+          "CMO",
+          "Diretor(a) de Marketing",
+          "Head de Marketing",
+          "VP de Marketing",
+          "Head de Influência",
+          "Gerente de Social",
+          "Head de Comunicação"
+        ],
+        "sinais_gatilho": [
+          "lancamento",
+          "campanha_nova",
+          "troca_cmo"
+        ],
+        "angulo": "influência com estratégia e métrica, não lista de perfis"
+      }
     },
     {
       "id": "32e8bd8a-d698-4781-b9f4-7b9855132942",
@@ -103,7 +196,34 @@
       "cor": "#34D399",
       "descricao": "Mobile growth — compra e otimização de mídia mobile.",
       "especialidade": "Mobile growth, performance mobile, compra de mídia mobile, otimização",
-      "tipo": "agencia"
+      "tipo": "agencia",
+      "icp": {
+        "setores": [
+          "apps",
+          "fintech",
+          "delivery",
+          "marketplace",
+          "games",
+          "varejo com app"
+        ],
+        "porte": "empresas com app e meta de instalação, ativação ou recompra",
+        "cargos": [
+          "Head de Growth",
+          "Head de Mídia",
+          "Diretor(a) de Performance",
+          "CMO",
+          "Diretor(a) de Marketing",
+          "Head de Marketing",
+          "VP de Marketing"
+        ],
+        "sinais_gatilho": [
+          "lancamento",
+          "ma_investimento",
+          "expansao",
+          "contratacao_marketing"
+        ],
+        "angulo": "crescimento mobile medido em custo por usuário ativo"
+      }
     },
     {
       "id": "e8d734ba-b3e9-425b-942e-b8b56c98f56b",
@@ -112,7 +232,30 @@
       "cor": "#E8916A",
       "descricao": "Agência de cultura, entretenimento e música.",
       "especialidade": "Cultura, entretenimento, música, branded content cultural",
-      "tipo": "agencia"
+      "tipo": "agencia",
+      "icp": {
+        "setores": [
+          "marcas patrocinadoras de música, festival, esporte e cultura",
+          "educação",
+          "saneamento e utilities com agenda cultural"
+        ],
+        "porte": "empresas com verba de patrocínio ou incentivo cultural",
+        "cargos": [
+          "CMO",
+          "Diretor(a) de Marketing",
+          "Head de Marketing",
+          "VP de Marketing",
+          "Gerente de Patrocínios",
+          "Head de Marketing Cultural",
+          "Diretor(a) de Sustentabilidade"
+        ],
+        "sinais_gatilho": [
+          "campanha_nova",
+          "data_comercial",
+          "expansao"
+        ],
+        "angulo": "presença relevante na cultura, não só logo em palco"
+      }
     },
     {
       "id": "e26e3106-33e8-43de-95c5-546477573186",
@@ -130,8 +273,33 @@
       "cor": "#A78BFA",
       "descricao": "Martech do grupo — CR.IA e BrandSync.",
       "especialidade": "Martech, IA generativa, DCO, governança de marca em escala, redução de custo de produção criativa",
-      "clientes_referencia": ["Vários (via CR.IA e BrandSync)"],
-      "tipo": "martech"
+      "clientes_referencia": [
+        "Vários (via CR.IA e BrandSync)"
+      ],
+      "tipo": "martech",
+      "icp": {
+        "setores": [
+          "franquias",
+          "varejo com muitos SKUs",
+          "food service",
+          "bens de consumo"
+        ],
+        "porte": "marcas com alto volume de peças e muitas praças",
+        "cargos": [
+          "CMO",
+          "Diretor(a) de Marketing",
+          "Head de Marketing",
+          "VP de Marketing",
+          "Head de Marketing Operations",
+          "Diretor(a) de Trade"
+        ],
+        "sinais_gatilho": [
+          "expansao",
+          "resultado_trimestral",
+          "ma_investimento"
+        ],
+        "angulo": "produção criativa em escala com IA e governança de marca, com custo menor"
+      }
     },
     {
       "id": "ac8b92de-ab48-4153-bf18-c23b5ea19bfe",
@@ -140,7 +308,32 @@
       "cor": "#00FF94",
       "descricao": "UX estratégico que gera resultado real de negócio.",
       "especialidade": "UX estratégico, design de produto, pesquisa de usuário, resultado de negócio via design",
-      "tipo": "agencia"
+      "tipo": "agencia",
+      "icp": {
+        "setores": [
+          "bancos",
+          "seguros",
+          "saúde",
+          "previdência",
+          "varejo digital",
+          "SaaS"
+        ],
+        "porte": "empresas com produto digital crítico para receita",
+        "cargos": [
+          "CPO",
+          "Head de Produto",
+          "Head de Design",
+          "Diretor(a) Digital",
+          "CDO"
+        ],
+        "sinais_gatilho": [
+          "lancamento",
+          "ma_investimento",
+          "contratacao_marketing",
+          "expansao"
+        ],
+        "angulo": "UX que move indicador de negócio (conversão, retenção, custo de atendimento)"
+      }
     },
     {
       "id": "1a67ab05-e42e-4975-be11-b6bf7f23ce03",
@@ -149,7 +342,30 @@
       "cor": "#F472B6",
       "descricao": "Empresa de conteúdo e entretenimento.",
       "especialidade": "Conteúdo, entretenimento, branded content de longa duração",
-      "tipo": "conteudo"
+      "tipo": "conteudo",
+      "icp": {
+        "setores": [
+          "marcas com projeto de conteúdo longo",
+          "streaming",
+          "esporte",
+          "causas e sustentabilidade"
+        ],
+        "porte": "grandes anunciantes com verba de branded content",
+        "cargos": [
+          "CMO",
+          "Diretor(a) de Marketing",
+          "Head de Marketing",
+          "VP de Marketing",
+          "Head de Conteúdo",
+          "Gerente de Branded Content"
+        ],
+        "sinais_gatilho": [
+          "campanha_nova",
+          "rebranding",
+          "data_comercial"
+        ],
+        "angulo": "branded content de longa duração que as pessoas escolhem assistir"
+      }
     },
     {
       "id": "b0473d79-afd9-404e-8784-04b4556a5a2c",
@@ -158,8 +374,37 @@
       "cor": "#C9A87C",
       "descricao": "Agência de cases e storytelling de marca.",
       "especialidade": "Storytelling de marca, B2B, apresentações de caso, narrativas de valor",
-      "clientes_referencia": ["Suzano"],
-      "tipo": "agencia"
+      "clientes_referencia": [
+        "Suzano"
+      ],
+      "tipo": "agencia",
+      "icp": {
+        "setores": [
+          "indústria",
+          "agronegócio",
+          "papel e celulose",
+          "mineração",
+          "química",
+          "construção",
+          "B2B"
+        ],
+        "porte": "médias e grandes empresas B2B e B2B2C",
+        "cargos": [
+          "CMO",
+          "Diretor(a) de Marketing",
+          "Head de Marketing",
+          "VP de Marketing",
+          "Diretor(a) de Comunicação Corporativa",
+          "Head de Relações Institucionais"
+        ],
+        "sinais_gatilho": [
+          "resultado_trimestral",
+          "ma_investimento",
+          "expansao",
+          "rebranding"
+        ],
+        "angulo": "narrativa de valor para marca B2B: tornar o que a empresa faz entendível e desejável"
+      }
     },
     {
       "id": "d1d6bc56-ee70-4b5c-bb2e-3a7e428ea70f",
@@ -177,7 +422,33 @@
       "cor": "#60A5FA",
       "descricao": "Maior comprador de OOH e DOOH do Brasil.",
       "especialidade": "OOH, DOOH, mídia exterior, planejamento e compra de out-of-home",
-      "tipo": "midia"
+      "tipo": "midia",
+      "icp": {
+        "setores": [
+          "varejo",
+          "shopping",
+          "supermercados",
+          "automotivo",
+          "telecom",
+          "bebidas",
+          "imobiliário"
+        ],
+        "porte": "anunciantes com presença física ou lançamento nacional",
+        "cargos": [
+          "CMO",
+          "Diretor(a) de Marketing",
+          "Head de Marketing",
+          "VP de Marketing",
+          "Head de Mídia",
+          "Gerente de Trade Marketing"
+        ],
+        "sinais_gatilho": [
+          "expansao",
+          "lancamento",
+          "data_comercial"
+        ],
+        "angulo": "OOH e DOOH comprados com escala e planejados com dado"
+      }
     }
   ],
   "cases_destaque": [
@@ -187,7 +458,13 @@
       "agencia_slug": "404",
       "ano": 2024,
       "resultado": "Grand Clio Entertainment 2024, Leões de Prata e Bronze em Cannes 2024, múltiplos Effies. Virou assunto no réveillon brasileiro e fora do país.",
-      "tags": ["lançamento de série", "entretenimento", "stunt", "earned media", "ruptura"],
+      "tags": [
+        "lançamento de série",
+        "entretenimento",
+        "stunt",
+        "earned media",
+        "ruptura"
+      ],
       "destaque": true
     },
     {
@@ -196,7 +473,11 @@
       "agencia_slug": "galeria",
       "ano": 2025,
       "resultado": "Liderança em 23 de 23 atributos de imagem no Q2 2025 e ganho de 13 pontos de top of mind em cinco anos.",
-      "tags": ["love brand", "rebranding", "plataforma de longo prazo"],
+      "tags": [
+        "love brand",
+        "rebranding",
+        "plataforma de longo prazo"
+      ],
       "destaque": true
     },
     {
@@ -205,7 +486,11 @@
       "agencia_slug": "galeria",
       "ano": 2024,
       "resultado": "Buscas 26x acima da expectativa em SP e 85 mil sanduíches vendidos com demanda maior que o estoque.",
-      "tags": ["relançamento", "edição limitada", "escassez"],
+      "tags": [
+        "relançamento",
+        "edição limitada",
+        "escassez"
+      ],
       "destaque": true
     },
     {
@@ -214,7 +499,12 @@
       "agencia_slug": "galeria",
       "ano": 2023,
       "resultado": "Leão de Bronze em Cannes 2024 (Entertainment Lions for Sport). Mais de 40 espaços na imprensa, 15 internacionais.",
-      "tags": ["patrocínio esportivo", "futebol feminino", "ia generativa", "causa"],
+      "tags": [
+        "patrocínio esportivo",
+        "futebol feminino",
+        "ia generativa",
+        "causa"
+      ],
       "destaque": true
     },
     {
@@ -223,7 +513,14 @@
       "agencia_slug": "galeria",
       "ano": 2024,
       "resultado": "Receita a 138% da meta, delivery a 154%, app a 149%. CR.IA 68% mais eficiente. Receita 9% acima de 2023.",
-      "tags": ["black friday", "delivery", "app", "fidelidade", "celebridade", "orquestração"],
+      "tags": [
+        "black friday",
+        "delivery",
+        "app",
+        "fidelidade",
+        "celebridade",
+        "orquestração"
+      ],
       "destaque": false
     },
     {
@@ -232,7 +529,12 @@
       "agencia_slug": "galeria",
       "ano": 2024,
       "resultado": "+516% visitas à página de abertura de conta, +52% novas contas mês a mês, 55 matérias espontâneas.",
-      "tags": ["b2b", "pme", "banco", "aquisição de clientes"],
+      "tags": [
+        "b2b",
+        "pme",
+        "banco",
+        "aquisição de clientes"
+      ],
       "destaque": false
     },
     {
@@ -241,7 +543,12 @@
       "agencia_slug": "galeria",
       "ano": 2024,
       "resultado": "534 milhões de impactos (17,4% acima do plano), cobertura 67,8%, GMV iFood de R$556k para R$916k (+65%).",
-      "tags": ["alimentos", "mídia de alcance", "delivery", "cpg"],
+      "tags": [
+        "alimentos",
+        "mídia de alcance",
+        "delivery",
+        "cpg"
+      ],
       "destaque": false
     },
     {
@@ -250,7 +557,12 @@
       "agencia_slug": "galeria",
       "ano": 2022,
       "resultado": "13 mil carros vendidos e 85% mais tráfego.",
-      "tags": ["automotivo", "performance", "modelagem", "always on"],
+      "tags": [
+        "automotivo",
+        "performance",
+        "modelagem",
+        "always on"
+      ],
       "destaque": false
     },
     {
@@ -259,7 +571,12 @@
       "agencia_slug": "galeria",
       "ano": 2024,
       "resultado": "Mais de 1.800 assets numa única campanha e o maior brand lift do ano.",
-      "tags": ["ia generativa", "escala de produção", "automotivo", "dco"],
+      "tags": [
+        "ia generativa",
+        "escala de produção",
+        "automotivo",
+        "dco"
+      ],
       "destaque": false
     },
     {
@@ -268,7 +585,13 @@
       "agencia_slug": "gaia",
       "ano": 2025,
       "resultado": "Até 90% menos custo, go to market 500% mais rápido, 200 mil conteúdos por mês no BrandSync.",
-      "tags": ["ia generativa", "dco", "escala", "franquias", "redução de custo"],
+      "tags": [
+        "ia generativa",
+        "dco",
+        "escala",
+        "franquias",
+        "redução de custo"
+      ],
       "destaque": false
     },
     {
@@ -277,7 +600,12 @@
       "agencia_slug": "404",
       "ano": 2024,
       "resultado": "Melhor brand lift do Android no mundo e custo por conteúdo quase 10x menor.",
-      "tags": ["tecnologia", "ia generativa", "escala", "brand lift"],
+      "tags": [
+        "tecnologia",
+        "ia generativa",
+        "escala",
+        "brand lift"
+      ],
       "destaque": false
     },
     {
@@ -286,7 +614,12 @@
       "agencia_slug": "galeria",
       "ano": 2024,
       "resultado": "1,1 milhão de engajamentos (recorde da marca) e reportagem no Fantástico para 11 milhões de pessoas.",
-      "tags": ["festival", "social listening", "tempo real", "earned media"],
+      "tags": [
+        "festival",
+        "social listening",
+        "tempo real",
+        "earned media"
+      ],
       "destaque": false
     },
     {
@@ -295,7 +628,11 @@
       "agencia_slug": "galeria",
       "ano": 2025,
       "resultado": "Share of voice dobrado em menos de dois anos. Forecast 2025: segunda maior em investimento e líder em SOV (Kantar Ibope).",
-      "tags": ["mídia", "share of voice", "eficiência de investimento"],
+      "tags": [
+        "mídia",
+        "share of voice",
+        "eficiência de investimento"
+      ],
       "destaque": false
     },
     {
@@ -304,7 +641,12 @@
       "agencia_slug": "mila",
       "ano": 2026,
       "resultado": "Primeiro trabalho da Milà para a conta, com craft de animação.",
-      "tags": ["b2b2c", "sustentabilidade", "institucional", "indústria"],
+      "tags": [
+        "b2b2c",
+        "sustentabilidade",
+        "institucional",
+        "indústria"
+      ],
       "destaque": false
     }
   ],

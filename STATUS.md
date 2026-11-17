@@ -63,3 +63,34 @@ As 5 causas apontadas na missão foram conferidas no código atual da `main`:
 - **Botão "⏸ Pausar tudo" fica na barra do topo, em todas as telas**, vermelho quando o Piloto está ligado. Porquê: pânico tem que estar a um clique de qualquer lugar.
 - **Constraint de `crm_logs.nivel` ampliada para aceitar `aviso` e `error`.** Porquê: achado ao testar o botão de pânico em produção: só `info` era aceito, então todo aviso/erro dos crons sumia em silêncio e a tela Atividade nunca mostrava alerta.
 - **Follow-ups (D3/D7/D14) nascem como `aguardando` com a data já no próximo dia útil** e a seleção da noite os promove quando vencem. Porquê: o mesmo fluxo de dossiê, redação e QC vale para o follow-up, sem caminho paralelo.
+- **Bloco G: candidatos de topo de funil vão para `crm_sdr_topo` e só entram na seleção depois que o Pedro aceita** (tela SDR). Aceito passa à frente de tudo com a agência sugerida. Porquê: cross-sell mexe com cliente ativo de outra agência; a apresentação tem que ser combinada antes.
+- **Cross-sell sempre pontua acima de sinal e lookalike.** Porquê: cliente que já confia no grupo converte muito mais que lead frio.
+- **Lookalike via Lusha com filtro de porte (100+ funcionários) e sem órgão público.** Rodada única hoje: 50 resultados por 10 créditos, 12 aproveitados. Porquê: as sementes misturam setores e trouxeram muita empresa pequena; sem o filtro a lista não serve.
+- **Banco de cases lido ao vivo de `crm_cases` (liberados para prospecção), somado ao JSON.** Fora: projeções ("Proposta, não resultado") e casos sem confirmação; caso "sem métricas" entra sem número. Porquê: 47 cases no banco contra 14 no JSON; o JSON envelhece.
+- **ICP por empresa gravado no JSON** (setores, porte, cargos, sinais-gatilho, ângulo) para Galeria, Milà, 404, Caramelo, Catalyst, Mantiqueira, A.gente, Vitrine, GUX e GAIA, e regra de seleção nova para a Mantiqueira. Porquê: é alvo de prospecção, não promessa comercial; derivado da especialidade de cada uma.
+- **Tela SDR nova** (barra do topo): respostas para ler, amostra do Modo Sombra, topo de funil. O botão "Ligar Piloto" só habilita depois da amostra aprovada. Porquê: deixar o envio "a um clique" sem tirar a decisão do Pedro.
+- **Correção: `crm_noticias.criado_em` criada.** Porquê: o job semanal gravava e filtrava por uma coluna inexistente; a rotação não excluía nada e as mesmas 20 empresas voltavam todo dia.
+
+## Métricas: linha de base e proposta de 3x em 90 dias
+
+**Linha de base do outbound (fila, 21/09 a 17/11, ~8 semanas):** 52 empresas contatadas, 3 decisores responderam (5,8%), **0 oportunidades e 0 reuniões** atribuíveis à fila. O "skip" de 89,6% (1.380 de 1.540) é quase todo rascunho que **nunca foi aprovado** e expirou (807 arquivados na limpeza de 16/11, 330+93+36+23+22 substituídos por lotes novos), não rejeição de texto.
+
+| empresa | oportunidades (total) | em reunião ou além | clientes ativos | envios da fila 90d | itens pulados |
+|---|---|---|---|---|---|
+| GAIA | 51 | 26 | 8 | 1 | 84 |
+| Galeria | 17 | 6 | 2 | 2 | 82 |
+| cccaramelo | 16 | 10 | 6 | 2 | 76 |
+| 404 | 15 | 10 | 3 | 20 | 159 |
+| Milà | 4 | 2 | 0 | 2 | 59 |
+| Catalyst | 2 | 2 | 0 | 2 | 74 |
+| Vitrine, GUX, A.gente, Mantiqueira | 0 | 0 | 0 | 0 a 3 | 58 a 85 |
+
+Todas as 109 oportunidades têm origem `abordagem_direta` (relacionamento do Pedro e das agências), criadas a partir de 17/09.
+
+**Conta do 3x (o alvo é reunião vinda do outbound, hoje ~0 por mês):**
+- Capacidade de e-mail com aquecimento (15/dia, +5 por semana, teto 40): 15+20+25+30+35 e depois 40 por 8 semanas = 445 envios por dia útil somados nas 13 semanas × 5 dias = **2.225 e-mails em 90 dias**.
+- 3 e-mails por pessoa (D0, D7, D14) + 1 WhatsApp: **~740 decisores novos**.
+- Resposta: hoje 5,8% sem sinal e sem QC. Com fato do dossiê em 100% das mensagens, premissa conservadora de 8%: **~59 respostas**; 40% positivas: **~24 interessados**; 70% viram reunião: **~17 reuniões**.
+- Cross-sell: 14 candidatos hoje; com apresentação pela agência que já atende, 40%: **~6 reuniões**.
+- Total: **~23 reuniões em 90 dias (≈ 8 por mês)**, contra ~0 hoje e contra 3,4 por mês, que é o 3x da linha de base de leads qualificados (1,1 por mês). Para chegar lá, `email_daily_max` precisa subir de 15 para 40 a partir da 6ª semana (hoje está em 15 e trava o aquecimento).
+- Gargalos reais, em ordem: (1) aprovação: 89% dos rascunhos morreram sem decisão; (2) sinal: só 1 sinal de compra forte em 799 notícias de 45 dias, então a maior parte dos leads vai sem gancho e fica retida; (3) cases: Caramelo, Catalyst, Mantiqueira e GUX não têm nenhum case liberado.

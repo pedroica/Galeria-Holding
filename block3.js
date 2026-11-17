@@ -5760,7 +5760,7 @@ function App() {
     }
   }, "GALERIA HOLDING")),
   React.createElement("div", { className:"tb-nav", style:{ display:'flex', alignItems:'stretch', flex:1 } },
-    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['blocklist','Blocklist'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['pipeline','Pipeline'],['admin','Admin'],['ferramentas','Ferramentas']].map(([s, l]) =>
+    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['sdr','SDR'],['fila','Fila'],['base','Base'],['blocklist','Blocklist'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['pipeline','Pipeline'],['admin','Admin'],['ferramentas','Ferramentas']].map(([s, l]) =>
       React.createElement("div", {
         key: s,
         onClick: () => { if (s === 'ferramentas') { setToolsOpen(true); } else { navTo(s, null, null); } },
@@ -5796,7 +5796,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'blocklist' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, typeof BlocklistView !== 'undefined' ? React.createElement(BlocklistView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Blocklist carregando...')) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'sdr' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(SdrView, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'blocklist' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, typeof BlocklistView !== 'undefined' ? React.createElement(BlocklistView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Blocklist carregando...')) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -6817,6 +6817,115 @@ function PausarTudoBtn() {
     title: ligado ? 'Piloto Automático LIGADO: clique para pausar tudo' : 'Piloto Automático desligado (nada sai sozinho). Clique para garantir a pausa.',
     style: { padding: '4px 8px', border: '.5px solid ' + (ligado ? '#E24B4A' : '#2D2D44'), borderRadius: 4, background: ligado ? 'rgba(226,75,74,.15)' : 'transparent', color: ligado ? '#E24B4A' : '#9B9BB4', fontSize: 9, fontFamily: 'IBM Plex Mono,monospace', cursor: busy ? 'wait' : 'pointer', whiteSpace: 'nowrap' }
   }, busy ? '…' : (ligado ? '⏸ Pausar tudo · piloto ON' : '⏸ Pausar tudo'));
+}
+
+// SDR (Blocos E, F, G) — uma tela para o Pedro: respostas para ler, amostra do
+// Modo Sombra (aprovar libera o botão de ligar o Piloto) e topo de funil
+// (aceitar/descartar candidatos). Nada aqui envia mensagem.
+function SdrView() {
+  var mono = "'IBM Plex Mono',monospace";
+  var _d = React.useState({ cfg: {}, resp: [], amostra: [], topo: [] }); var d = _d[0]; var setD = _d[1];
+  var _l = React.useState(true); var loading = _l[0]; var setLoading = _l[1];
+  var _msg = React.useState(''); var msg = _msg[0]; var setMsg = _msg[1];
+  function arr(x) { return Array.isArray(x) ? x : []; }
+  function carregar() {
+    setLoading(true);
+    Promise.all([
+      supaFetch('/rest/v1/crm_configuracoes?chave=in.(sdr_piloto_automatico,sdr_relogio_ativo,sdr_amostra_aprovada,sdr_wa_template)&select=chave,valor'),
+      supaFetch('/rest/v1/crm_sdr_respostas?lida_pelo_pedro=eq.false&tipo=neq.auto_resposta&select=id,tipo,assunto,preview,recebido_em,remetente,acao,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(nome)&order=recebido_em.desc&limit=50'),
+      supaFetch('/rest/v1/crm_sdr_mensagens?escolhida=eq.true&select=id,canal,assunto,corpo,nota_media,aprovado_autonomo,motivo_qc,sinal_url,angulo,criado_em,crm_empresas:empresa_id(nome),crm_decisores:decisor_id(nome,cargo)&order=criado_em.desc&limit=20'),
+      supaFetch('/rest/v1/crm_sdr_topo?status=eq.novo&select=id,fonte,empresa_id,nome,dominio,agencia_slug,motivo,score,dados&order=score.desc&limit=100')
+    ]).then(function (r) {
+      var cfg = {}; arr(r[0]).forEach(function (x) { cfg[x.chave] = x.valor; });
+      setD({ cfg: cfg, resp: arr(r[1]), amostra: arr(r[2]), topo: arr(r[3]) }); setLoading(false);
+    }).catch(function () { setLoading(false); });
+  }
+  React.useEffect(carregar, []);
+  var lig = function (v) { return v === true || v === 'true'; };
+  var piloto = lig(d.cfg.sdr_piloto_automatico), relogio = lig(d.cfg.sdr_relogio_ativo);
+  var amostraOk = d.cfg.sdr_amostra_aprovada && d.cfg.sdr_amostra_aprovada.em;
+  var user = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || 'tela';
+
+  function marcarLida(id) { supaFetch('/rest/v1/crm_sdr_respostas?id=eq.' + id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ lida_pelo_pedro: true }) }).then(carregar); }
+  function aprovarAmostra() {
+    if (d.amostra.length < 20 && !window.confirm('A amostra tem ' + d.amostra.length + ' mensagens (o combinado são 20). Aprovar mesmo assim?')) return;
+    var v = { em: new Date().toISOString(), por: user, ids: d.amostra.map(function (m) { return m.id; }) };
+    supaFetch('/rest/v1/crm_configuracoes?on_conflict=chave', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ chave: 'sdr_amostra_aprovada', valor: v }) })
+      .then(function () { setMsg('Amostra aprovada. O Piloto continua desligado até você ligar.'); carregar(); });
+  }
+  function ligarPiloto() {
+    if (!window.confirm('Ligar o Piloto Automático? A partir da próxima janela (07h30 às 11h, dias úteis) mensagens com nota 8+ e risco baixo SAEM SOZINHAS, dentro do teto de aquecimento. O botão Pausar tudo desliga na hora.')) return;
+    supaFetch('/rest/v1/crm_configuracoes?chave=eq.sdr_piloto_automatico', { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ valor: true }) })
+      .then(function () { setMsg('Piloto Automático LIGADO.'); carregar(); });
+  }
+  function decidirTopo(t, status) {
+    var p = supaFetch('/rest/v1/crm_sdr_topo?id=eq.' + t.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: status, atualizado_em: new Date().toISOString() }) });
+    if (status === 'aceito' && !t.empresa_id && t.nome) {
+      // Lookalike aceito vira empresa na base; o enriquecimento diário acha os decisores.
+      p = p.then(function () { return supaFetch('/rest/v1/crm_empresas', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome: t.nome, dominio: t.dominio, website: t.dominio ? 'https://' + t.dominio : null, fonte: 'lookalike' }) }); })
+        .then(function (r) { var e = arr(r)[0]; if (e) return supaFetch('/rest/v1/crm_sdr_topo?id=eq.' + t.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ empresa_id: e.id }) }); });
+    }
+    p.then(carregar);
+  }
+
+  var card = { background: '#0d0d1a', border: '.5px solid #2D2D44', borderRadius: 8, padding: 14, marginBottom: 14 };
+  var h = function (t) { return React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 15, color: '#F5F5F5', marginBottom: 10 } }, t); };
+  var pill = function (txt, cor) { return React.createElement('span', { style: { fontFamily: mono, fontSize: 9, padding: '2px 6px', borderRadius: 4, border: '.5px solid ' + cor, color: cor, marginRight: 6 } }, txt); };
+  var btn = function (txt, onClick, cor, dis) { return React.createElement('button', { onClick: onClick, disabled: !!dis, style: { fontFamily: mono, fontSize: 10, padding: '5px 10px', borderRadius: 4, border: '.5px solid ' + (cor || '#2D2D44'), background: 'transparent', color: dis ? '#555' : (cor || '#9B9BB4'), cursor: dis ? 'not-allowed' : 'pointer', marginRight: 6 } }, txt); };
+  var corTipo = { interesse: '#34D399', indicacao: '#60A5FA', nao_agora: '#FBBF24', opt_out: '#E24B4A', bounce: '#9B9BB4', indefinido: '#818CF8' };
+  var corFonte = { cross_sell: '#34D399', sinal_compra: '#FF6B2B', lookalike: '#818CF8' };
+
+  if (loading) return React.createElement('div', { style: { padding: 24, fontFamily: mono, color: '#9B9BB4', fontSize: 11 } }, 'Carregando SDR…');
+  return React.createElement('div', { 'data-testid': 'sdr-view', style: { padding: '16px 20px', maxWidth: 1100, margin: '0 auto', fontFamily: mono, color: '#D0D0E0', fontSize: 11 } },
+    React.createElement('div', { style: Object.assign({}, card, { display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8 }) },
+      pill('Relógio ' + (relogio ? 'ON (Modo Sombra)' : 'OFF'), relogio ? '#34D399' : '#9B9BB4'),
+      pill('Piloto ' + (piloto ? 'ON: envia sozinho' : 'OFF: para no rascunho'), piloto ? '#E24B4A' : '#9B9BB4'),
+      pill('Amostra ' + (amostraOk ? 'aprovada' : 'pendente'), amostraOk ? '#34D399' : '#FBBF24'),
+      pill('WhatsApp ' + (d.cfg.sdr_wa_template && d.cfg.sdr_wa_template.nome ? 'modelo aprovado' : 'aguardando Meta'), '#60A5FA'),
+      React.createElement('span', { style: { flex: 1 } }),
+      !piloto && btn('Ligar Piloto Automático', ligarPiloto, '#E24B4A', !amostraOk),
+      React.createElement(PausarTudoBtn, null)
+    ),
+    msg && React.createElement('div', { style: { color: '#34D399', marginBottom: 10 } }, msg),
+
+    React.createElement('div', { style: card }, h('Respostas para ler (' + d.resp.length + ')'),
+      d.resp.length === 0 ? React.createElement('div', { style: { color: '#555' } }, 'Nenhuma resposta nova. Respostas nunca recebem retorno automático: são suas.') :
+      d.resp.map(function (r) {
+        return React.createElement('div', { key: r.id, style: { borderTop: '.5px solid #1A1A2E', padding: '8px 0' } },
+          pill(r.tipo, corTipo[r.tipo] || '#9B9BB4'),
+          React.createElement('b', null, (r.crm_decisores && r.crm_decisores.nome) || r.remetente), ' · ', (r.crm_empresas && r.crm_empresas.nome) || '', ' · ', new Date(r.recebido_em).toLocaleString('pt-BR'),
+          React.createElement('div', { style: { color: '#9B9BB4', margin: '4px 0' } }, (r.preview || '').slice(0, 280)),
+          r.acao && React.createElement('div', { style: { color: '#555', fontSize: 9 } }, 'feito: ' + r.acao),
+          btn('Marcar como lida', function () { marcarLida(r.id); }));
+      })),
+
+    React.createElement('div', { style: card }, h('Amostra do Modo Sombra (' + d.amostra.length + '/20)'),
+      React.createElement('div', { style: { color: '#9B9BB4', marginBottom: 8 } }, 'As últimas mensagens escolhidas pelo SDR, com nota do controle de qualidade e a fonte do fato. Aprovar libera o botão de ligar o Piloto; não envia nada.'),
+      d.amostra.length === 0 ? React.createElement('div', { style: { color: '#555' } }, 'Ainda não há mensagens. Elas aparecem depois das noites de Modo Sombra (relógio ligado, piloto desligado).') :
+      d.amostra.map(function (m) {
+        return React.createElement('div', { key: m.id, style: { borderTop: '.5px solid #1A1A2E', padding: '8px 0' } },
+          pill('nota ' + (m.nota_media == null ? '?' : m.nota_media), m.aprovado_autonomo ? '#34D399' : '#FBBF24'), pill(m.canal, '#60A5FA'), pill(m.angulo || '', '#818CF8'),
+          React.createElement('b', null, (m.crm_decisores && m.crm_decisores.nome) || ''), ' · ', (m.crm_empresas && m.crm_empresas.nome) || '',
+          m.assunto && React.createElement('div', { style: { color: '#F5F5F5', marginTop: 4 } }, 'Assunto: ' + m.assunto),
+          React.createElement('div', { style: { whiteSpace: 'pre-wrap', margin: '4px 0', color: '#D0D0E0' } }, m.corpo),
+          m.sinal_url && React.createElement('a', { href: m.sinal_url, target: '_blank', rel: 'noopener', style: { color: '#60A5FA', fontSize: 9 } }, 'fonte do fato'),
+          !m.aprovado_autonomo && m.motivo_qc && React.createElement('div', { style: { color: '#FBBF24', fontSize: 9 } }, 'QC: ' + m.motivo_qc.slice(0, 220)));
+      }),
+      d.amostra.length > 0 && !amostraOk && React.createElement('div', { style: { marginTop: 10 } }, btn('Aprovar amostra', aprovarAmostra, '#34D399'))),
+
+    React.createElement('div', { style: card }, h('Topo de funil (' + d.topo.length + ' novos)'),
+      React.createElement('div', { style: { color: '#9B9BB4', marginBottom: 8 } }, 'Cross-sell (cliente de uma agência, lead para outra), sinais de compra e empresas parecidas com os melhores clientes. Aceitar coloca na frente da próxima seleção.'),
+      d.topo.map(function (t) {
+        return React.createElement('div', { key: t.id, style: { borderTop: '.5px solid #1A1A2E', padding: '8px 0', display: 'flex', gap: 8, alignItems: 'flex-start' } },
+          React.createElement('div', { style: { flex: 1 } },
+            pill(t.fonte.replace('_', ' '), corFonte[t.fonte] || '#9B9BB4'), t.agencia_slug && pill('→ ' + t.agencia_slug, '#FF6B2B'),
+            React.createElement('b', null, t.nome || t.dominio),
+            React.createElement('div', { style: { color: '#9B9BB4', marginTop: 4 } }, t.motivo),
+            t.dados && t.dados.url && React.createElement('a', { href: t.dados.url, target: '_blank', rel: 'noopener', style: { color: '#60A5FA', fontSize: 9 } }, 'fonte')),
+          btn('Aceitar', function () { decidirTopo(t, 'aceito'); }, '#34D399'),
+          btn('Descartar', function () { decidirTopo(t, 'descartado'); }));
+      }))
+  );
 }
 
 // E1 — Tela Hoje: progresso diário, aprovações pendentes, reuniões do dia
