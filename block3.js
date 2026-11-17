@@ -5769,6 +5769,7 @@ function App() {
     )
   ),
   React.createElement("div", { className:"tb-right", style:{ gap:6 } },
+    React.createElement(PausarTudoBtn, null),
     alertaBadge > 0 && React.createElement("span", { style:{ background:'#E24B4A', color:'#fff', borderRadius:'50%', width:16, height:16, fontSize:9, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 } }, alertaBadge),
     React.createElement("button", { onClick:() => setToolsOpen(true), style:{ padding:'4px 8px', border:'.5px solid #2D2D44', borderRadius:4, background:'transparent', color:'#9B9BB4', fontSize:9, fontFamily:'IBM Plex Mono,monospace', cursor:'pointer' }, title:'Backup & APIs' }, "🛟"),
     React.createElement("button", { className:'cfgbtn', onClick:() => { setCfgPD(pdKey); setCfgClaude(getClaudeKey()); setCfgOpen(true); }, style:{ borderColor: getClaudeKey() ? '' : 'rgba(255,107,43,.5)', color: getClaudeKey() ? '' : '#FF6B2B' }, title: getClaudeKey() ? 'Configurações' : '⚠ Configure a Claude API Key' }, "⚙", !getClaudeKey() && " ⚠"),
@@ -6787,6 +6788,35 @@ function supaFetch(path, opts) {
   var jwt = (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON;
   var hdrs = Object.assign({'apikey': SUPA_ANON, 'Authorization': 'Bearer ' + jwt, 'Content-Type': 'application/json'}, opts && opts.headers);
   return fetch(SUPA_URL + path, Object.assign({}, opts, {headers: hdrs})).then(function(r){var ct=r.headers.get('content-type')||'';return ct.includes('json')?r.json():null;});
+}
+
+// Bloco D (SDR) — botão de pânico. Sempre visível na barra do topo. Desliga o
+// Piloto Automático na hora e devolve para rascunho os envios agendados que ainda
+// não saíram (função sdr_pausar_tudo no banco). Vermelho quando o Piloto está ligado.
+function PausarTudoBtn() {
+  var _p = React.useState(null); var piloto = _p[0]; var setPiloto = _p[1];
+  var _b = React.useState(false); var busy = _b[0]; var setBusy = _b[1];
+  function ler() {
+    supaFetch('/rest/v1/crm_configuracoes?chave=eq.sdr_piloto_automatico&select=valor').then(function (r) {
+      setPiloto(Array.isArray(r) && r[0] ? (r[0].valor === true || r[0].valor === 'true') : false);
+    }).catch(function () {});
+  }
+  React.useEffect(function () { ler(); var t = setInterval(ler, 60000); return function () { clearInterval(t); }; }, []);
+  function pausar() {
+    if (busy) return;
+    if (!window.confirm('Pausar tudo? O Piloto Automático é desligado agora e os envios agendados que ainda não saíram voltam para rascunho.')) return;
+    setBusy(true);
+    supaFetch('/rest/v1/rpc/sdr_pausar_tudo', { method: 'POST', body: JSON.stringify({ origem: 'tela' }) }).then(function (r) {
+      setBusy(false); setPiloto(false);
+      window.alert(r && r.ok ? 'Pausado. ' + (r.agendados_cancelados || 0) + ' envio(s) agendado(s) cancelado(s). Nada sai até o Piloto ser religado.' : 'Não consegui confirmar a pausa. Tente de novo ou mande "pausar" no WhatsApp do copiloto.');
+    }).catch(function () { setBusy(false); window.alert('Falha de rede. Mande "pausar" no WhatsApp do copiloto.'); });
+  }
+  var ligado = piloto === true;
+  return React.createElement('button', {
+    onClick: pausar, 'data-testid': 'pausar-tudo',
+    title: ligado ? 'Piloto Automático LIGADO: clique para pausar tudo' : 'Piloto Automático desligado (nada sai sozinho). Clique para garantir a pausa.',
+    style: { padding: '4px 8px', border: '.5px solid ' + (ligado ? '#E24B4A' : '#2D2D44'), borderRadius: 4, background: ligado ? 'rgba(226,75,74,.15)' : 'transparent', color: ligado ? '#E24B4A' : '#9B9BB4', fontSize: 9, fontFamily: 'IBM Plex Mono,monospace', cursor: busy ? 'wait' : 'pointer', whiteSpace: 'nowrap' }
+  }, busy ? '…' : (ligado ? '⏸ Pausar tudo · piloto ON' : '⏸ Pausar tudo'));
 }
 
 // E1 — Tela Hoje: progresso diário, aprovações pendentes, reuniões do dia
