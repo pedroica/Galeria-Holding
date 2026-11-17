@@ -1154,6 +1154,7 @@ async function jobSdrSelecao(req, res) {
   const topoAceitos = {};
   for (const t of (Array.isArray(topoRows) ? topoRows : [])) topoAceitos[t.empresa_id] = t;
 
+  const sombra = await modoSombra();
   const { lote, upsell, excluidos, total_elegiveis } = selecionarLote({
     candidatos, estrelas, blocklist, toquesEmpresa30d, dossies, agencias, topoAceitos,
     primeirosContatoSemana, config: { lote_max: loteMax }, agora: Date.now()
@@ -1165,12 +1166,12 @@ async function jobSdrSelecao(req, res) {
     const ok = await spUpsert('crm_sdr_estado', {
       decisor_id: item.decisor_id, empresa_id: item.empresa_id, agencia_id: item.agencia_id || null,
       agencia_motivo: item.agencia_motivo || null, data_lote: dataLote, dia_cadencia: item.dia_cadencia || 0,
-      canal: null, etapa: 'selecionado', status: 'ativo', atualizado_em: new Date().toISOString()
+      canal: null, etapa: 'selecionado', status: 'ativo', sombra, atualizado_em: new Date().toISOString()
     }, 'decisor_id,data_lote,dia_cadencia');
     if (ok) gravados++;
   }
 
-  const ctx = { selecionados: lote.length, gravados, upsell: upsell.length, excluidos: excluidos.length, total_elegiveis, lote_max: loteMax, ms: Date.now() - inicio };
+  const ctx = { sombra, selecionados: lote.length, gravados, upsell: upsell.length, excluidos: excluidos.length, total_elegiveis, lote_max: loteMax, ms: Date.now() - inicio };
   await logCron('sdr-selecao', nivelTrabalho(gravados), 'fim', ctx);
   return res.status(200).json({ ok: true, ...ctx });
 }
@@ -1313,6 +1314,14 @@ async function knowledgeVivo() {
   return Array.isArray(rows) ? mesclarCases(KNOWLEDGE, rows, slugPorId) : KNOWLEDGE;
 }
 
+// Modo Sombra explícito: tudo roda e é marcado sombra=true, mas NADA vai para
+// crm_fila nem para o agendamento. Lido do banco a cada execução.
+async function modoSombra() {
+  const r = await sg('crm_configuracoes?chave=eq.sdr_modo_sombra&select=valor&limit=1');
+  const v = Array.isArray(r) && r[0] ? r[0].valor : true;   // na dúvida, sombra
+  return !(v === false || v === 'false');
+}
+
 // ── SDR: job sdr-redacao (seção 4.4) ──────────────────────────────────────────
 // Para cada lead com dossiê pronto, escreve 3 versões (ângulos fato/ideia/case)
 // a partir de um fato do dossiê. Lead sem sinal público não gasta modelo: fica
@@ -1325,7 +1334,7 @@ async function jobSdrRedacao(req, res) {
     await logCron('sdr-redacao', 'aviso', 'fim — pulado', { motivo: 'ANTHROPIC_API_KEY ausente' });
     return res.status(200).json({ ok: true, pulado: true, motivo: 'ANTHROPIC_API_KEY ausente' });
   }
-  const estados = await sg(`crm_sdr_estado?etapa=eq.dossie&status=eq.ativo&select=id,decisor_id,empresa_id,agencia_id,agencia_motivo,dia_cadencia,dossie_id,crm_decisores:decisor_id(nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote}`);
+  const estados = await sg(`crm_sdr_estado?etapa=eq.dossie&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,agencia_motivo,dia_cadencia,dossie_id,crm_decisores:decisor_id(nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote}`);
   if (estados === null) return erroLeitura('sdr-redacao', res, inicio, 'crm_sdr_estado');
   const cfg = await configSdr();
   const KV = await knowledgeVivo();
@@ -1367,7 +1376,7 @@ async function jobSdrRedacao(req, res) {
       custo += r.custo || 0;
       if (!r.obj || !r.obj.corpo) { falhas++; continue; }
       const ok = await sp('crm_sdr_mensagens', {
-        estado_id: est.id, decisor_id: est.decisor_id, empresa_id: est.empresa_id, agencia_id: est.agencia_id,
+        estado_id: est.id, sombra: !!est.sombra, decisor_id: est.decisor_id, empresa_id: est.empresa_id, agencia_id: est.agencia_id,
         dossie_id: est.dossie_id, sinal_tipo: sinal.tipo, sinal_url: sinal.url, canal, etapa,
         dia_cadencia: est.dia_cadencia || 0, angulo: r.angulo, versao: r.versao,
         assunto: canal === 'email' ? (r.obj.assunto || '') : '', corpo: r.obj.corpo,
@@ -1402,7 +1411,7 @@ async function jobSdrQualidade(req, res) {
     await logCron('sdr-qualidade', 'aviso', 'fim — pulado', { motivo: 'ANTHROPIC_API_KEY ausente' });
     return res.status(200).json({ ok: true, pulado: true, motivo: 'ANTHROPIC_API_KEY ausente' });
   }
-  const estados = await sg(`crm_sdr_estado?etapa=eq.redigido&status=eq.ativo&select=id,decisor_id,empresa_id,agencia_id,canal,dia_cadencia,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=atualizado_em.asc&limit=${lote}`);
+  const estados = await sg(`crm_sdr_estado?etapa=eq.redigido&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,canal,dia_cadencia,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=atualizado_em.asc&limit=${lote}`);
   if (estados === null) return erroLeitura('sdr-qualidade', res, inicio, 'crm_sdr_estado');
   const cfg = await configSdr();
   const KV = await knowledgeVivo();
@@ -1426,7 +1435,7 @@ async function jobSdrQualidade(req, res) {
       const dec = decisao(aval, chec, cfg.notaMinima);
       await sp(`crm_sdr_mensagens?id=eq.${m.id}`, {
         nota_aderencia: aval.aderencia, nota_especificidade: aval.especificidade, nota_naturalidade: aval.naturalidade,
-        nota_clareza: aval.clareza, nota_risco: aval.risco, nota_media: dec.nota_media,
+        nota_clareza: aval.clareza, nota_risco: aval.risco, nota_media: dec.nota_media, custo_qc_usd: r.custo || 0,
         aprovado_autonomo: dec.aprovado_autonomo, motivo_qc: (aval.motivo ? aval.motivo + ' || ' : '') + dec.motivo
       }, 'PATCH');
       return { m, dec, aval };
@@ -1444,7 +1453,8 @@ async function jobSdrQualidade(req, res) {
     const contexto = `${empresa.nome || ''} · ${decisor.nome || ''} · ${decisor.cargo || ''} · nota ${melhor.dec.nota_media} · ` +
       (melhor.dec.aprovado_autonomo ? 'QC aprovado' : 'QC retido: ' + melhor.dec.motivo.slice(0, 180)) +
       ` · fato: ${(sinal.fato || '').slice(0, 120)} (${sinal.url || 's/fonte'})`;
-    const fila = await spRet('crm_fila', {
+    // Sombra: não cria item na fila do Pedro (nada fica disponível para envio).
+    const fila = est.sombra ? null : await spRet('crm_fila', {
       agencia_id: est.agencia_id, agencia_slug: agencia.slug || null, empresa_id: est.empresa_id, decisor_id: est.decisor_id,
       canal: melhor.m.canal, etapa: melhor.m.etapa || 'etapa1', status: 'rascunho',
       etapa_cadencia: ({ 0: 1, 3: 2, 7: 3, 14: 4 })[est.dia_cadencia || 0] || 1,
@@ -1594,7 +1604,7 @@ async function jobSdrAgendar(req, res) {
     return res.status(200).json({ ok: true, ...ctx });
   }
   if (!cfg.aquecimentoDesde) await spUpsert('crm_configuracoes', { chave: 'sdr_aquecimento_desde', valor: agora.toISOString() }, 'chave');
-  const estados = await sg(`crm_sdr_estado?etapa=eq.rascunho&status=eq.ativo&data_lote=lte.${data}&select=id,canal,fila_id&order=criado_em.asc&limit=200`);
+  const estados = await sg(`crm_sdr_estado?etapa=eq.rascunho&status=eq.ativo&sombra=eq.false&data_lote=lte.${data}&select=id,canal,fila_id&order=criado_em.asc&limit=200`);
   if (estados === null) return erroLeitura('sdr-agendar', res, inicio, 'crm_sdr_estado');
   const env = await enviadosHojePorCanal(agora);
   const tetos = { email: tetoEmailHoje({ aquecimento: cfg.aquecimento, desde: cfg.aquecimentoDesde || agora.toISOString(), tetoGlobal: cfg.emailDailyMax, agora }), whatsapp: cfg.waDailyMax };
@@ -1625,7 +1635,7 @@ async function jobSdrEnvio(req, res) {
   const lote = Math.max(1, Math.min(10, Number(req.query.lote) || 3));
   await logCron('sdr-envio', 'info', 'início', { lote });
   const agoraIso = new Date().toISOString();
-  const devidos = await sg(`crm_sdr_estado?etapa=eq.agendado&status=eq.ativo&agendado_para=lte.${agoraIso}&select=id,decisor_id,empresa_id,agencia_id,agencia_motivo,dossie_id,canal,dia_cadencia,fila_id&order=agendado_para.asc&limit=${lote}`);
+  const devidos = await sg(`crm_sdr_estado?etapa=eq.agendado&status=eq.ativo&sombra=eq.false&agendado_para=lte.${agoraIso}&select=id,decisor_id,empresa_id,agencia_id,agencia_motivo,dossie_id,canal,dia_cadencia,fila_id&order=agendado_para.asc&limit=${lote}`);
   if (devidos === null) return erroLeitura('sdr-envio', res, inicio, 'crm_sdr_estado');
   let enviados = 0, barrados = 0, erros = 0; const motivos = {};
   let graph = null;
