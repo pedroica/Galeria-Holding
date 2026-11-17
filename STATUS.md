@@ -155,29 +155,29 @@ Ainda não há leads aceitos, então o custo por **lead aceito** só existe depo
 
 **Medido:**
 - Linha de base do outbound: 52 empresas contatadas, 3 respostas (5,8%), 0 oportunidades.
-- No Modo Sombra, só **37% dos leads têm fato público com fonte** (11 de 30 no primeiro lote). Sem fato, o lead não vai para o modelo, e isso é o funil real.
+- No Modo Sombra, só **28% dos leads têm fato público com fonte** (17 de 60, em 8 empresas do grupo; Milà 0 de 8). Sem fato, o lead não vai para o modelo, e isso é o funil real.
 - A aprovação no QC ainda não pôde ser medida (chave da Anthropic inválida). Premissa até lá: 70%.
 
 **Conta reversa por reunião:**
 - 1 reunião = 1,4 resposta positiva (70% marcam).
 - 1,4 positiva = 3,5 respostas (40% das respostas são positivas).
 - 3,5 respostas = 44 decisores contatados (8% de resposta com fato e QC; premissa a validar).
-- 44 contatados = 63 que passaram no QC ÷ 0,7, que exigem 170 selecionados (37% com fato).
-- **≈ 170 leads selecionados e 132 e-mails (3 por pessoa) por reunião.**
+- 44 contatados = 63 que passaram no QC ÷ 0,7, que exigem 225 selecionados (28% com fato).
+- **≈ 225 leads selecionados e 132 e-mails (3 por pessoa) por reunião.**
 
 | empresa | reuniões/mês (meta) | leads selecionados/semana | e-mails/dia úteis |
 |---|---|---|---|
-| Galeria + Holding | 2 | 79 | 12 |
-| GAIA | 1 | 40 | 6 |
-| 404 | 1 | 40 | 6 |
-| Milà, Caramelo, Catalyst, Vitrine, GUX, A.gente, Mantiqueira | 0,5 cada (3,5) | 138 | 21 |
-| **total** | **7,5** | **297** | **45** |
+| Galeria + Holding | 2 | 105 | 12 |
+| GAIA | 1 | 52 | 6 |
+| 404 | 1 | 52 | 6 |
+| Milà, Caramelo, Catalyst, Vitrine, GUX, A.gente, Mantiqueira | 0,5 cada (3,5) | 183 | 21 |
+| **total** | **7,5** | **392** | **45** |
 
 - **3x em 90 dias:** a linha de base é 0 reunião de outbound por mês, então "3x" vira meta absoluta. Proposta: **~7 reuniões/mês a partir do 3º mês.** Isso dá 45 e-mails por dia útil, acima do teto do domínio principal (40). **Fecha só com a infraestrutura enxuta** (+180/dia), que também dá folga para dobrar.
-- **Lusha:** 297 leads por semana = cerca de 1.300 por mês. Os decisores já estão no banco (3.121 com 2.760 e-mails); o Lusha só entra para revelar quem falta (1 crédito por e-mail). O saldo de 2.374 cobre cerca de 2 meses de reposição se metade precisar de reveal.
+- **Lusha:** 392 leads selecionados por semana = cerca de 1.700 por mês (a base tem 2.033 empresas elegíveis, então em ~5 semanas o topo de funil precisa repor). Os decisores já estão no banco (3.121 com 2.760 e-mails); o Lusha só entra para revelar quem falta (1 crédito por e-mail). O saldo de 2.374 cobre cerca de 2 meses de reposição se metade precisar de reveal.
 - **O que falta para fechar:**
   1. Chave da Anthropic válida no Vault (sem ela não sai mensagem).
   2. Outlook reconectado.
   3. Infraestrutura enxuta de e-mail.
   4. Cases das 4 agências sem case.
-  5. Mais fato público por lead (37% é baixo; sinais do Lusha e notícias semanais ajudam).
+  5. Mais fato público por lead: 28% é o maior gargalo; sinais do Lusha e notícias semanais ajudam, e subir para 50% corta pela metade o volume de leads necessário.
