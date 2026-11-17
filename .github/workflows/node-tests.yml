@@ -46,3 +46,6 @@ jobs:
 
       - name: Guard de leitura
         run: npm run test:guard
+
+      - name: SDR
+        run: npm run test:sdr
