@@ -47,6 +47,14 @@ const p = construirPromptRedacao({
 ok(/Acme lança linha X/.test(p.user) && /brand lift recorde/.test(p.user), 'prompt inclui o fato do dossiê e o resultado do case');
 ok(/travessão/i.test(p.system) && /Pedro Ica/.test(p.system), 'system fixa regra de travessão e assinatura');
 
+console.log('\nRedação — rodada 2 (motivos do QC real)');
+ok(escolherCase(knowledge, { setor: 'software fiscal', agenciaSlug: '404' }) === null || escolherCase(knowledge, { setor: 'software fiscal', agenciaSlug: '404' }).tags.length > 0, 'case precisa de aderência de setor');
+ok(escolherCase({ cases_destaque: [{ titulo: 'Netflix', agencia_slug: '404', tags: ['streaming', 'entretenimento'], destaque: true }] }, { setor: 'saas contabilidade', agenciaSlug: '404' }) === null, 'Netflix não vai para SaaS fiscal só por ser da mesma agência');
+ok(escolherCase({ cases_destaque: [{ titulo: 'Gallo', agencia_slug: 'galeria', tags: ['alimentos', 'cpg'] }] }, { setor: 'Alimentos e bebidas', agenciaSlug: 'holding' }).titulo === 'Gallo', 'casa setor sem acento/maiúscula e de outra agência');
+ok(expressoesEncontradas('Tenho uma ideia de bolso para vocês', null).includes('ideia de bolso'), '"ideia de bolso" virou expressão proibida');
+const pr = construirPromptRedacao({ dossie: { sinais: [] }, nome: 'Alexandre', cargo: 'CEO', empresa: { nome: 'X' }, agencia: { nome: 'Galeria', slug: 'galeria' }, caso: null, etapa: 'D0', canal: 'email', angulo: 'fato' });
+ok(/apelido/.test(pr.system) && !/"ideia de bolso"\)/.test(pr.system) && /mire em/.test(pr.system), 'prompt: sem apelido, sem rótulo de ideia, alvo de tamanho com margem');
+
 console.log('\nRedação — banco de cases vivo');
 const kv = mesclarCases(knowledge, [
   { titulo: 'Case Novo', marca: 'X', resultado: '+52% de novas contas', agencia_id: 'g', agencias_secundarias: ['v'], tags: ['banco'] },

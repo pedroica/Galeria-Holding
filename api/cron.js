@@ -1317,14 +1317,15 @@ async function gerarJSON({ system, user, schema, effort }) {
 }
 
 async function configSdr() {
-  const rows = await sg('crm_configuracoes?chave=in.(sdr_expressoes_proibidas,sdr_aprendizados,sdr_angulos,sdr_cadencia,sdr_qualidade_nota_minima)&select=chave,valor');
+  const rows = await sg('crm_configuracoes?chave=in.(sdr_expressoes_proibidas,sdr_aprendizados,sdr_angulos,sdr_cadencia,sdr_qualidade_nota_minima,sdr_rodada)&select=chave,valor');
   const m = {}; for (const r of (Array.isArray(rows) ? rows : [])) m[r.chave] = r.valor;
   return {
     proibidas: Array.isArray(m.sdr_expressoes_proibidas) ? m.sdr_expressoes_proibidas : null,
     aprendizados: typeof m.sdr_aprendizados === 'string' ? m.sdr_aprendizados : '',
     angulos: Array.isArray(m.sdr_angulos) && m.sdr_angulos.length ? m.sdr_angulos : ['fato', 'ideia', 'case'],
     cadencia: Array.isArray(m.sdr_cadencia) ? m.sdr_cadencia : [{ dia: 0, canal: 'email' }],
-    notaMinima: Number(m.sdr_qualidade_nota_minima) || 8
+    notaMinima: Number(m.sdr_qualidade_nota_minima) || 8,
+    rodada: Number(m.sdr_rodada) || 1
   };
 }
 
@@ -1366,7 +1367,7 @@ async function jobSdrRedacao(req, res) {
     await logCron('sdr-redacao', 'aviso', 'fim — pulado', { motivo: 'sem chave da Anthropic (env e Vault)' });
     return res.status(200).json({ ok: true, pulado: true, motivo: 'sem chave da Anthropic (env e Vault)' });
   }
-  const estados = await sg(`crm_sdr_estado?etapa=eq.dossie&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,agencia_motivo,dia_cadencia,dossie_id,crm_decisores:decisor_id(nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote}`);
+  const estados = await sg(`crm_sdr_estado?etapa=eq.dossie&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,agencia_motivo,dia_cadencia,dossie_id,crm_decisores:decisor_id(nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote}`);
   if (estados === null) return erroLeitura('sdr-redacao', res, inicio, 'crm_sdr_estado');
   const cfg = await configSdr();
   const KV = await knowledgeVivo();
@@ -1390,7 +1391,7 @@ async function jobSdrRedacao(req, res) {
       await sp(`crm_sdr_estado?id=eq.${est.id}`, { etapa: 'avaliado', canal, motivo: 'sem sinal público com fonte: precisa de pesquisa manual', atualizado_em: agora }, 'PATCH');
       return;
     }
-    const caso = escolherCase(KV, { setor: empresa.setor, sinalTipo: sinal.tipo, agenciaSlug: agencia.slug });
+    const caso = escolherCase(KV, { setor: [empresa.setor, empresa.setor_sugerido, empresa.segmento_detalhe].filter(Boolean).join(' '), sinalTipo: sinal.tipo, agenciaSlug: agencia.slug });
     const etapa = ETAPA_POR_DIA[est.dia_cadencia || 0] || 'etapa1';
 
     const resultados = await Promise.all(cfg.angulos.map(async (angulo, i) => {
@@ -1408,7 +1409,7 @@ async function jobSdrRedacao(req, res) {
       custo += r.custo || 0;
       if (!r.obj || !r.obj.corpo) { falhas++; continue; }
       const ok = await sp('crm_sdr_mensagens', {
-        estado_id: est.id, sombra: !!est.sombra, decisor_id: est.decisor_id, empresa_id: est.empresa_id, agencia_id: est.agencia_id,
+        estado_id: est.id, sombra: !!est.sombra, rodada: cfg.rodada, decisor_id: est.decisor_id, empresa_id: est.empresa_id, agencia_id: est.agencia_id,
         dossie_id: est.dossie_id, sinal_tipo: sinal.tipo, sinal_url: sinal.url, canal, etapa,
         dia_cadencia: est.dia_cadencia || 0, angulo: r.angulo, versao: r.versao,
         assunto: canal === 'email' ? (r.obj.assunto || '') : '', corpo: r.obj.corpo,
@@ -1451,7 +1452,7 @@ async function jobSdrQualidade(req, res) {
 
   let avaliados = 0, aprovadosAuto = 0, retidos = 0, notas = [], custo = 0;
   await Promise.all((Array.isArray(estados) ? estados : []).map(async (est) => {
-    const msgs = await sg(`crm_sdr_mensagens?estado_id=eq.${est.id}&nota_media=is.null&select=id,assunto,corpo,sinal_url,canal,angulo,versao,case_titulo,etapa,tokens_prompt,tokens_resposta,custo_usd,modelo&order=versao.asc`);
+    const msgs = await sg(`crm_sdr_mensagens?estado_id=eq.${est.id}&nota_media=is.null&arquivada=eq.false&select=id,assunto,corpo,sinal_url,canal,angulo,versao,case_titulo,etapa,tokens_prompt,tokens_resposta,custo_usd,modelo&order=versao.asc`);
     if (!Array.isArray(msgs) || !msgs.length) return;
     const decisor = est.crm_decisores || {};
     const empresa = est.crm_empresas || {};

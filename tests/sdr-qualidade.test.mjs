@@ -23,6 +23,10 @@ ok(!c.ok && c.falhas.some(f => /numeros/.test(f)), 'número que não bate com o 
 c = checagensCodigo({ mensagem: { assunto: 'uma ideia qualquer', corpo: 'Oi ' + Array.from({ length: 62 }, (_, i) => 'x' + i).join(' ') + ' topa?', sinal_url: 'https://x/1' }, dossie, caso: null, decisor, empresa, canal: 'email' });
 ok(!c.ok && c.falhas.some(f => /personalizacao/.test(f)), 'sem nome do decisor nem empresa reprova');
 
+const dossNum = { sinais: [{ tipo: 'resultado_trimestral', fato: 'Acme vende 12 milhões de panetones', url: 'https://x/1', trecho: 'a Acme vendeu 12 milhões de panetones' }] };
+c = checagensCodigo({ mensagem: { assunto: 'Acme e o Natal', corpo: 'Ana, os 12 milhões de panetones da Acme ' + Array.from({ length: 58 }, (_, i) => 't' + i).join(' ') + ' faz sentido?', sinal_url: 'https://x/1' }, dossie: dossNum, caso: null, decisor, empresa, canal: 'email' });
+ok(c.ok, 'número vindo do dossiê não é tratado como inventado (' + JSON.stringify(c.falhas) + ')');
+
 console.log('\nQualidade — decisão (nota mínima 8 + risco baixo)');
 const checOk = { ok: true, falhas: [] };
 let d = decisao({ aderencia: 9, especificidade: 8, naturalidade: 9, clareza: 8, risco: 2 }, checOk, 8);
