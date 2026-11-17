@@ -17,6 +17,8 @@ import { selecionarLote } from '../lib/sdr-selecao.js';
 import { montarDossie } from '../lib/sdr-dossie.js';
 import { escolherCase, construirPromptRedacao, construirPromptAvaliacao } from '../lib/sdr-redacao.js';
 import { checagensCodigo, decisao } from '../lib/sdr-qualidade.js';
+import { classificarResposta, acaoPara, extrairEmails } from '../lib/sdr-respostas.js';
+import { obterTokenGraph } from '../lib/graph-token.js';
 
 // Base de conhecimento (agências, cases com números exatos). Carregada no cold start.
 let KNOWLEDGE = { agencias: [], cases_destaque: [] };
@@ -1106,7 +1108,7 @@ async function jobSdrSelecao(req, res) {
   const cfg = await sg('crm_configuracoes?chave=eq.sdr_lote_max&select=valor&limit=1');
   const loteMax = Array.isArray(cfg) && cfg[0]?.valor ? Number(cfg[0].valor) : 30;
 
-  const decisores = await sg('crm_decisores?etapa_cadencia=neq.off&status=neq.inativo&apagado_em=is.null&select=id,nome,cargo,empresa_id,email,wa,email_valido,status,etapa_cadencia,ultimo_toque_em,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,dominio,cliente_ativo)&order=ultimo_toque_em.asc.nullsfirst&limit=800');
+  const decisores = await sg('crm_decisores?etapa_cadencia=neq.off&status=neq.inativo&apagado_em=is.null&select=id,nome,cargo,empresa_id,email,wa,email_valido,status,etapa_cadencia,ultimo_toque_em,opt_out,respondeu,pausa_ate_em,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,dominio,cliente_ativo)&order=ultimo_toque_em.asc.nullsfirst&limit=800');
   if (decisores === null) return erroLeitura('sdr-selecao', res, inicio, 'crm_decisores');
   const candidatos = (Array.isArray(decisores) ? decisores : []).map(d => ({ ...d, empresa: d.crm_empresas || {} }));
 
@@ -1439,6 +1441,126 @@ async function jobSdrQualidade(req, res) {
   return res.status(200).json({ ok: true, ...ctx });
 }
 
+// ── SDR: job sdr-respostas (Bloco E) ──────────────────────────────────────────
+// Lê a caixa de entrada pelo Graph, reconhece respostas de decisores, bounces e
+// pedidos de saída. NUNCA responde ninguém: só registra, para a cadência,
+// atualiza o CRM e deixa a resposta para o Pedro ler (crm_sdr_respostas).
+// E-mails que não são de decisores do CRM são ignorados e não ficam gravados.
+async function spNovo(path, body) {
+  const r = await fetch(SUPA_URL+'/rest/v1/'+path, { method:'POST', headers:{apikey:SUPA_KEY,Authorization:'Bearer '+SUPA_KEY,'Content-Type':'application/json',Prefer:'resolution=ignore-duplicates,return=representation'}, body:JSON.stringify(body) });
+  if (!r.ok) return null;
+  const j = await r.json().catch(()=>null);
+  return Array.isArray(j) && j[0] ? j[0] : null;   // vazio = já existia
+}
+
+async function jobSdrRespostas(req, res) {
+  const inicio = Date.now();
+  const lote = Math.max(1, Math.min(100, Number(req.query.lote) || 50));
+  await logCron('sdr-respostas', 'info', 'início', { lote });
+  const t = await obterTokenGraph({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY });
+  if (!t) {
+    await logCron('sdr-respostas', 'aviso', 'fim — pulado', { motivo: 'Outlook não conectado (crm_oauth_tokens sem refresh_token)' });
+    return res.status(200).json({ ok: true, pulado: true, motivo: 'Outlook não conectado' });
+  }
+  const cur = await sg('crm_configuracoes?chave=eq.sdr_inbox_cursor&select=valor&limit=1');
+  const desde = (Array.isArray(cur) && cur[0] && typeof cur[0].valor === 'string') ? cur[0].valor : new Date(Date.now() - 2 * 86400000).toISOString();
+  const url = 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=' + lote +
+    '&$orderby=receivedDateTime asc&$select=id,conversationId,subject,from,receivedDateTime,bodyPreview' +
+    '&$filter=' + encodeURIComponent('receivedDateTime gt ' + desde);
+  let msgs = [];
+  try {
+    const r = await fetch(url, { headers: { Authorization: 'Bearer ' + t.token } });
+    if (!r.ok) {
+      await logCron('sdr-respostas', 'error', 'fim — Graph recusou a leitura', { status: r.status });
+      return res.status(502).json({ ok: false, erro: 'graph_' + r.status });
+    }
+    msgs = ((await r.json()) || {}).value || [];
+  } catch (e) {
+    await logCron('sdr-respostas', 'error', 'fim — Graph indisponível', { erro: String(e.message || e).slice(0, 200) });
+    return res.status(502).json({ ok: false, erro: 'graph_indisponivel' });
+  }
+
+  const proprio = String(t.email || '').toLowerCase();
+  const agora = new Date().toISOString();
+  const cont = { lidas: msgs.length, de_decisores: 0, bounce: 0, opt_out: 0, interesse: 0, indicacao: 0, nao_agora: 0, auto_resposta: 0, indefinido: 0, oportunidades: 0, ignoradas: 0 };
+  let ultimo = desde;
+
+  for (const m of msgs) {
+    if (m.receivedDateTime && m.receivedDateTime > ultimo) ultimo = m.receivedDateTime;
+    const remetente = String(m.from && m.from.emailAddress && m.from.emailAddress.address || '').toLowerCase();
+    const cls = classificarResposta({ remetente, assunto: m.subject, preview: m.bodyPreview });
+
+    // Quem é o decisor? Bounce: o endereço que falhou está no corpo. Senão: o remetente.
+    let alvos = cls.tipo === 'bounce' ? extrairEmails(m.bodyPreview + ' ' + (m.subject || '')).filter(e => e !== proprio && !/mailer-daemon|postmaster/.test(e)) : [remetente];
+    alvos = alvos.filter(Boolean).slice(0, 5);
+    if (!alvos.length) { cont.ignoradas++; continue; }
+    const ds = await sg('crm_decisores?apagado_em=is.null&email=in.(' + alvos.map(e => '"' + encodeURIComponent(e) + '"').join(',') + ')&select=id,nome,email,wa,empresa_id,crm_empresas!empresa_id(nome)&limit=1');
+    const d = Array.isArray(ds) && ds[0];
+    if (!d) { cont.ignoradas++; continue; }
+
+    const reg = await spNovo('crm_sdr_respostas?on_conflict=graph_message_id', {
+      graph_message_id: m.id, conversation_id: m.conversationId || null, decisor_id: d.id, empresa_id: d.empresa_id,
+      remetente, assunto: (m.subject || '').slice(0, 300), preview: (m.bodyPreview || '').slice(0, 1000),
+      recebido_em: m.receivedDateTime || agora, tipo: cls.tipo, confianca: cls.confianca, evidencia: (cls.evidencia || '').slice(0, 200)
+    });
+    if (!reg) continue;   // já processada antes (idempotente)
+    cont.de_decisores++; cont[cls.tipo] = (cont[cls.tipo] || 0) + 1;
+    const ac = acaoPara(cls.tipo);
+    const acoes = [];
+
+    if (ac.resultado_toque) {
+      await sp('crm_toques', { decisor_id: d.id, empresa_id: d.empresa_id, canal: 'email', direcao: 'recebido',
+        assunto: (m.subject || '').slice(0, 500), resumo: (cls.tipo + ': ' + (m.bodyPreview || '')).slice(0, 500),
+        data: m.receivedDateTime || agora, fonte: 'outlook', resultado: ac.resultado_toque });
+      acoes.push('toque');
+    }
+    if (ac.marcar_email_invalido) {
+      await sp(`crm_decisores?id=eq.${d.id}`, { email_valido: false, atualizado_em: agora }, 'PATCH');
+      await sp(`crm_fila?decisor_id=eq.${d.id}&canal=eq.email&status=in.(rascunho,aprovado)`, { status: 'pulado', motivo_pulo: 'bounce: e-mail inválido' }, 'PATCH');
+      if (!d.wa) await sp(`crm_sdr_estado?decisor_id=eq.${d.id}&status=eq.ativo`, { status: 'bounce', motivo: 'e-mail voltou e não há WhatsApp', atualizado_em: agora }, 'PATCH');
+      acoes.push('email_invalido');
+    }
+    if (ac.opt_out) {
+      await sp(`crm_decisores?id=eq.${d.id}`, { opt_out: true, opt_out_em: agora, etapa_cadencia: 'off', atualizado_em: agora }, 'PATCH');
+      acoes.push('opt_out');
+    }
+    if (ac.parar_cadencia && cls.tipo !== 'bounce') {
+      await sp(`crm_sdr_estado?decisor_id=eq.${d.id}&status=eq.ativo`, { status: cls.tipo === 'opt_out' ? 'opt_out' : 'respondeu', motivo: 'resposta: ' + cls.tipo, atualizado_em: agora }, 'PATCH');
+      await sp(`crm_fila?decisor_id=eq.${d.id}&status=in.(rascunho,aprovado)`, { status: 'pulado', motivo_pulo: 'respondeu (' + cls.tipo + ')' }, 'PATCH');
+      await sp(`crm_fila?decisor_id=eq.${d.id}&status=eq.enviado`, { status: 'respondido' }, 'PATCH');
+      if (cls.tipo !== 'opt_out') {
+        const patch = { respondeu: true, status: 'respondeu', atualizado_em: agora };
+        if (ac.pausar_dias) patch.pausa_ate_em = new Date(Date.now() + ac.pausar_dias * 86400000).toISOString();
+        await sp(`crm_decisores?id=eq.${d.id}`, patch, 'PATCH');
+      }
+      acoes.push('cadencia_parada');
+    }
+    let opId = null;
+    if (ac.oportunidade && d.empresa_id) {
+      const abertas = await sg(`crm_oportunidades?empresa_id=eq.${d.empresa_id}&apagado_em=is.null&fechada_em=is.null&estagio=not.in.(Perdido,Pausado)&select=id&limit=1`);
+      if (Array.isArray(abertas) && abertas.length) { opId = abertas[0].id; acoes.push('oportunidade_existente'); }
+      else if (Array.isArray(abertas)) {
+        const est = await sg(`crm_sdr_estado?decisor_id=eq.${d.id}&select=agencia_id&order=criado_em.desc&limit=1`);
+        const op = await spRet('crm_oportunidades', {
+          empresa_id: d.empresa_id, agencia_id: (Array.isArray(est) && est[0] && est[0].agencia_id) || null,
+          titulo: ((d.crm_empresas && d.crm_empresas.nome) || 'Empresa') + ': resposta de ' + (d.nome || remetente),
+          estagio: 'Contato direto', origem: 'fila',
+          proximo_passo: 'Responder ' + (d.nome || '') + ' e marcar a primeira reunião',
+          proximo_passo_em: agora.slice(0, 10)
+        });
+        if (op) { opId = op.id; cont.oportunidades++; acoes.push('oportunidade_criada'); }
+      }
+    }
+    await sp(`crm_sdr_respostas?id=eq.${reg.id}`, { acao: acoes.join(','), oportunidade_id: opId }, 'PATCH');
+  }
+
+  if (ultimo !== desde) await spUpsert('crm_configuracoes', { chave: 'sdr_inbox_cursor', valor: ultimo }, 'chave');
+  const paraPedro = cont.interesse + cont.indicacao + cont.nao_agora + cont.indefinido + cont.opt_out;
+  const ctx = { ...cont, para_o_pedro_ler: paraPedro, ms: Date.now() - inicio };
+  await logCron('sdr-respostas', paraPedro > 0 ? 'aviso' : nivelTrabalho(msgs.length), paraPedro > 0 ? `fim — ${paraPedro} resposta(s) para o Pedro ler` : 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
 // ── handler principal ─────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   const { job } = req.query;
@@ -1459,7 +1581,8 @@ export default async function handler(req, res) {
     if (job === 'sdr-dossie')            return await jobSdrDossie(req, res);
     if (job === 'sdr-redacao')           return await jobSdrRedacao(req, res);
     if (job === 'sdr-qualidade')         return await jobSdrQualidade(req, res);
-    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta, higiene-fila, rascunhos-matinais, oportunidades-paradas, sdr-selecao, sdr-dossie, sdr-redacao, sdr-qualidade' });
+    if (job === 'sdr-respostas')         return await jobSdrRespostas(req, res);
+    return res.status(400).json({ error: 'job inválido. Use: gerar-fila-diario, enriquecimento-diario, noticias-semanal, fechamento-sexta, higiene-fila, rascunhos-matinais, oportunidades-paradas, sdr-selecao, sdr-dossie, sdr-redacao, sdr-qualidade, sdr-respostas' });
   } catch(e) {
     console.error('[cron:'+job+']', e.message);
     try { await logCron(job||'unknown', 'error', 'erro: '+e.message, null); } catch(_) {}

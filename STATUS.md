@@ -46,3 +46,10 @@ As 5 causas apontadas na missão foram conferidas no código atual da `main`:
 - **Todo item gerado entra em `crm_fila` como `rascunho`**, mesmo com QC aprovado. Porquê: com o Piloto desligado nada sai sem o toque do Pedro; a nota e a fonte aparecem em `contexto_para_aprovacao`.
 - **1 primeiro contato por empresa por semana; empresa tocada por qualquer agência nos últimos 30 dias fica de fora.** Porquê: evita duas agências do grupo abordando a mesma marca (regra 4.2).
 - **Canal do toque segue a cadência (D0 e-mail, D3 WhatsApp, D7 e D14 e-mail) e cai para o outro canal se faltar o contato.** Porquê: não perder o lead por falta de um dos dois canais.
+- **Bloco E: leitura da caixa a cada 15 min em dias úteis 08h-20h BRT, por regras (sem modelo).** Porquê: bounce, auto-resposta e opt-out têm padrões claros; regra é grátis, instantânea e auditável. O que não casa com nada vira "indefinido" e vai para o Pedro ler.
+- **Na dúvida entre opt-out e outra coisa, vale o opt-out.** "Não tenho interesse" desliga a cadência daquela pessoa. Porquê: o custo de insistir com quem pediu para parar é maior que o de perder um lead.
+- **E-mail que não é de decisor do CRM não é gravado.** Porquê: a caixa do Pedro tem correspondência pessoal e de clientes; só guardamos o que é do SDR.
+- **Resposta com interesse cria oportunidade em "Contato direto"** (não em "Primeira reunião"), com próximo passo "responder e marcar". Porquê: interesse ainda não é reunião marcada; o Pedro move quando marcar.
+- **"Não agora" pausa a pessoa por 90 dias** (`pausa_ate_em`) e a seleção passou a respeitar essa pausa. Porquê: volta na hora certa sem ser esquecida.
+- **Bounce com WhatsApp cadastrado não encerra a cadência:** o próximo toque cai para o WhatsApp. Porquê: o e-mail errado não invalida o contato.
+- **Coluna `opt_out` criada em `crm_decisores`.** Porquê: a seleção já checava `opt_out`, mas a coluna não existia; agora o pedido de saída fica gravado e é respeitado.
