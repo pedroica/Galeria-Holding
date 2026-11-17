@@ -13,14 +13,16 @@
     "test:crm": "node tests/crm-integration.test.mjs",
     "test:blocklist": "node --test tests/blocklist.test.mjs",
     "test:cron": "node tests/cron-jobs.test.mjs",
-    "test:enrich-auth": "node tests/enrich-auth.test.mjs",
+    "test:enrich-auth": "node tests/enrich-auth.test.mjs && node tests/gh-core-auth.test.mjs && node tests/secret-trim.test.mjs",
     "test:fila": "node tests/fila-motor.test.mjs",
     "test:enrich-lusha": "node tests/enrich-lusha.test.mjs",
     "test:bloco5": "node tests/cron-bloco5.test.mjs",
     "test:relatorio": "node tests/relatorio-route.test.mjs",
     "test:guard": "node tests/cron-guard.test.mjs",
     "test:e2e": "npx playwright test tests/lusha-e2e.playwright.mjs --reporter=list",
-    "typecheck": "cd agent && npm run typecheck"
+    "typecheck": "cd agent && npm run typecheck",
+    "test:gh-core": "node tests/gh-core-auth.test.mjs",
+    "test:secret": "node tests/secret-trim.test.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.120.0",

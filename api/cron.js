@@ -21,8 +21,9 @@ async function authCheck(req, res, job) {
   // Falha fechado: sem CRON_SECRET configurado, só a service key passa.
   // Antes, `if (secret && ...)` deixava o endpoint aberto a qualquer um quando
   // a variável estava vazia — e este endpoint gasta créditos Lusha.
-  const aceitos = [secret, (SUPA_KEY || '').trim()].filter(Boolean).map(v => 'Bearer ' + v);
-  if (!aceitos.length || !aceitos.includes(auth)) {
+  const aceitos = [secret, (SUPA_KEY || '').trim()].filter(Boolean);
+  const recebido = auth.replace(/^Bearer\s+/i, '').trim();
+  if (!aceitos.length || !recebido || !aceitos.includes(recebido)) {
     const hint = !secret
       ? 'CRON_SECRET ausente — configure a variável na Vercel'
       : (auth ? `bearer present, prefix=${auth.slice(0, 15)}` : 'no Authorization header');
