@@ -94,3 +94,8 @@ Todas as 109 oportunidades têm origem `abordagem_direta` (relacionamento do Ped
 - Cross-sell: 14 candidatos hoje; com apresentação pela agência que já atende, 40%: **~6 reuniões**.
 - Total: **~23 reuniões em 90 dias (≈ 8 por mês)**, contra ~0 hoje e contra 3,4 por mês, que é o 3x da linha de base de leads qualificados (1,1 por mês). Para chegar lá, `email_daily_max` precisa subir de 15 para 40 a partir da 6ª semana (hoje está em 15 e trava o aquecimento).
 - Gargalos reais, em ordem: (1) aprovação: 89% dos rascunhos morreram sem decisão; (2) sinal: só 1 sinal de compra forte em 799 notícias de 45 dias, então a maior parte dos leads vai sem gancho e fica retida; (3) cases: Caramelo, Catalyst, Mantiqueira e GUX não têm nenhum case liberado.
+
+## Fase 2: decisões tomadas
+
+- **Relógio autenticado pelo Vault, sem depender da Vercel.** O servidor manda o Bearer recebido para a RPC `sdr_cron_token_valido` (só service_role), que compara dentro do banco e responde true/false. Porquê: o segredo nunca sai do Vault nem passa pelo servidor; a outra conta da Vercel deixa de ser bloqueio. `SDR_CRON_SECRET` na env segue aceito se um dia for preenchido.
+- **Cache de 5 minutos só para token aprovado** (guardado como sha256) e **falha fechada** se o banco não responder. Porquê: evita uma consulta por chamada sem travar rotação de segredo nem abrir o endpoint numa queda.
