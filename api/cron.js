@@ -25,6 +25,7 @@ import { obterTokenGraph } from '../lib/graph-token.js';
 import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
 import { tokenSdrValido } from '../lib/sdr-auth.js';
 import { crossSell, sinaisDeCompra } from '../lib/sdr-topo.js';
+import { construirPromptEstrategia, validarTese, resumoEcossistema, SCHEMA_ESTRATEGIA, OFERTA_BLITZ_PADRAO } from '../lib/sdr-estrategista.js';
 
 // Base de conhecimento (agências, cases com números exatos). Carregada no cold start.
 let KNOWLEDGE = { agencias: [], cases_destaque: [] };
@@ -170,6 +171,16 @@ async function higienizarFila(budgetMs = 20000) {
 async function jobGerarFila(req, res) {
   const inicio = Date.now();
   await logCron('gerar-fila-diario', 'info', 'início', null);
+
+  // Fase 3: no modo rascunho do SDR, a fila de primeiro contato vem só do SDR
+  // (dossiê + estrategista + QC). O gerador antigo, genérico, fica parado para a
+  // caixa do Pedro não misturar mensagens sem contexto com as do SDR.
+  const mr = await sg('crm_configuracoes?chave=eq.sdr_modo_rascunho&select=valor&limit=1');
+  if (Array.isArray(mr) && mr[0] && (mr[0].valor === true || mr[0].valor === 'true')) {
+    const ctx = { pulado: true, motivo: 'sdr_modo_rascunho ligado: a fila vem do SDR', ms: Date.now() - inicio };
+    await logCron('gerar-fila-diario', 'aviso', 'fim — pulado', ctx);
+    return res.status(200).json({ ok: true, ...ctx });
+  }
 
   // Limpa os vencidos ANTES do pré-check, senão a fila nunca desafoga sozinha.
   const higiene = await higienizarFila();
@@ -947,7 +958,7 @@ async function jobRascunhosMatinais(req, res) {
   const itens = await sg(
     'crm_fila?status=eq.aprovado&canal=eq.email&outlook_message_id=is.null&apagado_em=is.null&rascunho_tentativas=lt.3' +
     '&select=id,assunto,corpo,etapa_cadencia,thread_ref,rascunho_tentativas,crm_decisores(email,nome)' +
-    '&order=rascunho_tentativas.asc,aprovado_em.asc&limit=' + teto
+    '&order=origem.asc.nullslast,rascunho_tentativas.asc,aprovado_em.asc&limit=' + teto
   );
   if (itens === null) return erroLeitura('rascunhos-matinais', res, inicio, 'crm_fila');
   const lista = (Array.isArray(itens) ? itens : []).filter(it => {
@@ -1147,7 +1158,11 @@ async function jobSdrSelecao(req, res) {
 
   const semanaISO = inicioSemanaISO();
   const filaSemana = await sg(`crm_fila?status=in.(aprovado,enviado)&gerado_em=gte.${semanaISO}&select=empresa_id&limit=1000`);
-  const primeirosContatoSemana = [...new Set((Array.isArray(filaSemana) ? filaSemana : []).map(r => r.empresa_id).filter(Boolean))];
+  // Conta também os leads reais do SDR desta semana (não só a crm_fila): sem isso,
+  // dois decisores da mesma empresa entravam em dias seguidos. Sombra não conta,
+  // porque não falou com ninguém.
+  const sdrSemana = await sg(`crm_sdr_estado?criado_em=gte.${semanaISO}&sombra=eq.false&dia_cadencia=eq.0&select=empresa_id&limit=5000`);
+  const primeirosContatoSemana = [...new Set([...(Array.isArray(filaSemana) ? filaSemana : []), ...(Array.isArray(sdrSemana) ? sdrSemana : [])].map(r => r.empresa_id).filter(Boolean))];
 
   // Bloco G: candidatos de topo de funil aceitos pelo Pedro passam à frente.
   const corteCurso = new Date(Date.now() - 14 * 86400000).toISOString();
@@ -1284,26 +1299,42 @@ const SCHEMA_AVAL = {
   },
   required: ['aderencia', 'especificidade', 'naturalidade', 'clareza', 'risco', 'motivo'], additionalProperties: false
 };
-// Preço do modelo (US$ por token) para registrar custo por mensagem.
-const PRECO_IN = 4 / 1e6, PRECO_OUT = 20 / 1e6;
+// Preço por modelo (US$ por milhão de tokens: entrada, saída) para registrar o
+// custo por mensagem. Leitura de cache custa 10% da entrada; escrita, 125%.
+const PRECOS = {
+  'claude-opus-5-5':   [4, 20],
+  'claude-sonnet-5-5': [2, 10],
+  'claude-haiku-5-5':  [0.1, 0.5]
+};
+function custoUsage(modelo, usage) {
+  const chave = Object.keys(PRECOS).find(k => String(modelo || '').startsWith(k)) || MODELO_SDR;
+  const [pin, pout] = PRECOS[chave];
+  const u = usage || {};
+  return ((u.input_tokens || 0) * pin + (u.cache_read_input_tokens || 0) * pin * 0.1 +
+    (u.cache_creation_input_tokens || 0) * pin * 1.25 + (u.output_tokens || 0) * pout) / 1e6;
+}
 
-async function gerarJSON({ system, user, schema, effort }) {
+// model: qual modelo usar (padrão Opus). O system vai num bloco com cache_control:
+// o prompt fixo (regras + ecossistema) é igual para todos os leads do lote, então
+// a partir da segunda chamada ele é lido do cache.
+async function gerarJSON({ system, user, schema, effort, model }) {
+  const modelo = model || MODELO_SDR;
   // Gancho de teste: permite simular o modelo sem rede (nunca definido em produção).
-  if (typeof globalThis.__SDR_LLM_MOCK === 'function') return globalThis.__SDR_LLM_MOCK({ system, user, schema });
+  if (typeof globalThis.__SDR_LLM_MOCK === 'function') return globalThis.__SDR_LLM_MOCK({ system, user, schema, model: modelo });
   const chave = await chaveLLM();
-  if (!chave) return { obj: null, erro: 'sem chave da Anthropic (env e Vault)', usage: {}, custo: 0, modelo: MODELO_SDR };
+  if (!chave) return { obj: null, erro: 'sem chave da Anthropic (env e Vault)', usage: {}, custo: 0, modelo };
   try {
     const r = await clienteLLM(chave).beta.messages.create({
-      model: MODELO_SDR,
+      model: modelo,
       max_tokens: 8000,
       betas: ['server-side-fallback-2026-07-01'],
       fallbacks: 'default',
-      system,
+      system: [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }],
       messages: [{ role: 'user', content: user }],
       output_config: { effort: effort || 'medium', format: { type: 'json_schema', schema } }
     });
     const usage = r.usage || {};
-    const custo = (usage.input_tokens || 0) * PRECO_IN + (usage.output_tokens || 0) * PRECO_OUT;
+    const custo = custoUsage(r.model || modelo, usage);
     if (r.stop_reason === 'refusal') return { obj: null, erro: 'refusal', usage, custo, modelo: r.model };
     const txt = (r.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     let obj = null;
@@ -1313,14 +1344,14 @@ async function gerarJSON({ system, user, schema, effort }) {
     // Chave da env recusada: marca e tenta de novo uma vez com a do Vault.
     if (e && e.status === 401 && chave === ANTHROPIC_KEY) {
       _envRecusada = true;   // chamadas paralelas também caem aqui e refazem com a do Vault
-      if (await chaveVault()) return gerarJSON({ system, user, schema, effort });
+      if (await chaveVault()) return gerarJSON({ system, user, schema, effort, model });
     }
-    return { obj: null, erro: String(e && e.message || e).slice(0, 200), usage: {}, custo: 0, modelo: MODELO_SDR };
+    return { obj: null, erro: String(e && e.message || e).slice(0, 200), usage: {}, custo: 0, modelo };
   }
 }
 
 async function configSdr() {
-  const rows = await sg('crm_configuracoes?chave=in.(sdr_expressoes_proibidas,sdr_aprendizados,sdr_angulos,sdr_cadencia,sdr_qualidade_nota_minima,sdr_rodada)&select=chave,valor');
+  const rows = await sg('crm_configuracoes?chave=in.(sdr_expressoes_proibidas,sdr_aprendizados,sdr_angulos,sdr_cadencia,sdr_qualidade_nota_minima,sdr_rodada,sdr_estrategista,sdr_modelo_estrategia,sdr_modelo_redacao,sdr_modelo_qc,sdr_oferta_blitz,sdr_nota_encaixe_min,sdr_modo_rascunho,sdr_mix_whatsapp,sdr_refacoes_max)&select=chave,valor');
   const m = {}; for (const r of (Array.isArray(rows) ? rows : [])) m[r.chave] = r.valor;
   return {
     proibidas: Array.isArray(m.sdr_expressoes_proibidas) ? m.sdr_expressoes_proibidas : null,
@@ -1328,14 +1359,30 @@ async function configSdr() {
     angulos: Array.isArray(m.sdr_angulos) && m.sdr_angulos.length ? m.sdr_angulos : ['fato', 'ideia', 'case'],
     cadencia: Array.isArray(m.sdr_cadencia) ? m.sdr_cadencia : [{ dia: 0, canal: 'email' }],
     notaMinima: Number(m.sdr_qualidade_nota_minima) || 8,
-    rodada: Number(m.sdr_rodada) || 1
+    rodada: Number(m.sdr_rodada) || 1,
+    // Fase 3. Sem a chave no banco, tudo fica como antes (3 versões, sem estrategista).
+    estrategista: m.sdr_estrategista === true || m.sdr_estrategista === 'true',
+    modeloEstrategia: typeof m.sdr_modelo_estrategia === 'string' ? m.sdr_modelo_estrategia : MODELO_SDR,
+    modeloRedacao: typeof m.sdr_modelo_redacao === 'string' ? m.sdr_modelo_redacao : MODELO_SDR,
+    modeloQc: typeof m.sdr_modelo_qc === 'string' ? m.sdr_modelo_qc : MODELO_SDR,
+    oferta: typeof m.sdr_oferta_blitz === 'string' && m.sdr_oferta_blitz ? m.sdr_oferta_blitz : OFERTA_BLITZ_PADRAO,
+    notaEncaixeMin: Number(m.sdr_nota_encaixe_min) || 8,
+    modoRascunho: m.sdr_modo_rascunho === true || m.sdr_modo_rascunho === 'true',
+    mixWhatsapp: Math.max(0, Math.min(1, Number(m.sdr_mix_whatsapp) || 0)),
+    refacoesMax: m.sdr_refacoes_max === undefined ? 1 : Math.max(0, Number(m.sdr_refacoes_max) || 0)
   };
 }
 
 // Canal do toque: o da cadência para o dia; se a pessoa não tem aquele canal, usa o outro.
-function canalDoToque(diaCadencia, cadencia, decisor) {
+// mixWa (0 a 1): no primeiro toque, a fração de quem tem os dois canais que começa
+// pelo WhatsApp (escolha estável por decisor, para não mudar entre execuções).
+function canalDoToque(diaCadencia, cadencia, decisor, mixWa) {
   const passo = cadencia.find(c => Number(c.dia) === Number(diaCadencia)) || cadencia[0] || { canal: 'email' };
   let canal = passo.canal;
+  if (Number(diaCadencia || 0) === 0 && mixWa > 0 && decisor && decisor.email && decisor.wa && decisor.id) {
+    let h = 0; for (const ch of String(decisor.id)) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    if ((h % 100) < Math.round(mixWa * 100)) canal = 'whatsapp';
+  }
   if (canal === 'email' && !(decisor && decisor.email)) canal = (decisor && decisor.wa) ? 'whatsapp' : null;
   if (canal === 'whatsapp' && !(decisor && decisor.wa)) canal = (decisor && decisor.email) ? 'email' : null;
   return canal;
@@ -1358,6 +1405,92 @@ async function modoSombra() {
   return !(v === false || v === 'false');
 }
 
+// Clientes ativos por agência (para o estrategista citar cliente do mesmo setor
+// e para saber a relação de cada empresa com o grupo).
+async function clientesAtivos() {
+  const rows = await sg("crm_oportunidades?estagio=eq.Cliente%20ativo&apagado_em=is.null&select=empresa_id,crm_agencias:agencia_id(slug),crm_empresas:empresa_id(nome,setor,setor_sugerido)&limit=2000");
+  const porAgencia = {}, porEmpresa = {}, lista = [];
+  for (const r of (Array.isArray(rows) ? rows : [])) {
+    const slug = r.crm_agencias && r.crm_agencias.slug; const e = r.crm_empresas || {};
+    if (!slug || !e.nome) continue;
+    const c = { nome: e.nome, setor: e.setor || e.setor_sugerido || '' };
+    (porAgencia[slug] ||= []).push(c); lista.push(c);
+    (porEmpresa[r.empresa_id] ||= new Set()).add(slug);
+  }
+  return { porAgencia, porEmpresa, lista };
+}
+
+// ── SDR: job sdr-estrategia (Fase 3) ──────────────────────────────────────────
+// Entre o dossiê e a redação. Lead sem fato público ou sem canal não gasta
+// modelo. Para os demais, o estrategista decide se vale abordar e com qual tese;
+// só segue para a redação quem tem encaixe alto (sdr_nota_encaixe_min).
+async function jobSdrEstrategia(req, res) {
+  const inicio = Date.now();
+  const lote = Math.max(1, Math.min(8, Number(req.query.lote) || 6));
+  await logCron('sdr-estrategia', 'info', 'início', { lote });
+  if (!(await temChaveLLM())) {
+    await logCron('sdr-estrategia', 'aviso', 'fim — pulado', { motivo: 'sem chave da Anthropic (env e Vault)' });
+    return res.status(200).json({ ok: true, pulado: true, motivo: 'sem chave da Anthropic (env e Vault)' });
+  }
+  const estados = await sg(`crm_sdr_estado?etapa=eq.dossie&status=eq.ativo&select=id,decisor_id,empresa_id,agencia_motivo,dia_cadencia,crm_decisores:decisor_id(id,nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote}`);
+  if (estados === null) return erroLeitura('sdr-estrategia', res, inicio, 'crm_sdr_estado');
+  const cfg = await configSdr();
+  const KV = await knowledgeVivo();
+  const cli = await clientesAtivos();
+  const ecossistema = resumoEcossistema(KV, cli.porAgencia);
+  const agsDb = await sg('crm_agencias?select=id,slug&limit=50');
+  const idPorSlug = {}; for (const a of (Array.isArray(agsDb) ? agsDb : [])) idPorSlug[a.slug] = a.id;
+  const agora = new Date().toISOString();
+
+  let avaliados = 0, seguem = 0, descartados = 0, semSinal = 0, semCanal = 0, falhas = 0, custo = 0;
+  await Promise.all((Array.isArray(estados) ? estados : []).map(async (est) => {
+    const decisor = est.crm_decisores || {};
+    const empresa = est.crm_empresas || {};
+    const sinais = ((est.crm_dossies && est.crm_dossies.sinais) || []).filter(s => s && s.url);
+    const canal = canalDoToque(est.dia_cadencia || 0, cfg.cadencia, decisor, cfg.mixWhatsapp);
+    if (!canal) {
+      semCanal++;
+      await sp(`crm_sdr_estado?id=eq.${est.id}`, { etapa: 'avaliado', motivo: 'sem canal válido (nem e-mail nem WhatsApp)', atualizado_em: agora }, 'PATCH');
+      return;
+    }
+    if (!sinais.length) {
+      semSinal++;
+      await sp(`crm_sdr_estado?id=eq.${est.id}`, { etapa: 'avaliado', canal, motivo: 'sem sinal público com fonte: precisa de pesquisa manual', atualizado_em: agora }, 'PATCH');
+      return;
+    }
+    const agSlugs = cli.porEmpresa[est.empresa_id] ? [...cli.porEmpresa[est.empresa_id]] : [];
+    const historico = agSlugs.length ? `já é cliente ativo de: ${agSlugs.join(', ')} (oportunidade de cross-sell com as outras agências)` : '';
+    const { system, user } = construirPromptEstrategia({
+      ecossistema, oferta: cfg.oferta, empresa, decisor, sinais, historico,
+      agenciaSugerida: est.crm_agencias ? { slug: est.crm_agencias.slug, motivo: est.agencia_motivo } : null,
+      notaMin: cfg.notaEncaixeMin
+    });
+    const r = await gerarJSON({ system, user, schema: SCHEMA_ESTRATEGIA, effort: 'medium', model: cfg.modeloEstrategia });
+    custo += r.custo || 0;
+    if (!r.obj) {
+      falhas++;
+      await sp(`crm_sdr_estado?id=eq.${est.id}`, { tentativas: 1, ultimo_erro: r.erro || 'estrategista falhou', atualizado_em: agora }, 'PATCH');
+      return;
+    }
+    avaliados++;
+    const v = validarTese(r.obj, { sinais, knowledge: KV, clientes: cli.lista, notaMin: cfg.notaEncaixeMin });
+    const tese = Object.assign({}, v.tese || {}, { custo_usd: Math.round((r.custo || 0) * 1e5) / 1e5, modelo: r.modelo });
+    // A agência que assina passa a ser a do estrategista, quando ele escolheu uma do grupo.
+    let agenciaId = null;
+    const slugEsc = (tese.agencias || [])[0];
+    if (slugEsc && v.seguir && idPorSlug[slugEsc]) agenciaId = idPorSlug[slugEsc];
+    if (v.seguir) seguem++; else descartados++;
+    await sp(`crm_sdr_estado?id=eq.${est.id}`, Object.assign({
+      etapa: v.seguir ? 'estrategia' : 'avaliado', canal, tese, nota_encaixe: Number(tese.nota_encaixe) || 0,
+      motivo: v.motivo.slice(0, 500), atualizado_em: agora
+    }, agenciaId ? { agencia_id: agenciaId } : {}), 'PATCH');
+  }));
+
+  const ctx = { leads: (estados || []).length, avaliados, seguem, descartados, sem_sinal: semSinal, sem_canal: semCanal, falhas, custo_usd: Math.round(custo * 10000) / 10000, ms: Date.now() - inicio };
+  await logCron('sdr-estrategia', nivelTrabalho(avaliados + semSinal + semCanal), 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
 // ── SDR: job sdr-redacao (seção 4.4) ──────────────────────────────────────────
 // Para cada lead com dossiê pronto, escreve 3 versões (ângulos fato/ideia/case)
 // a partir de um fato do dossiê. Lead sem sinal público não gasta modelo: fica
@@ -1370,9 +1503,11 @@ async function jobSdrRedacao(req, res) {
     await logCron('sdr-redacao', 'aviso', 'fim — pulado', { motivo: 'sem chave da Anthropic (env e Vault)' });
     return res.status(200).json({ ok: true, pulado: true, motivo: 'sem chave da Anthropic (env e Vault)' });
   }
-  const estados = await sg(`crm_sdr_estado?etapa=eq.dossie&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,agencia_motivo,dia_cadencia,dossie_id,crm_decisores:decisor_id(nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote}`);
-  if (estados === null) return erroLeitura('sdr-redacao', res, inicio, 'crm_sdr_estado');
   const cfg = await configSdr();
+  // Com o estrategista ligado, a redação só pega quem já tem tese (etapa 'estrategia').
+  const etapaIn = cfg.estrategista ? 'estrategia' : 'dossie';
+  const estados = await sg(`crm_sdr_estado?etapa=eq.${etapaIn}&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,agencia_motivo,dia_cadencia,dossie_id,canal,tese,refacoes,motivo,crm_decisores:decisor_id(id,nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote}`);
+  if (estados === null) return erroLeitura('sdr-redacao', res, inicio, 'crm_sdr_estado');
   const KV = await knowledgeVivo();
   const agora = new Date().toISOString();
 
@@ -1382,13 +1517,14 @@ async function jobSdrRedacao(req, res) {
     const empresa = est.crm_empresas || {};
     const agencia = Object.assign({ motivo: est.agencia_motivo }, est.crm_agencias || {});
     const sinais = (est.crm_dossies && est.crm_dossies.sinais) || [];
-    const canal = canalDoToque(est.dia_cadencia || 0, cfg.cadencia, decisor);
+    const tese = cfg.estrategista ? (est.tese || null) : null;
+    const canal = (tese && est.canal) || canalDoToque(est.dia_cadencia || 0, cfg.cadencia, decisor, cfg.mixWhatsapp);
     if (!canal) {
       semCanal++;
       await sp(`crm_sdr_estado?id=eq.${est.id}`, { etapa: 'avaliado', motivo: 'sem canal válido (nem e-mail nem WhatsApp)', atualizado_em: agora }, 'PATCH');
       return;
     }
-    const sinal = sinais[0] || null;
+    const sinal = (tese && sinais.find(s => s.url === tese.fato_url)) || sinais[0] || null;
     if (!sinal || !sinal.url) {
       semSinal++;
       await sp(`crm_sdr_estado?id=eq.${est.id}`, { etapa: 'avaliado', canal, motivo: 'sem sinal público com fonte: precisa de pesquisa manual', atualizado_em: agora }, 'PATCH');
@@ -1397,14 +1533,20 @@ async function jobSdrRedacao(req, res) {
     const caso = escolherCase(KV, { setor: [empresa.setor, empresa.setor_sugerido, empresa.segmento_detalhe].filter(Boolean).join(' '), sinalTipo: sinal.tipo, agenciaSlug: agencia.slug });
     const etapa = ETAPA_POR_DIA[est.dia_cadencia || 0] || 'etapa1';
 
-    const resultados = await Promise.all(cfg.angulos.map(async (angulo, i) => {
+    const caseUsado = tese ? (tese.prova ? (KV.cases_destaque || []).find(c => c.titulo && String(tese.prova).toLowerCase().includes(String(c.titulo).toLowerCase())) || null : null) : caso;
+    // Com tese: UMA versão (o ângulo já foi decidido). Na refação, o motivo da
+    // reprovação anterior vai junto. Sem tese: as 3 versões por ângulo de antes.
+    const angulos = tese ? ['tese'] : cfg.angulos;
+    const versaoBase = tese ? (Number(est.refacoes) || 0) : 0;
+    const feedback = tese && Number(est.refacoes) > 0 ? String(est.motivo || '').slice(0, 300) : '';
+    const resultados = await Promise.all(angulos.map(async (angulo, i) => {
       const { system, user } = construirPromptRedacao({
-        dossie: { sinais }, nome: decisor.nome, cargo: decisor.cargo, empresa, agencia, caso,
-        etapa: 'D' + (est.dia_cadencia || 0), canal, angulo, sinal,
+        dossie: { sinais }, nome: decisor.nome, cargo: decisor.cargo, empresa, agencia, caso: caseUsado,
+        etapa: 'D' + (est.dia_cadencia || 0), canal, angulo, sinal, tese, feedback,
         historicoToques: [], aprendizados: cfg.aprendizados, expressoesProibidas: cfg.proibidas
       });
-      const r = await gerarJSON({ system, user, schema: SCHEMA_MSG, effort: 'medium' });
-      return { angulo, versao: i + 1, ...r };
+      const r = await gerarJSON({ system, user, schema: SCHEMA_MSG, effort: 'medium', model: cfg.modeloRedacao });
+      return { angulo, versao: versaoBase + i + 1, ...r };
     }));
 
     let gravadas = 0;
@@ -1416,7 +1558,7 @@ async function jobSdrRedacao(req, res) {
         dossie_id: est.dossie_id, sinal_tipo: sinal.tipo, sinal_url: sinal.url, canal, etapa,
         dia_cadencia: est.dia_cadencia || 0, angulo: r.angulo, versao: r.versao,
         assunto: canal === 'email' ? (r.obj.assunto || '') : '', corpo: r.obj.corpo,
-        case_titulo: caso ? caso.titulo : null, modelo: r.modelo || MODELO_SDR,
+        case_titulo: caseUsado ? caseUsado.titulo : null, modelo: r.modelo || MODELO_SDR,
         tokens_prompt: r.usage.input_tokens || 0, tokens_resposta: r.usage.output_tokens || 0, custo_usd: r.custo || 0
       });
       if (ok) { gravadas++; versoes++; }
@@ -1447,13 +1589,13 @@ async function jobSdrQualidade(req, res) {
     await logCron('sdr-qualidade', 'aviso', 'fim — pulado', { motivo: 'sem chave da Anthropic (env e Vault)' });
     return res.status(200).json({ ok: true, pulado: true, motivo: 'sem chave da Anthropic (env e Vault)' });
   }
-  const estados = await sg(`crm_sdr_estado?etapa=eq.redigido&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,canal,dia_cadencia,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=atualizado_em.asc&limit=${lote}`);
+  const estados = await sg(`crm_sdr_estado?etapa=eq.redigido&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,canal,dia_cadencia,tese,refacoes,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=atualizado_em.asc&limit=${lote}`);
   if (estados === null) return erroLeitura('sdr-qualidade', res, inicio, 'crm_sdr_estado');
   const cfg = await configSdr();
   const KV = await knowledgeVivo();
   const agora = new Date().toISOString();
 
-  let avaliados = 0, aprovadosAuto = 0, retidos = 0, notas = [], custo = 0;
+  let avaliados = 0, aprovadosAuto = 0, retidos = 0, refeitos = 0, notas = [], custo = 0;
   await Promise.all((Array.isArray(estados) ? estados : []).map(async (est) => {
     const msgs = await sg(`crm_sdr_mensagens?estado_id=eq.${est.id}&nota_media=is.null&arquivada=eq.false&select=id,assunto,corpo,sinal_url,canal,angulo,versao,case_titulo,etapa,tokens_prompt,tokens_resposta,custo_usd,modelo&order=versao.asc`);
     if (!Array.isArray(msgs) || !msgs.length) return;
@@ -1463,7 +1605,7 @@ async function jobSdrQualidade(req, res) {
 
     const avaliacoes = await Promise.all(msgs.map(async (m) => {
       const { system, user } = construirPromptAvaliacao({ mensagem: m, dossie: { sinais }, empresa, cargo: decisor.cargo, nome: decisor.nome });
-      const r = await gerarJSON({ system, user, schema: SCHEMA_AVAL, effort: 'low' });
+      const r = await gerarJSON({ system, user, schema: SCHEMA_AVAL, effort: 'low', model: cfg.modeloQc });
       custo += r.custo || 0;
       const caso = m.case_titulo ? (KV.cases_destaque || []).find(c => c.titulo === m.case_titulo) || null : null;
       const chec = checagensCodigo({ mensagem: m, dossie: { sinais }, caso, decisor, empresa, canal: m.canal, expressoesProibidas: cfg.proibidas });
@@ -1481,18 +1623,38 @@ async function jobSdrQualidade(req, res) {
     // Melhor versão: aprovada primeiro, depois maior nota média.
     avaliacoes.sort((a, b) => (Number(b.dec.aprovado_autonomo) - Number(a.dec.aprovado_autonomo)) || (b.dec.nota_media - a.dec.nota_media));
     const melhor = avaliacoes[0];
+    // Fase 3: com o estrategista, reprovado volta UMA vez para a redação com o
+    // motivo do revisor (a tese continua a mesma). Só depois disso fica retido.
+    if (!melhor.dec.aprovado_autonomo && cfg.estrategista && est.tese && (Number(est.refacoes) || 0) < cfg.refacoesMax) {
+      refeitos++;
+      await sp(`crm_sdr_estado?id=eq.${est.id}`, {
+        etapa: 'estrategia', refacoes: (Number(est.refacoes) || 0) + 1,
+        motivo: (melhor.aval && melhor.aval.motivo ? melhor.aval.motivo + ' | ' : '') + melhor.dec.motivo.slice(0, 300),
+        atualizado_em: agora
+      }, 'PATCH');
+      return;
+    }
     notas.push(melhor.dec.nota_media);
     await sp(`crm_sdr_mensagens?id=eq.${melhor.m.id}`, { escolhida: true }, 'PATCH');
 
     const agencia = est.crm_agencias || {};
     const sinal = sinais.find(s => s.url === melhor.m.sinal_url) || sinais[0] || {};
+    const teseTxt = est.tese ? ` · tese: ${String(est.tese.cenario || '').slice(0, 160)} → ${String(est.tese.oportunidade || '').slice(0, 160)} (encaixe ${est.tese.nota_encaixe})` : '';
     const contexto = `${empresa.nome || ''} · ${decisor.nome || ''} · ${decisor.cargo || ''} · nota ${melhor.dec.nota_media} · ` +
       (melhor.dec.aprovado_autonomo ? 'QC aprovado' : 'QC retido: ' + melhor.dec.motivo.slice(0, 180)) +
-      ` · fato: ${(sinal.fato || '').slice(0, 120)} (${sinal.url || 's/fonte'})`;
+      ` · fato: ${(sinal.fato || '').slice(0, 120)} (${sinal.url || 's/fonte'})` + teseTxt;
     // Sombra: não cria item na fila do Pedro (nada fica disponível para envio).
-    const fila = est.sombra ? null : await spRet('crm_fila', {
+    // Modo rascunho (Fase 3): o aprovado no QC entra na fila já como 'aprovado',
+    // para virar rascunho no Outlook (rascunhos-matinais) e conversa pronta na aba
+    // WhatsApp. A aprovação do QC vale para CRIAR o rascunho, nunca para enviar:
+    // quem envia é sempre o Pedro (o Piloto continua desligado). Retido não entra.
+    const comoAprovado = cfg.modoRascunho && melhor.dec.aprovado_autonomo;
+    const tese = est.tese || null;
+    const fila = est.sombra || (cfg.modoRascunho && !melhor.dec.aprovado_autonomo) ? null : await spRet('crm_fila', {
       agencia_id: est.agencia_id, agencia_slug: agencia.slug || null, empresa_id: est.empresa_id, decisor_id: est.decisor_id,
-      canal: melhor.m.canal, etapa: melhor.m.etapa || 'etapa1', status: 'rascunho',
+      canal: melhor.m.canal, etapa: melhor.m.etapa || 'etapa1', status: comoAprovado ? 'aprovado' : 'rascunho',
+      aprovado_em: comoAprovado ? agora : null, origem: 'sdr',
+      tema: tese ? String(tese.alavanca || '').slice(0, 60) : null,
       etapa_cadencia: ({ 0: 1, 3: 2, 7: 3, 14: 4 })[est.dia_cadencia || 0] || 1,
       assunto: melhor.m.assunto || null, corpo: melhor.m.corpo,
       tokens_prompt: melhor.m.tokens_prompt, tokens_resposta: melhor.m.tokens_resposta, custo_usd: melhor.m.custo_usd,
@@ -1508,8 +1670,43 @@ async function jobSdrQualidade(req, res) {
   }));
 
   const notaMedia = notas.length ? Math.round((notas.reduce((a, b) => a + b, 0) / notas.length) * 10) / 10 : null;
-  const ctx = { leads: (estados || []).length, avaliados, aprovados_qc: aprovadosAuto, retidos, nota_media: notaMedia, custo_usd: Math.round(custo * 10000) / 10000, ms: Date.now() - inicio };
+  const ctx = { leads: (estados || []).length, avaliados, aprovados_qc: aprovadosAuto, retidos, refeitos, nota_media: notaMedia, custo_usd: Math.round(custo * 10000) / 10000, ms: Date.now() - inicio };
   await logCron('sdr-qualidade', nivelTrabalho(avaliados), 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
+// ── SDR: job sdr-calibrar-qc (Fase 3) ─────────────────────────────────────────
+// Reavalia com um modelo candidato (?modelo=) as mensagens já avaliadas pelo
+// Opus e mede a concordância na decisão aprovar/reter. Não grava nada nas
+// mensagens: só devolve o resultado e registra em crm_logs. Serve para trocar o
+// avaliador por um modelo mais barato sem perder rigor (troca só com >= 90%).
+async function jobSdrCalibrarQc(req, res) {
+  const inicio = Date.now();
+  const modelo = String(req.query.modelo || 'claude-haiku-5-5');
+  const lote = Math.max(1, Math.min(40, Number(req.query.lote) || 31));
+  const msgs = await sg(`crm_sdr_mensagens?escolhida=eq.true&arquivada=eq.false&nota_media=not.is.null&select=id,assunto,corpo,sinal_url,canal,case_titulo,aprovado_autonomo,decisor_id,crm_sdr_estado:estado_id(crm_decisores:decisor_id(nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor),crm_dossies:dossie_id(sinais))&order=criado_em.desc&limit=${lote}`);
+  if (msgs === null) return erroLeitura('sdr-calibrar-qc', res, inicio, 'crm_sdr_mensagens');
+  const cfg = await configSdr();
+  const KV = await knowledgeVivo();
+  let iguais = 0, total = 0, custo = 0, falsoAprova = 0, falsoRetem = 0;
+  await Promise.all((Array.isArray(msgs) ? msgs : []).map(async (m) => {
+    const est = m.crm_sdr_estado || {};
+    const decisor = est.crm_decisores || {}; const empresa = est.crm_empresas || {};
+    const sinais = (est.crm_dossies && est.crm_dossies.sinais) || [];
+    const { system, user } = construirPromptAvaliacao({ mensagem: m, dossie: { sinais }, empresa, cargo: decisor.cargo, nome: decisor.nome });
+    const r = await gerarJSON({ system, user, schema: SCHEMA_AVAL, effort: 'low', model: modelo });
+    custo += r.custo || 0;
+    if (!r.obj) return;
+    const caso = m.case_titulo ? (KV.cases_destaque || []).find(c => c.titulo === m.case_titulo) || null : null;
+    const chec = checagensCodigo({ mensagem: m, dossie: { sinais }, caso, decisor, empresa, canal: m.canal, expressoesProibidas: cfg.proibidas });
+    const dec = decisao(r.obj, chec, cfg.notaMinima);
+    total++;
+    if (!!dec.aprovado_autonomo === !!m.aprovado_autonomo) iguais++;
+    else if (dec.aprovado_autonomo) falsoAprova++; else falsoRetem++;
+  }));
+  const concordancia = total ? Math.round((iguais / total) * 1000) / 10 : null;
+  const ctx = { modelo, avaliadas: total, concordancia_pct: concordancia, aprova_o_que_opus_reteve: falsoAprova, retem_o_que_opus_aprovou: falsoRetem, custo_usd: Math.round(custo * 10000) / 10000, ms: Date.now() - inicio };
+  await logCron('sdr-calibrar-qc', 'info', 'fim', ctx);
   return res.status(200).json({ ok: true, ...ctx });
 }
 
@@ -1821,6 +2018,8 @@ export default async function handler(req, res) {
     if (job === 'fechamento-sexta')      return await jobFechamento(req, res);
     if (job === 'sdr-selecao')           return await jobSdrSelecao(req, res);
     if (job === 'sdr-dossie')            return await jobSdrDossie(req, res);
+    if (job === 'sdr-estrategia')        return await jobSdrEstrategia(req, res);
+    if (job === 'sdr-calibrar-qc')       return await jobSdrCalibrarQc(req, res);
     if (job === 'sdr-redacao')           return await jobSdrRedacao(req, res);
     if (job === 'sdr-qualidade')         return await jobSdrQualidade(req, res);
     if (job === 'sdr-respostas')         return await jobSdrRespostas(req, res);
