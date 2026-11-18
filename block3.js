@@ -3837,12 +3837,18 @@ function FilaDoDia() {
     return (editando[item.id]&&editando[item.id][f]!==undefined) ? editando[item.id][f] : (item[f]||'');
   }
 
+  // Tira a assinatura em texto do fim ("Pedro Ica" e, se houver, a linha da
+  // agência logo abaixo): a assinatura de verdade vem do Gmail/Outlook.
   function removerAssinatura(corpo) {
     var lines = (corpo||'').split('\n');
-    if (lines.length && lines[lines.length-1].trim()==='Pedro Ica') {
-      var end = lines.length-1;
-      while (end>0 && !lines[end-1].trim()) end--;
-      return lines.slice(0,end).join('\n');
+    for (var i = lines.length-1; i >= Math.max(0, lines.length-3); i--) {
+      var t = lines[i].trim().replace(/^(abra[çc]o|abs|att)[,.]?\s*/i, '');
+      if (/^pedro ica\b/i.test(t)) {
+        var end = i;
+        if (end>0 && /^(abra[çc]o|abs|att)[,.]?$/i.test(lines[end-1].trim())) end--;
+        while (end>0 && !lines[end-1].trim()) end--;
+        return lines.slice(0,end).join('\n');
+      }
     }
     return corpo||'';
   }
