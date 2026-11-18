@@ -3552,7 +3552,8 @@ function FilaDoDia() {
 
   const [fila,       setFila]       = useState(null);
   const [tail,       setTail]       = useState([]);
-  const [aba,        setAba]        = useState('email');
+  // A tela SDR pode pedir para abrir direto numa aba (ex.: WhatsApp em sequência).
+  const [aba,        setAba]        = useState(function(){ try { var t = localStorage.getItem('gh_fila_tab'); if (t) { localStorage.removeItem('gh_fila_tab'); return t; } } catch (_) {} return 'email'; });
   const [estrelas,   setEstrelas]   = useState({});
   const [metaDia,    setMetaDia]    = useState(50);
   const [envHoje,    setEnvHoje]    = useState(0);
@@ -5796,7 +5797,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'sdr' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(SdrView, null)) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'blocklist' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, typeof BlocklistView !== 'undefined' ? React.createElement(BlocklistView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Blocklist carregando...')) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'sdr' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(SdrView, { navTo: navTo })) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'blocklist' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, typeof BlocklistView !== 'undefined' ? React.createElement(BlocklistView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Blocklist carregando...')) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -6822,7 +6823,118 @@ function PausarTudoBtn() {
 // SDR (Blocos E, F, G) — uma tela para o Pedro: respostas para ler, amostra do
 // Modo Sombra (aprovar libera o botão de ligar o Piloto) e topo de funil
 // (aceitar/descartar candidatos). Nada aqui envia mensagem.
-function SdrView() {
+// Fase 3 (SDR) — "Seu dia": o que ficou pronto de madrugada e botões simples.
+// Nada aqui envia sozinho: "Enviar e-mails em lote" só roda com o clique e a
+// confirmação do Pedro, espaçando 60 a 120 s entre e-mails (entregabilidade).
+var SDR_TUTORIAL = [
+  ['1. De madrugada', 'Enquanto você dorme, o SDR escolhe as pessoas certas, lê as notícias de cada empresa, o estrategista decide se vale abordar e com qual tese (a blitz de planejamento estratégico), escreve a mensagem e um revisor dá nota. Só passa quem tem nota 8 ou mais.'],
+  ['2. Onde estão os rascunhos', 'E-mails: na pasta Rascunhos do seu Outlook, prontos. WhatsApp: na aba Fila → WhatsApp, com o texto pronto. Botão "Preparar rascunhos agora" faz a mesma coisa a qualquer hora.'],
+  ['3. Revisar e enviar', 'Leia, ajuste o que quiser e envie você mesmo. No WhatsApp use "▶ Sequência": abre uma conversa por vez já com o texto. Para mandar vários e-mails de uma vez: "Enviar e-mails em lote" (pede confirmação e espaça os envios).'],
+  ['4. Respostas e reuniões', 'Quem responde aparece em "Respostas para ler". Interesse vira oportunidade no Pipeline. Marque a reunião lá: é isso que mede a meta de 3 a 4 reuniões a cada 10 contatos.'],
+  ['5. Pausar tudo', 'O botão vermelho "Pausar tudo" (no topo) para qualquer coisa na hora. O sistema nunca envia nada sozinho enquanto o Piloto estiver desligado.']
+];
+function SdrSeuDia(props) {
+  var mono = "'IBM Plex Mono',monospace";
+  var _s = React.useState(null); var s = _s[0]; var setS = _s[1];
+  var _t = React.useState(function () { try { return !localStorage.getItem('gh_sdr_tutorial_visto'); } catch (_) { return false; } }); var tut = _t[0]; var setTut = _t[1];
+  var _p = React.useState(0); var passo = _p[0]; var setPasso = _p[1];
+  var _m = React.useState(''); var msg = _m[0]; var setMsg = _m[1];
+  var _e = React.useState(null); var envio = _e[0]; var setEnvio = _e[1];
+  var parar = React.useRef(false);
+  function arr(x) { return Array.isArray(x) ? x : []; }
+  function api(path, opts) {
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
+    return fetch(path, Object.assign({}, opts, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt } })).then(function (r) { return r.json(); });
+  }
+  function carregar() {
+    var hoje = new Date(Date.now() - 20 * 3600e3).toISOString();
+    Promise.all([
+      supaFetch('/rest/v1/crm_fila?origem=eq.sdr&status=eq.aprovado&apagado_em=is.null&select=id,canal,outlook_message_id,decisor_id,empresa_id,assunto,contexto_para_aprovacao,crm_decisores(nome),crm_empresas(nome)&order=aprovado_em.desc&limit=200'),
+      supaFetch('/rest/v1/crm_sdr_respostas?lida_pelo_pedro=eq.false&tipo=neq.auto_resposta&select=id&limit=100'),
+      supaFetch('/rest/v1/crm_configuracoes?chave=in.(sdr_demanda_ate,sdr_modo_rascunho,sdr_relogio_ativo)&select=chave,valor'),
+      api('/api/enrich?provider=graph-status').catch(function () { return { connected: false }; }),
+      supaFetch('/rest/v1/crm_fila?origem=eq.sdr&status=eq.enviado&enviado_em=gte.' + hoje + '&select=id&limit=200')
+    ]).then(function (r) {
+      var fila = arr(r[0]); var cfg = {}; arr(r[2]).forEach(function (x) { cfg[x.chave] = x.valor; });
+      setS({
+        emails: fila.filter(function (x) { return x.canal === 'email'; }),
+        prontos: fila.filter(function (x) { return x.canal === 'email' && x.outlook_message_id; }),
+        wa: fila.filter(function (x) { return x.canal === 'whatsapp'; }),
+        respostas: arr(r[1]).length, enviadosHoje: arr(r[4]).length, cfg: cfg, outlook: r[3] || { connected: false }
+      });
+    }).catch(function () { setS({ emails: [], prontos: [], wa: [], respostas: 0, enviadosHoje: 0, cfg: {}, outlook: { connected: false } }); });
+  }
+  React.useEffect(carregar, []);
+  function fecharTut() { try { localStorage.setItem('gh_sdr_tutorial_visto', '1'); } catch (_) {} setTut(false); setPasso(0); }
+  function preparar() {
+    setMsg('Preparando… o SDR leva de 10 a 30 minutos. Pode fechar a tela.');
+    supaFetch('/rest/v1/rpc/sdr_preparar_agora', { method: 'POST', body: '{}' }).then(function (r) {
+      if (r && r.ja_em_andamento) setMsg('Já está preparando (até ' + new Date(r.ate).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) + ').');
+      else if (r && r.ok) setMsg('Começou. Os rascunhos vão aparecendo no Outlook e na aba WhatsApp nos próximos minutos.');
+      else setMsg('Não deu para iniciar: ' + ((r && (r.message || r.error)) || 'erro'));
+      setTimeout(carregar, 4000);
+    });
+  }
+  function conectar() {
+    api('/api/enrich?provider=graph-init', { method: 'POST', body: '{}' }).then(function (d) {
+      if (d && d.authUrl) window.location.href = d.authUrl; else setMsg('Não deu para abrir o login da Microsoft: ' + ((d && d.error) || 'erro'));
+    });
+  }
+  function enviarLote() {
+    var lista = (s && s.prontos) || [];
+    if (!lista.length) { setMsg('Nenhum rascunho pronto no Outlook ainda.'); return; }
+    if (!window.confirm('Enviar ' + lista.length + ' e-mail(s) agora, um a cada 1 a 2 minutos? Mantenha esta tela aberta. Você pode parar a qualquer momento.')) return;
+    parar.current = false; var i = 0; setEnvio({ feitos: 0, total: lista.length });
+    (function prox() {
+      if (parar.current || i >= lista.length) { setEnvio(null); setMsg('Envio em lote: ' + i + ' e-mail(s) enviados.'); carregar(); return; }
+      var it = lista[i++];
+      api('/api/enrich?provider=graph-send', { method: 'POST', body: JSON.stringify({ fila_id: it.id, outlook_message_id: it.outlook_message_id, decisor_id: it.decisor_id, empresa_id: it.empresa_id, canal: 'email', assunto: it.assunto, contexto: it.contexto_para_aprovacao }) })
+        .catch(function () { return null; })
+        .then(function () { setEnvio({ feitos: i, total: lista.length }); if (i < lista.length && !parar.current) setTimeout(prox, 60000 + Math.random() * 60000); else prox(); });
+    })();
+  }
+  var card = { background: '#0d0d1a', border: '.5px solid #FF6B2B', borderRadius: 8, padding: 14, marginBottom: 14 };
+  var grande = function (txt, onClick, cor, tid, dis) {
+    return React.createElement('button', { 'data-testid': tid, onClick: onClick, disabled: !!dis, style: { fontFamily: mono, fontSize: 12, padding: '10px 14px', borderRadius: 6, border: '1px solid ' + (dis ? '#2D2D44' : cor), background: dis ? 'transparent' : cor + '22', color: dis ? '#555' : cor, cursor: dis ? 'not-allowed' : 'pointer', margin: '0 8px 8px 0' } }, txt);
+  };
+  var num = function (n, rot, cor) { return React.createElement('div', { style: { minWidth: 120 } }, React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 26, color: cor } }, String(n)), React.createElement('div', { style: { fontSize: 10, color: '#9B9BB4' } }, rot)); };
+  if (!s) return React.createElement('div', { style: card }, 'Carregando seu dia…');
+  var demanda = s.cfg.sdr_demanda_ate && new Date(s.cfg.sdr_demanda_ate) > new Date();
+  return React.createElement('div', { style: card, 'data-testid': 'sdr-seu-dia' },
+    React.createElement('div', { style: { display: 'flex', alignItems: 'center', marginBottom: 10 } },
+      React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 18, color: '#F5F5F5', flex: 1 } }, 'Seu dia'),
+      React.createElement('button', { 'data-testid': 'sdr-tutorial-abrir', onClick: function () { setTut(true); }, title: 'Como usar', style: { fontFamily: mono, fontSize: 12, width: 26, height: 26, borderRadius: 13, border: '.5px solid #60A5FA', background: 'transparent', color: '#60A5FA', cursor: 'pointer' } }, '?')),
+    React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 18, marginBottom: 12 } },
+      num(s.prontos.length, 'e-mails nos seus Rascunhos', '#60A5FA'),
+      num(s.emails.length - s.prontos.length, 'e-mails esperando o Outlook', '#9B9BB4'),
+      num(s.wa.length, 'WhatsApp prontos', '#34D399'),
+      num(s.respostas, 'respostas para ler', '#FBBF24'),
+      num(s.enviadosHoje, 'enviados hoje', '#818CF8')),
+    !s.outlook.connected && React.createElement('div', { style: { color: '#FBBF24', marginBottom: 8, fontSize: 11 } }, 'O Outlook não está conectado: os e-mails ficam esperando. Clique em "Conectar Outlook" e entre com a sua conta da Microsoft (uma vez só).'),
+    React.createElement('div', null,
+      grande(demanda ? 'Preparando rascunhos…' : 'Preparar rascunhos agora', preparar, '#FF6B2B', 'sdr-preparar', demanda),
+      s.outlook.connected
+        ? grande('Abrir Rascunhos no Outlook', function () { window.open('https://outlook.office.com/mail/drafts', '_blank'); }, '#60A5FA', 'sdr-abrir-outlook')
+        : grande('Conectar Outlook', conectar, '#60A5FA', 'sdr-conectar-outlook'),
+      grande('Abrir WhatsApp em sequência', function () { try { localStorage.setItem('gh_fila_tab', 'whatsapp'); } catch (_) {} props.navTo && props.navTo('fila'); }, '#34D399', 'sdr-whatsapp', !s.wa.length),
+      envio
+        ? grande('Parar envio (' + envio.feitos + '/' + envio.total + ')', function () { parar.current = true; }, '#E24B4A', 'sdr-parar-lote')
+        : grande('Enviar e-mails em lote (' + s.prontos.length + ')', enviarLote, '#818CF8', 'sdr-enviar-lote', !s.prontos.length)),
+    msg && React.createElement('div', { style: { color: '#34D399', fontSize: 11, marginTop: 4 } }, msg),
+    tut && React.createElement('div', { 'data-testid': 'sdr-tutorial', style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
+      React.createElement('div', { style: { background: '#0d0d1a', border: '.5px solid #FF6B2B', borderRadius: 10, padding: 20, maxWidth: 480, width: '100%', fontFamily: mono } },
+        React.createElement('div', { style: { fontSize: 10, color: '#9B9BB4', marginBottom: 6 } }, 'Como usar o SDR · passo ' + (passo + 1) + ' de ' + SDR_TUTORIAL.length),
+        React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 18, color: '#F5F5F5', marginBottom: 10 } }, SDR_TUTORIAL[passo][0]),
+        React.createElement('div', { style: { fontSize: 12, color: '#D0D0E0', lineHeight: 1.6, marginBottom: 16 } }, SDR_TUTORIAL[passo][1]),
+        React.createElement('div', { style: { display: 'flex', gap: 8 } },
+          passo > 0 && grande('Voltar', function () { setPasso(passo - 1); }, '#9B9BB4', 'sdr-tut-voltar'),
+          React.createElement('span', { style: { flex: 1 } }),
+          passo < SDR_TUTORIAL.length - 1
+            ? grande('Próximo', function () { setPasso(passo + 1); }, '#FF6B2B', 'sdr-tut-proximo')
+            : grande('Entendi', fecharTut, '#34D399', 'sdr-tut-fim')))));
+}
+
+function SdrView(props) {
   var mono = "'IBM Plex Mono',monospace";
   var _d = React.useState({ cfg: {}, resp: [], amostra: [], topo: [] }); var d = _d[0]; var setD = _d[1];
   var _l = React.useState(true); var loading = _l[0]; var setLoading = _l[1];
@@ -6893,6 +7005,7 @@ function SdrView() {
       React.createElement(PausarTudoBtn, null)
     ),
     msg && React.createElement('div', { style: { color: '#34D399', marginBottom: 10 } }, msg),
+    React.createElement(SdrSeuDia, { navTo: props && props.navTo }),
 
     React.createElement('div', { style: card }, h('Respostas para ler (' + d.resp.length + ')'),
       d.resp.length === 0 ? React.createElement('div', { style: { color: '#555' } }, 'Nenhuma resposta nova. Respostas nunca recebem retorno automático: são suas.') :
