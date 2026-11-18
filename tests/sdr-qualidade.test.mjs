@@ -41,5 +41,10 @@ ok(d.aprovado_autonomo === false && /risco/.test(d.motivo), 'risco alto → repr
 d = decisao({ aderencia: 9, especificidade: 9, naturalidade: 9, clareza: 9, risco: 1 }, { ok: false, falhas: ['forma: corpo curto'] }, 8);
 ok(d.aprovado_autonomo === false && /forma/.test(d.motivo), 'checagem de código reprovada → não aprova autônomo');
 
+const dz = decisao({ aderencia: 9, especificidade: 9, naturalidade: 9, clareza: 9, risco: 0, motivo: 'ok' }, { ok: true, falhas: [] }, 8);
+ok(dz.aprovado_autonomo && dz.risco === 0, 'risco 0 (sem risco) aprova, não vira 10');
+const dn = decisao({ aderencia: 9, especificidade: 9, naturalidade: 9, clareza: 9, motivo: 'ok' }, { ok: true, falhas: [] }, 8);
+ok(!dn.aprovado_autonomo && dn.risco === 10, 'risco ausente conta como máximo');
+
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
 process.exit(fail ? 1 : 0);
