@@ -344,3 +344,23 @@ HTML body referencia via `<img src="cid:assinatura001" width="520">`.
 8. `.env` é gitignored — nunca commit.
 9. `MS_CLIENT_ID` vai apenas em variável de ambiente Vercel.
 10. Nunca logar access_token ou refresh_token em nenhum arquivo.
+
+---
+
+## Gmail — rascunhos, respostas e envio em lote
+
+O Outlook (Graph) depende de aprovação do TI da Galeria; o e-mail do SDR roda pelo Gmail do Pedro.
+
+- **Credenciais do app Google:** env `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` ou, se faltarem, Vault (`google_client_id` / `google_client_secret`), lidos pela RPC `sdr_google_oauth()` (só service_role).
+- **App OAuth no Google Cloud:**
+  - Tipo "Aplicativo da Web", redirect `https://galeria-holding-sage.vercel.app/api/enrich`.
+  - Tela de consentimento **publicada (Em produção)**: em modo Teste o refresh token expira em 7 dias.
+  - Escopos `gmail.compose`, `gmail.readonly`, `openid`, `email`.
+- **Providers em `api/enrich.js`:** `gmail-init`, `gmail-status`, `gmail-disconnect` e `gmail-send`. Todos exigem o JWT do usuário; o segredo do cron não envia. O callback é o mesmo `/api/enrich`, com state `gmailoauth_…`.
+- **Tokens:** em `crm_oauth_tokens` com `provider='google'` (RLS restritivo), nunca no front.
+- **`lib/gmail-token.js`:** token/refresh, MIME, assinatura padrão do Gmail (`settings/sendAs`), criar e enviar rascunho, ler a caixa.
+- **Crons:**
+  - `rascunhos-matinais` cria o rascunho no Gmail quando conectado (senão, Outlook). Usa a assinatura do Gmail e põe cópia de `crm_configuracoes.email_copia` (`email_copia_tipo`: bcc|cc).
+  - `sdr-respostas` lê a caixa do Gmail (cursor `sdr_inbox_cursor_gmail`).
+- O id do rascunho fica em `crm_fila.outlook_message_id` e o link em `outlook_draft_link` (colunas reaproveitadas).
+- **Regra 3 continua:** o rascunho é criado sozinho; o envio só sai com o clique do Pedro ("Enviar e-mails em lote", com confirmação).

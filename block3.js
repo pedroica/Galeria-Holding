@@ -20,6 +20,9 @@ const {
       localStorage.setItem('gh_graph_error', p.get('graph_error'));
       history.replaceState({}, '', window.location.pathname);
     }
+    // Retorno do Google (Gmail): mesmo esquema, vai para a aba SDR.
+    if (p.get('gmail_connected') === '1') { localStorage.setItem('gh_gmail_ok', '1'); history.replaceState({}, '', window.location.pathname); }
+    if (p.get('gmail_error')) { localStorage.setItem('gh_gmail_error', p.get('gmail_error')); history.replaceState({}, '', window.location.pathname); }
   } catch(e) {}
 })();
 
@@ -5478,7 +5481,7 @@ function App() {
   // Auto-navega para Fila quando retorna do OAuth Microsoft
   useEffect(() => {
     try {
-      if (localStorage.getItem('gh_graph_admin_ok')) navTo('sdr', null, null);
+      if (localStorage.getItem('gh_graph_admin_ok') || localStorage.getItem('gh_gmail_ok') || localStorage.getItem('gh_gmail_error')) navTo('sdr', null, null);
       else if (localStorage.getItem('gh_graph_connected') || localStorage.getItem('gh_graph_error')) navTo('fila', null, null);
     } catch(e) {}
   }, []);
@@ -6858,7 +6861,7 @@ function PausarTudoBtn() {
 // confirmação do Pedro, espaçando 60 a 120 s entre e-mails (entregabilidade).
 var SDR_TUTORIAL = [
   ['1. De madrugada', 'Enquanto você dorme, o SDR escolhe as pessoas certas, lê as notícias de cada empresa, o estrategista decide se vale abordar e com qual tese (a blitz de planejamento estratégico), escreve a mensagem e um revisor dá nota. Só passa quem tem nota 8 ou mais.'],
-  ['2. Onde estão os rascunhos', 'E-mails: botão "Abrir e-mails prontos" (aba Fila → Email). Cada um abre no Gmail ou no Outlook do navegador já com destinatário, assunto, texto e cópia oculta para o seu e-mail da Galeria. WhatsApp: aba Fila → WhatsApp, com o texto pronto. "Preparar rascunhos agora" faz tudo isso a qualquer hora.'],
+  ['2. Onde estão os rascunhos', 'E-mails: com o Gmail conectado, na sua pasta Rascunhos do Gmail, com a sua assinatura e cópia oculta para o e-mail da Galeria (botão "Abrir Rascunhos no Gmail"). Sem conectar, "Abrir e-mails prontos" abre cada um no Gmail já preenchido. WhatsApp: aba Fila → WhatsApp, com o texto pronto. "Preparar rascunhos agora" faz tudo isso a qualquer hora.'],
   ['3. Revisar e enviar', 'Leia, ajuste o que quiser e envie você mesmo. No WhatsApp use "▶ Sequência": abre uma conversa por vez já com o texto. Na Fila, atalhos: O abre, E marca como enviado, P pula. Escolha Gmail ou Outlook na engrenagem da Fila.'],
   ['4. Respostas e reuniões', 'Quem responde aparece em "Respostas para ler". Interesse vira oportunidade no Pipeline. Marque a reunião lá: é isso que mede a meta de 3 a 4 reuniões a cada 10 contatos.'],
   ['5. Pausar tudo', 'O botão vermelho "Pausar tudo" (no topo) para qualquer coisa na hora. O sistema nunca envia nada sozinho enquanto o Piloto estiver desligado.']
@@ -6883,16 +6886,18 @@ function SdrSeuDia(props) {
       supaFetch('/rest/v1/crm_sdr_respostas?lida_pelo_pedro=eq.false&tipo=neq.auto_resposta&select=id&limit=100'),
       supaFetch('/rest/v1/crm_configuracoes?chave=in.(sdr_demanda_ate,sdr_modo_rascunho,sdr_relogio_ativo)&select=chave,valor'),
       api('/api/enrich?provider=graph-status').catch(function () { return { connected: false }; }),
+      api('/api/enrich?provider=gmail-status').catch(function () { return { connected: false }; }),
       supaFetch('/rest/v1/crm_fila?origem=eq.sdr&status=eq.enviado&enviado_em=gte.' + hoje + '&select=id&limit=200')
     ]).then(function (r) {
+      r = [r[0], r[1], r[2], r[3], r[5], r[4]];   // [fila, respostas, cfg, outlook, enviados, gmail]
       var fila = arr(r[0]); var cfg = {}; arr(r[2]).forEach(function (x) { cfg[x.chave] = x.valor; });
       setS({
         emails: fila.filter(function (x) { return x.canal === 'email'; }),
         prontos: fila.filter(function (x) { return x.canal === 'email' && x.outlook_message_id; }),
         wa: fila.filter(function (x) { return x.canal === 'whatsapp'; }),
-        respostas: arr(r[1]).length, enviadosHoje: arr(r[4]).length, cfg: cfg, outlook: r[3] || { connected: false }
+        respostas: arr(r[1]).length, enviadosHoje: arr(r[4]).length, cfg: cfg, outlook: r[3] || { connected: false }, gmail: r[5] || { connected: false }
       });
-    }).catch(function () { setS({ emails: [], prontos: [], wa: [], respostas: 0, enviadosHoje: 0, cfg: {}, outlook: { connected: false } }); });
+    }).catch(function () { setS({ emails: [], prontos: [], wa: [], respostas: 0, enviadosHoje: 0, cfg: {}, outlook: { connected: false }, gmail: { connected: false } }); });
   }
   React.useEffect(carregar, []);
   function fecharTut() { try { localStorage.setItem('gh_sdr_tutorial_visto', '1'); } catch (_) {} setTut(false); setPasso(0); }
@@ -6911,6 +6916,9 @@ function SdrSeuDia(props) {
       var er = localStorage.getItem('gh_graph_error');
       if (er) { localStorage.removeItem('gh_graph_error'); setMsg('A Microsoft recusou a conexão: ' + er); }
       if (localStorage.getItem('gh_graph_admin_ok')) { localStorage.removeItem('gh_graph_admin_ok'); setMsg('Aprovado pelo administrador. Agora clique uma vez em "Conectar Outlook".'); }
+      if (localStorage.getItem('gh_gmail_ok')) { localStorage.removeItem('gh_gmail_ok'); setMsg('Gmail conectado. Os próximos e-mails aparecem prontos na sua pasta Rascunhos do Gmail.'); }
+      var ge = localStorage.getItem('gh_gmail_error');
+      if (ge) { localStorage.removeItem('gh_gmail_error'); setMsg('O Google recusou a conexão: ' + ge); }
     } catch (_) {}
   }, []);
   function conectar() {
@@ -6921,6 +6929,15 @@ function SdrSeuDia(props) {
       else { setConectando(false); setMsg('Não deu para abrir o login da Microsoft: ' + ((d && d.error) || 'erro')); }
     }).catch(function () { setConectando(false); setMsg('Erro de rede ao abrir a Microsoft. Tente de novo.'); });
   }
+  var _cg = React.useState(false); var conectandoG = _cg[0]; var setConectandoG = _cg[1];
+  function conectarGmail() {
+    if (conectandoG) return;
+    setConectandoG(true); setMsg('Abrindo o Google…');
+    api('/api/enrich?provider=gmail-init', { method: 'POST', body: '{}' }).then(function (d) {
+      if (d && d.authUrl) window.location.href = d.authUrl;
+      else { setConectandoG(false); setMsg((d && d.error) || 'Não deu para abrir o login do Google.'); }
+    }).catch(function () { setConectandoG(false); setMsg('Erro de rede ao abrir o Google. Tente de novo.'); });
+  }
   function enviarLote() {
     var lista = (s && s.prontos) || [];
     if (!lista.length) { setMsg('Nenhum rascunho pronto no Outlook ainda.'); return; }
@@ -6929,7 +6946,7 @@ function SdrSeuDia(props) {
     (function prox() {
       if (parar.current || i >= lista.length) { setEnvio(null); setMsg('Envio em lote: ' + i + ' e-mail(s) enviados.'); carregar(); return; }
       var it = lista[i++];
-      api('/api/enrich?provider=graph-send', { method: 'POST', body: JSON.stringify({ fila_id: it.id, outlook_message_id: it.outlook_message_id, decisor_id: it.decisor_id, empresa_id: it.empresa_id, canal: 'email', assunto: it.assunto, contexto: it.contexto_para_aprovacao }) })
+      api('/api/enrich?provider=' + (s.gmail && s.gmail.connected ? 'gmail-send' : 'graph-send'), { method: 'POST', body: JSON.stringify({ fila_id: it.id, outlook_message_id: it.outlook_message_id, decisor_id: it.decisor_id, empresa_id: it.empresa_id, canal: 'email', assunto: it.assunto, contexto: it.contexto_para_aprovacao }) })
         .catch(function () { return null; })
         .then(function () { setEnvio({ feitos: i, total: lista.length }); if (i < lista.length && !parar.current) setTimeout(prox, 60000 + Math.random() * 60000); else prox(); });
     })();
@@ -6946,21 +6963,27 @@ function SdrSeuDia(props) {
       React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 18, color: '#F5F5F5', flex: 1 } }, 'Seu dia'),
       React.createElement('button', { 'data-testid': 'sdr-tutorial-abrir', onClick: function () { setTut(true); }, title: 'Como usar', style: { fontFamily: mono, fontSize: 12, width: 26, height: 26, borderRadius: 13, border: '.5px solid #60A5FA', background: 'transparent', color: '#60A5FA', cursor: 'pointer' } }, '?')),
     React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 18, marginBottom: 12 } },
-      s.outlook.connected ? num(s.prontos.length, 'e-mails nos seus Rascunhos', '#60A5FA') : num(s.emails.length, 'e-mails prontos para abrir', '#60A5FA'),
+      s.gmail.connected ? num(s.prontos.length, 'e-mails nos seus Rascunhos do Gmail', '#60A5FA')
+        : s.outlook.connected ? num(s.prontos.length, 'e-mails nos seus Rascunhos', '#60A5FA') : num(s.emails.length, 'e-mails prontos para abrir', '#60A5FA'),
+      (s.gmail.connected || s.outlook.connected) && s.emails.length > s.prontos.length ? num(s.emails.length - s.prontos.length, 'e-mails virando rascunho', '#9B9BB4') : null,
       num(s.wa.length, 'WhatsApp prontos', '#34D399'),
       num(s.respostas, 'respostas para ler', '#FBBF24'),
       num(s.enviadosHoje, 'enviados hoje', '#818CF8')),
-    !s.outlook.connected && React.createElement('div', { style: { color: '#9B9BB4', marginBottom: 8, fontSize: 11 } }, 'Os e-mails abrem prontos (destinatário, assunto e texto) no Gmail ou no Outlook do navegador, com cópia para o seu e-mail da Galeria. Você revisa e clica em Enviar.'),
+    s.gmail.connected && React.createElement('div', { style: { color: '#34D399', marginBottom: 8, fontSize: 11 } }, 'Gmail conectado' + (s.gmail.email ? ' (' + s.gmail.email + ')' : '') + ': os e-mails aprovados viram rascunho no seu Gmail, com a sua assinatura e cópia oculta para o e-mail da Galeria. Nada sai sem você.'),
+    !s.gmail.connected && !s.outlook.connected && React.createElement('div', { style: { color: '#9B9BB4', marginBottom: 8, fontSize: 11 } }, 'Os e-mails abrem prontos (destinatário, assunto e texto) no Gmail, com cópia para o seu e-mail da Galeria. Conecte o Gmail para recebê-los já na pasta Rascunhos.'),
     React.createElement('div', null,
       grande(demanda ? 'Preparando rascunhos…' : 'Preparar rascunhos agora', preparar, '#FF6B2B', 'sdr-preparar', demanda),
-      s.outlook.connected
+      s.gmail.connected
+        ? grande('Abrir Rascunhos no Gmail', function () { window.open('https://mail.google.com/mail/u/0/#drafts', '_blank'); }, '#60A5FA', 'sdr-abrir-gmail')
+        : s.outlook.connected
         ? grande('Abrir Rascunhos no Outlook', function () { window.open('https://outlook.office.com/mail/drafts', '_blank'); }, '#60A5FA', 'sdr-abrir-outlook')
         : grande('Abrir e-mails prontos', function () { try { localStorage.setItem('gh_fila_tab', 'email'); } catch (_) {} props.navTo && props.navTo('fila'); }, '#60A5FA', 'sdr-abrir-emails', !s.emails.length),
+      !s.gmail.connected && !s.outlook.connected && grande(conectandoG ? 'Abrindo o Google…' : 'Conectar Gmail', conectarGmail, '#FBBF24', 'sdr-conectar-gmail', conectandoG),
       grande('Abrir WhatsApp em sequência', function () { try { localStorage.setItem('gh_fila_tab', 'whatsapp'); } catch (_) {} props.navTo && props.navTo('fila'); }, '#34D399', 'sdr-whatsapp', !s.wa.length),
-      !s.outlook.connected ? null : envio
+      !(s.outlook.connected || s.gmail.connected) ? null : envio
         ? grande('Parar envio (' + envio.feitos + '/' + envio.total + ')', function () { parar.current = true; }, '#E24B4A', 'sdr-parar-lote')
         : grande('Enviar e-mails em lote (' + s.prontos.length + ')', enviarLote, '#818CF8', 'sdr-enviar-lote', !s.prontos.length)),
-    !s.outlook.connected && React.createElement('div', { style: { marginTop: 2 } },
+    !s.outlook.connected && !s.gmail.connected && React.createElement('div', { style: { marginTop: 2 } },
       React.createElement('a', { href: '#', 'data-testid': 'sdr-conectar-outlook', onClick: function (e) { e.preventDefault(); conectar(); }, style: { color: '#555', fontSize: 10 } }, conectando ? 'Abrindo a Microsoft…' : 'Conectar Outlook (opcional: rascunhos na pasta e envio em lote)')),
     msg && React.createElement('div', { style: { color: '#34D399', fontSize: 11, marginTop: 4 } }, msg),
     tut && React.createElement('div', { 'data-testid': 'sdr-tutorial', style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
