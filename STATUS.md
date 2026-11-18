@@ -211,3 +211,4 @@ Ainda não há leads aceitos, então o custo por **lead aceito** só existe depo
   - Marca com nome de palavra comum ou curta (Reserva, Vivo, Azul, Tigre…) só conta com a forma de marca: inicial maiúscula, e não "Reserva de emergência".
   - Nome de duas palavras com a primeira arriscada (Porto Seguro, Cacau Show) só vale com o nome completo.
   - Porquê: um fato de outra coisa com o mesmo nome é o pior erro possível numa mensagem que promete "vi que vocês…".
+- **Seleção não pega de novo quem já entrou no fluxo nos últimos 14 dias** (motivo `ja_em_curso`). Porquê: a chave do estado é por dia, então no dia seguinte os mesmos leads seriam selecionados de novo; quem ficou sem fato voltaria todo dia. 14 dias é a validade do dossiê, depois disso vale tentar de novo com notícia nova.
