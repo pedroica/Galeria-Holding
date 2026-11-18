@@ -62,6 +62,7 @@ globalThis.fetch = async (url, opts = {}) => {
   if (metodo !== 'GET' && !u.includes('crm_logs')) escritas.push({ u, metodo, body });
   if (u.includes('crm_logs')) return json([]);
   if (u.includes('crm_configuracoes') && metodo === 'GET') return json(CFG);
+  if (u.includes('crm_oauth_tokens') && u.includes('provider=eq.google')) return json([]);   // Gmail não conectado neste teste
   if (u.includes('crm_oauth_tokens')) return json([{ id: 't', access_token: 'tok', refresh_token: 'r', expires_at: new Date(Date.now() + 3600e3).toISOString(), account_email: 'pedro@galeria.ag' }]);
   if (u.includes('crm_sdr_estado') && metodo === 'GET') return json(u.includes('etapa=eq.agendado') ? ESTADOS_AGENDADOS : ESTADOS_RASCUNHO);
   if (u.includes('crm_decisores') && metodo === 'GET') return json(u.includes('wa=like') ? (u.includes('77776666') ? [{ id: 'dp', nome: 'Paula', wa: '5511977776666', empresa_id: 'ep' }] : []) : [{ id: 'd1', nome: 'Ana Souza', email: 'ana@acme.com', email_valido: true, wa: null, opt_out: false, respondeu: false }]);

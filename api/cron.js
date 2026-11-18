@@ -22,6 +22,7 @@ import { aplicarResposta } from '../lib/sdr-acoes.js';
 import { podeEnviar, slotsDoDia, proximoPasso, corpoFinal, htmlDeTexto, horaBRT, tetoEmailHoje } from '../lib/sdr-envio.js';
 import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTemplate } from '../lib/canais-envio.js';
 import { obterTokenGraph } from '../lib/graph-token.js';
+import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail } from '../lib/gmail-token.js';
 import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
 import { tokenSdrValido } from '../lib/sdr-auth.js';
 import { crossSell, sinaisDeCompra } from '../lib/sdr-topo.js';
@@ -938,8 +939,19 @@ async function jobRascunhosMatinais(req, res) {
   const falhas = [];
   await logCron('rascunhos-matinais', 'info', 'início', null);
 
+  // Gmail conectado tem prioridade: o rascunho vai para Rascunhos do Gmail, com a
+  // assinatura padrão dele e a cópia (Cco) de crm_configuracoes.email_copia.
+  // Só cria rascunho; enviar continua exigindo o clique do Pedro (gmail-send).
+  const gmail = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null);
+  let copia = null;
+  if (gmail) {
+    const cc = await sg('crm_configuracoes?chave=in.(email_copia,email_copia_tipo)&select=chave,valor');
+    const m = {}; for (const r of (Array.isArray(cc) ? cc : [])) m[r.chave] = r.valor;
+    if (typeof m.email_copia === 'string' && m.email_copia.includes('@')) copia = { email: m.email_copia, tipo: m.email_copia_tipo === 'cc' ? 'cc' : 'bcc' };
+  }
+
   const credencial = (process.env.CRON_SECRET || '').trim() || (SUPA_KEY || '').trim();
-  if (!credencial) {
+  if (!gmail && !credencial) {
     const ctx = { motivo: 'sem_credencial_para_chamar_enrich' };
     await logCron('rascunhos-matinais', 'aviso', 'fim — pulado', ctx);
     return res.status(200).json({ ok: true, pulado: true, ...ctx });
@@ -979,6 +991,21 @@ async function jobRascunhosMatinais(req, res) {
   for (const item of lista) {
     if (Date.now() - inicio > LIMITE_MS) break;
     const tentativa = (Number(item.rascunho_tentativas) || 0) + 1;
+    if (gmail) {
+      try {
+        const d = await criarRascunhoGmail(gmail.token, {
+          para: item.crm_decisores.email, assunto: item.assunto || '', corpo: item.corpo || '',
+          cco: copia && copia.tipo === 'bcc' ? copia.email : null, cc: copia && copia.tipo === 'cc' ? copia.email : null
+        });
+        await sp('crm_fila?id=eq.' + item.id + '&outlook_message_id=is.null', { outlook_message_id: d.id, rascunho_criado_em: new Date().toISOString(), outlook_draft_link: d.link, rascunho_erro: null }, 'PATCH');
+        criados++;
+      } catch (e) {
+        falhas.push({ fila_id: item.id, erro: String(e.message).slice(0, 200) });
+        await sp('crm_fila?id=eq.' + item.id, { rascunho_erro: ('gmail: ' + String(e.message)).slice(0, 500), rascunho_tentativas: tentativa }, 'PATCH');
+      }
+      await new Promise(r => setTimeout(r, 150));
+      continue;
+    }
     try {
       const r = await fetch(BASE_URL + '/api/enrich?provider=graph-draft', {
         method: 'POST',
@@ -1007,7 +1034,7 @@ async function jobRascunhosMatinais(req, res) {
   }
 
   const ctx = {
-    criados, pulados, candidatos: lista.length, pausado, teto,
+    provedor: gmail ? 'gmail' : 'outlook', criados, pulados, candidatos: lista.length, pausado, teto,
     falhas: falhas.slice(0, 10), ms: Date.now()-inicio
   };
   console.log('[cron:rascunhos-matinais]', criados, 'rascunhos de', lista.length, 'candidatos');
@@ -1745,18 +1772,31 @@ async function jobSdrRespostas(req, res) {
   const inicio = Date.now();
   const lote = Math.max(1, Math.min(100, Number(req.query.lote) || 50));
   await logCron('sdr-respostas', 'info', 'início', { lote });
-  const t = await obterTokenGraph({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY });
+  // Gmail conectado: lê a caixa do Gmail (cursor próprio). Senão, Outlook.
+  const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null);
+  const t = gm || await obterTokenGraph({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY });
   if (!t) {
-    await logCron('sdr-respostas', 'aviso', 'fim — pulado', { motivo: 'Outlook não conectado (crm_oauth_tokens sem refresh_token)' });
-    return res.status(200).json({ ok: true, pulado: true, motivo: 'Outlook não conectado' });
+    await logCron('sdr-respostas', 'aviso', 'fim — pulado', { motivo: 'nem Gmail nem Outlook conectado' });
+    return res.status(200).json({ ok: true, pulado: true, motivo: 'nem Gmail nem Outlook conectado' });
   }
-  const cur = await sg('crm_configuracoes?chave=eq.sdr_inbox_cursor&select=valor&limit=1');
+  const chaveCursor = gm ? 'sdr_inbox_cursor_gmail' : 'sdr_inbox_cursor';
+  const cur = await sg('crm_configuracoes?chave=eq.' + chaveCursor + '&select=valor&limit=1');
   const desde = (Array.isArray(cur) && cur[0] && typeof cur[0].valor === 'string') ? cur[0].valor : new Date(Date.now() - 2 * 86400000).toISOString();
   const url = 'https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages?$top=' + lote +
     '&$orderby=receivedDateTime asc&$select=id,conversationId,subject,from,receivedDateTime,bodyPreview' +
     '&$filter=' + encodeURIComponent('receivedDateTime gt ' + desde);
   let msgs = [];
-  try {
+  if (gm) {
+    try {
+      const lidas = await lerEntradaGmail(gm.token, { desdeISO: desde, max: lote });
+      // Mesmo formato do Graph, para o resto do job não mudar. after: do Gmail é por
+      // segundo; o que já foi visto é descartado pela chave única do id.
+      msgs = lidas.filter(m => m.recebidoEm > desde).map(m => ({ id: 'gmail:' + m.id, conversationId: m.threadId, subject: m.assunto, from: { emailAddress: { address: m.remetente } }, receivedDateTime: m.recebidoEm, bodyPreview: m.preview }));
+    } catch (e) {
+      await logCron('sdr-respostas', 'error', 'fim — Gmail recusou a leitura', { erro: String(e.message || e).slice(0, 200) });
+      return res.status(502).json({ ok: false, erro: 'gmail_' + (e.status || 'erro') });
+    }
+  } else try {
     const r = await fetch(url, { headers: { Authorization: 'Bearer ' + t.token } });
     if (!r.ok) {
       await logCron('sdr-respostas', 'error', 'fim — Graph recusou a leitura', { status: r.status });
@@ -1795,7 +1835,7 @@ async function jobSdrRespostas(req, res) {
     if (r.oportunidade_criada) cont.oportunidades++;
   }
 
-  if (ultimo !== desde) await spUpsert('crm_configuracoes', { chave: 'sdr_inbox_cursor', valor: ultimo }, 'chave');
+  if (ultimo !== desde) await spUpsert('crm_configuracoes', { chave: chaveCursor, valor: ultimo }, 'chave');
   const paraPedro = cont.interesse + cont.indicacao + cont.nao_agora + cont.indefinido + cont.opt_out;
   const ctx = { ...cont, para_o_pedro_ler: paraPedro, ms: Date.now() - inicio };
   await logCron('sdr-respostas', paraPedro > 0 ? 'aviso' : nivelTrabalho(msgs.length), paraPedro > 0 ? `fim — ${paraPedro} resposta(s) para o Pedro ler` : 'fim', ctx);

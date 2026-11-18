@@ -42,6 +42,7 @@ globalThis.fetch = async (url, opts = {}) => {
   const u = decodeURIComponent(String(url)); const metodo = (opts.method || 'GET').toUpperCase();
   const body = opts.body && typeof opts.body === 'string' && opts.body.startsWith('{') ? JSON.parse(opts.body) : null;
   if (metodo !== 'GET' && !u.includes('crm_logs')) escritas.push({ u, metodo, body });
+  if (u.includes('crm_oauth_tokens') && u.includes('provider=eq.google')) return json([]);   // Gmail não conectado neste teste
   if (u.includes('crm_oauth_tokens')) return json([{ id: 't1', access_token: 'tok', refresh_token: 'r', expires_at: new Date(Date.now() + 3600e3).toISOString(), account_email: 'pedro@galeria.ag' }]);
   if (u.startsWith('https://graph.microsoft.com')) return json({ value: INBOX });
   if (u.includes('crm_logs')) return json([]);

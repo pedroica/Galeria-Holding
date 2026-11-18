@@ -7,6 +7,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { classificarResposta } from '../lib/sdr-respostas.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
+import { GMAIL_SCOPE, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, credenciaisGoogle, obterTokenGmail, gmailReq, criarRascunhoGmail, enviarRascunhoGmail } from '../lib/gmail-token.js';
 
 const HUNTER_KEY      = process.env.HUNTER_KEY;
 const LUSHA_KEY       = process.env.LUSHA_KEY;
@@ -243,12 +244,50 @@ async function handleOAuthCallback(req, res) {
   }
 }
 
+
+// ─── Gmail: callback do OAuth do Google (state 'gmailoauth_…') ───────────────
+async function handleGmailCallback(req, res) {
+  const { code, state, error } = req.query;
+  const CRM_ROOT = 'https://galeria-holding-sage.vercel.app';
+  if (error) return res.redirect(302, CRM_ROOT + '?gmail_error=' + encodeURIComponent(error));
+  try {
+    const rows = await supaReq('/rest/v1/crm_oauth_tokens?provider=eq.google&pkce_state=eq.' + encodeURIComponent(state) + '&select=id');
+    const row = rows && rows[0];
+    if (!row) return res.redirect(302, CRM_ROOT + '?gmail_error=state_not_found');
+    const cred = await credenciaisGoogle({ supaUrl: SUPA_URL, serviceKey: SUPA_SVC });
+    if (!cred) return res.redirect(302, CRM_ROOT + '?gmail_error=google_nao_configurado');
+    const tr = await fetch(GOOGLE_TOKEN_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ client_id: cred.id, client_secret: cred.sec, code, grant_type: 'authorization_code', redirect_uri: REDIRECT_URI }).toString()
+    });
+    const td = await tr.json().catch(() => ({}));
+    if (!td.access_token) return res.redirect(302, CRM_ROOT + '?gmail_error=' + encodeURIComponent(td.error_description || td.error || 'troca_do_codigo_falhou'));
+    let email = '';
+    try { const pf = await gmailReq('GET', '/profile', null, td.access_token); email = pf.emailAddress || ''; } catch (_) {}
+    await supaReq('/rest/v1/crm_oauth_tokens?id=eq.' + row.id, {
+      method: 'PATCH', headers: { 'Prefer': 'return=minimal' },
+      body: JSON.stringify({
+        account_email: email, access_token: td.access_token, refresh_token: td.refresh_token || null,
+        expires_at: new Date(Date.now() + (td.expires_in || 3600) * 1000).toISOString(),
+        pkce_state: null, pkce_verifier: null, updated_at: new Date().toISOString()
+      })
+    });
+    if (!td.refresh_token) return res.redirect(302, CRM_ROOT + '?gmail_error=sem_refresh_token');
+    return res.redirect(302, CRM_ROOT + '?gmail_connected=1');
+  } catch (e) {
+    return res.redirect(302, CRM_ROOT + '?gmail_error=' + encodeURIComponent(String(e && e.message || e).slice(0, 200)));
+  }
+}
+
 // ─── Main handler ────────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const { provider, health } = req.query;
 
   // ── OAuth callback: Microsoft redireciona aqui com code+state ──────────────
+  if (req.method === 'GET' && req.query.state && String(req.query.state).startsWith('gmailoauth_')) {
+    return handleGmailCallback(req, res);
+  }
   if (req.method === 'GET' && req.query.code && req.query.state) {
     return handleOAuthCallback(req, res);
   }
@@ -590,6 +629,60 @@ export default async function handler(req, res) {
     } catch (e) {
       return res.status(502).json({ error: 'Erro ao conectar com Lusha: ' + String(e) });
     }
+  }
+
+
+  // ── Gmail (Google OAuth) ──────────────────────────────────────────────────
+  // Nunca envia sozinho: gmail-send exige o JWT do usuário (clique do Pedro).
+  // Rascunhos de madrugada são criados pelo cron direto pela lib, não por aqui.
+  if (provider && provider.startsWith('gmail')) {
+    if (!SUPA_SVC) return res.status(500).json({ error: 'SUPA_CRM_SERVICE_KEY não configurado.' });
+    const authed = await verifyUserJwt((req.headers.authorization || '').replace('Bearer ', ''));
+    if (!authed) return res.status(401).json({ error: 'Não autenticado no CRM.' });
+    const ctxG = { supaUrl: SUPA_URL, serviceKey: SUPA_SVC };
+
+    if (provider === 'gmail-init') {
+      const cred = await credenciaisGoogle(ctxG);
+      if (!cred) return res.status(503).json({ error: 'App do Google ainda não configurado (google_client_id / google_client_secret no Vault).' });
+      const state = 'gmailoauth_' + randomBytes(24).toString('hex');
+      await supaReq('/rest/v1/crm_oauth_tokens', { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ provider: 'google', pkce_state: state }) });
+      const authUrl = GOOGLE_AUTH_URL + '?' + new URLSearchParams({
+        client_id: cred.id, redirect_uri: REDIRECT_URI, response_type: 'code', scope: GMAIL_SCOPE,
+        access_type: 'offline', prompt: 'consent', include_granted_scopes: 'true', state
+      }).toString();
+      return res.status(200).json({ authUrl });
+    }
+    if (provider === 'gmail-status') {
+      try {
+        const cred = await credenciaisGoogle(ctxG);
+        const t = await obterTokenGmail(ctxG);
+        return res.status(200).json({ configurado: !!cred, connected: !!t, email: t ? t.email : null });
+      } catch (_) { return res.status(200).json({ connected: false }); }
+    }
+    if (provider === 'gmail-disconnect') {
+      await supaReq('/rest/v1/crm_oauth_tokens?provider=eq.google&refresh_token=not.is.null', { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ access_token: null, refresh_token: null, expires_at: null, updated_at: new Date().toISOString() }) });
+      return res.status(200).json({ disconnected: true });
+    }
+    if (provider === 'gmail-send') {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+      const { fila_id, outlook_message_id, decisor_id, empresa_id, assunto, contexto } = body;
+      if (!fila_id || !outlook_message_id) return res.status(400).json({ error: 'fila_id e outlook_message_id obrigatórios' });
+      const item = await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id + '&select=status,outlook_message_id');
+      if (!item || !item[0] || item[0].status !== 'aprovado' || item[0].outlook_message_id !== outlook_message_id) return res.status(400).json({ error: 'Item não está aprovado ou o rascunho não confere' });
+      const t = await obterTokenGmail(ctxG);
+      if (!t) return res.status(503).json({ error: 'Gmail não conectado' });
+      try { await enviarRascunhoGmail(t.token, outlook_message_id); }
+      catch (e) {
+        await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ rascunho_erro: String(e.message).slice(0, 300) }) });
+        return res.status(502).json({ error: e.message });
+      }
+      const now = new Date().toISOString();
+      await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ status: 'enviado', enviado_em: now, rascunho_erro: null }) });
+      await supaReq('/rest/v1/crm_toques', { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ decisor_id, empresa_id, canal: 'email', direcao: 'enviado', assunto: (assunto || '').slice(0, 500), resumo: (contexto || '').slice(0, 500), data: now, fonte: 'gmail', resultado: 'sem_resposta' }) });
+      if (decisor_id) await supaReq('/rest/v1/crm_decisores?id=eq.' + decisor_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ ultimo_toque_em: now }) });
+      return res.status(200).json({ enviado: true, enviado_em: now });
+    }
+    return res.status(400).json({ error: 'provider gmail desconhecido' });
   }
 
   // ── Microsoft Graph ───────────────────────────────────────────────────────
