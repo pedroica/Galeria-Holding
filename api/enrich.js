@@ -45,7 +45,16 @@ function supaReq(path, opts) {
       'Authorization': 'Bearer ' + SUPA_SVC,
       'Content-Type': 'application/json'
     }, opts && opts.headers)
-  })).then(function(r) { return r.ok ? r.json() : r.json().then(function(e){throw e;}); });
+  })).then(function(r) {
+    // Prefer: return=minimal devolve corpo vazio (201/204): não dá para r.json().
+    // Antes isso derrubava o graph-init depois de gravar o state, e o botão
+    // "Conectar Outlook" nunca recebia o link da Microsoft.
+    return r.text().then(function(t) {
+      var j = null; if (t) { try { j = JSON.parse(t); } catch (_) { j = { raw: t }; } }
+      if (!r.ok) throw (j || { status: r.status });
+      return j;
+    });
+  });
 }
 
 async function verifyUserJwt(token) {
