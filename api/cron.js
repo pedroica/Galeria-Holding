@@ -1150,13 +1150,16 @@ async function jobSdrSelecao(req, res) {
   const primeirosContatoSemana = [...new Set((Array.isArray(filaSemana) ? filaSemana : []).map(r => r.empresa_id).filter(Boolean))];
 
   // Bloco G: candidatos de topo de funil aceitos pelo Pedro passam à frente.
+  const corteCurso = new Date(Date.now() - 14 * 86400000).toISOString();
+  const cursoRows = await sg(`crm_sdr_estado?criado_em=gte.${corteCurso}&etapa=neq.aguardando&select=decisor_id&limit=10000`);
+  const emCurso = new Set((Array.isArray(cursoRows) ? cursoRows : []).map(r => r.decisor_id));
   const topoRows = await sg('crm_sdr_topo?status=eq.aceito&empresa_id=not.is.null&select=empresa_id,fonte,agencia_slug,motivo&limit=1000');
   const topoAceitos = {};
   for (const t of (Array.isArray(topoRows) ? topoRows : [])) topoAceitos[t.empresa_id] = t;
 
   const sombra = await modoSombra();
   const { lote, upsell, excluidos, total_elegiveis } = selecionarLote({
-    candidatos, estrelas, blocklist, toquesEmpresa30d, dossies, agencias, topoAceitos,
+    candidatos, estrelas, blocklist, toquesEmpresa30d, dossies, agencias, topoAceitos, emCurso,
     primeirosContatoSemana, config: { lote_max: loteMax }, agora: Date.now()
   });
 

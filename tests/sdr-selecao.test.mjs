@@ -71,5 +71,12 @@ console.log('\nFila própria por empresa (intercalação)');
   ok(r2.lote.length === 3, 'intercalação pode ser desligada');
 }
 
+console.log('\nNão reseleciona quem já está no fluxo');
+{
+  const mk = (id) => ({ id: 'd' + id, nome: 'N' + id, empresa_id: 'e' + id, email: id + '@x.com', crm_empresas: { nome: 'Emp' + id }, ultimo_toque_em: null });
+  const r = selecionarLote({ candidatos: [mk(1), mk(2)], agencias: [{ slug: 'holding', id: 'h' }], emCurso: new Set(['d1']), config: { lote_max: 5 }, agora: Date.now() });
+  ok(r.lote.length === 1 && r.lote[0].decisor_id === 'd2' && r.excluidos.some(x => x.motivo === 'ja_em_curso'), 'quem tem estado recente fica de fora (ja_em_curso)');
+}
+
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
 process.exit(fail ? 1 : 0);
