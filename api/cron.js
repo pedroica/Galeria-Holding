@@ -1351,7 +1351,7 @@ async function gerarJSON({ system, user, schema, effort, model }) {
 }
 
 async function configSdr() {
-  const rows = await sg('crm_configuracoes?chave=in.(sdr_expressoes_proibidas,sdr_aprendizados,sdr_angulos,sdr_cadencia,sdr_qualidade_nota_minima,sdr_rodada,sdr_estrategista,sdr_modelo_estrategia,sdr_modelo_redacao,sdr_modelo_qc,sdr_oferta_blitz,sdr_nota_encaixe_min,sdr_modo_rascunho,sdr_mix_whatsapp,sdr_refacoes_max)&select=chave,valor');
+  const rows = await sg('crm_configuracoes?chave=in.(sdr_expressoes_proibidas,sdr_aprendizados,sdr_angulos,sdr_cadencia,sdr_qualidade_nota_minima,sdr_rodada,sdr_estrategista,sdr_modelo_estrategia,sdr_modelo_redacao,sdr_modelo_qc,sdr_oferta_blitz,sdr_nota_encaixe_min,sdr_modo_rascunho,sdr_mix_whatsapp,sdr_refacoes_max,sdr_effort_estrategia,sdr_effort_redacao)&select=chave,valor');
   const m = {}; for (const r of (Array.isArray(rows) ? rows : [])) m[r.chave] = r.valor;
   return {
     proibidas: Array.isArray(m.sdr_expressoes_proibidas) ? m.sdr_expressoes_proibidas : null,
@@ -1369,7 +1369,10 @@ async function configSdr() {
     notaEncaixeMin: Number(m.sdr_nota_encaixe_min) || 8,
     modoRascunho: m.sdr_modo_rascunho === true || m.sdr_modo_rascunho === 'true',
     mixWhatsapp: Math.max(0, Math.min(1, Number(m.sdr_mix_whatsapp) || 0)),
-    refacoesMax: m.sdr_refacoes_max === undefined ? 1 : Math.max(0, Number(m.sdr_refacoes_max) || 0)
+    refacoesMax: m.sdr_refacoes_max === undefined ? 1 : Math.max(0, Number(m.sdr_refacoes_max) || 0),
+    // Esforço de raciocínio por etapa (o raciocínio é a maior parte do custo).
+    effortEstrategia: ['low', 'medium', 'high'].includes(m.sdr_effort_estrategia) ? m.sdr_effort_estrategia : 'medium',
+    effortRedacao: ['low', 'medium', 'high'].includes(m.sdr_effort_redacao) ? m.sdr_effort_redacao : 'medium'
   };
 }
 
@@ -1465,7 +1468,7 @@ async function jobSdrEstrategia(req, res) {
       agenciaSugerida: est.crm_agencias ? { slug: est.crm_agencias.slug, motivo: est.agencia_motivo } : null,
       notaMin: cfg.notaEncaixeMin
     });
-    const r = await gerarJSON({ system, user, schema: SCHEMA_ESTRATEGIA, effort: 'medium', model: cfg.modeloEstrategia });
+    const r = await gerarJSON({ system, user, schema: SCHEMA_ESTRATEGIA, effort: cfg.effortEstrategia, model: cfg.modeloEstrategia });
     custo += r.custo || 0;
     if (!r.obj) {
       falhas++;
@@ -1545,7 +1548,7 @@ async function jobSdrRedacao(req, res) {
         etapa: 'D' + (est.dia_cadencia || 0), canal, angulo, sinal, tese, feedback,
         historicoToques: [], aprendizados: cfg.aprendizados, expressoesProibidas: cfg.proibidas
       });
-      const r = await gerarJSON({ system, user, schema: SCHEMA_MSG, effort: 'medium', model: cfg.modeloRedacao });
+      const r = await gerarJSON({ system, user, schema: SCHEMA_MSG, effort: tese ? cfg.effortRedacao : 'medium', model: cfg.modeloRedacao });
       return { angulo, versao: versaoBase + i + 1, ...r };
     }));
 
