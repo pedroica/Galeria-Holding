@@ -42,5 +42,17 @@ ok(/Acme/.test(d.resumo), 'resumo cita a empresa');
 const vazio = montarDossie({ id: 'e2', nome: 'SemNews' }, []);
 ok(vazio.tem_sinal === false && /Sem sinal/.test(vazio.resumo), 'empresa sem notícia → tem_sinal=false');
 
+console.log('\nDossiê — a notícia é mesmo da empresa (homônimos)');
+{
+  const { mencionaEmpresa } = await import('../lib/sdr-dossie.js');
+  const casos = [['RESERVA','Prefeitura contrata motorista reserva',false],['RESERVA','Reserva lança coleção de verão',true],['RESERVA','Reserva de emergência: como montar',false],
+    ['VIVO','Ao vivo: jogo do Brasil',false],['VIVO','Vivo lança plano 5G',true],['LOJAS RENNER','Lojas Americanas fecha unidades',false],['LOJAS RENNER','Renner lança coleção',true],
+    ['PORTO SEGURO S A','Porto Alegre recebe evento',false],['PORTO SEGURO S A','Porto Seguro lucra R$ 889 milhões',true],['CACAU SHOW','Preço do cacau dispara',false],
+    ['O BOTICARIO','O Boticário faz ação de Natal',true],['ADIDAS','adidas apresenta nova camisa',true]];
+  for (const [n, x, e] of casos) ok(mencionaEmpresa({ nome: n }, x) === e, `${n}: "${x}" → ${e}`);
+  const d = montarDossie({ id: 'r', nome: 'RESERVA' }, [{ titulo: 'Prefeitura lança edital para motorista reserva', url: 'https://x/m', fonte: 'G1', data: new Date().toISOString(), resumo: 'A prefeitura lança edital.' }]);
+  ok(d.sinais.length === 0, 'dossiê do Reserva não usa a notícia do motorista reserva');
+}
+
 console.log('\n' + pass + ' passaram, ' + fail + ' falharam');
 process.exit(fail ? 1 : 0);
