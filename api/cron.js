@@ -1692,6 +1692,7 @@ async function jobSdrCalibrarQc(req, res) {
   const cfg = await configSdr();
   const KV = await knowledgeVivo();
   let iguais = 0, total = 0, custo = 0, falsoAprova = 0, falsoRetem = 0;
+  const motivos = {};
   await Promise.all((Array.isArray(msgs) ? msgs : []).map(async (m) => {
     const est = m.crm_sdr_estado || {};
     const decisor = est.crm_decisores || {}; const empresa = est.crm_empresas || {};
@@ -1705,10 +1706,14 @@ async function jobSdrCalibrarQc(req, res) {
     const dec = decisao(r.obj, chec, cfg.notaMinima);
     total++;
     if (!!dec.aprovado_autonomo === !!m.aprovado_autonomo) iguais++;
-    else if (dec.aprovado_autonomo) falsoAprova++; else falsoRetem++;
+    else if (dec.aprovado_autonomo) falsoAprova++;
+    else {
+      falsoRetem++;
+      for (const mm of String(dec.motivo || '').split(' | ')) { const k = mm.replace(/\d+/g, 'N').slice(0, 90); motivos[k] = (motivos[k] || 0) + 1; }
+    }
   }));
   const concordancia = total ? Math.round((iguais / total) * 1000) / 10 : null;
-  const ctx = { modelo, avaliadas: total, concordancia_pct: concordancia, aprova_o_que_opus_reteve: falsoAprova, retem_o_que_opus_aprovou: falsoRetem, custo_usd: Math.round(custo * 10000) / 10000, ms: Date.now() - inicio };
+  const ctx = { modelo, avaliadas: total, concordancia_pct: concordancia, aprova_o_que_opus_reteve: falsoAprova, retem_o_que_opus_aprovou: falsoRetem, motivos_retencao: Object.entries(motivos).sort((a, b) => b[1] - a[1]).slice(0, 8), custo_usd: Math.round(custo * 10000) / 10000, ms: Date.now() - inicio };
   await logCron('sdr-calibrar-qc', 'info', 'fim', ctx);
   return res.status(200).json({ ok: true, ...ctx });
 }
