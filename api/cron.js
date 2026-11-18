@@ -1350,6 +1350,15 @@ async function gerarJSON({ system, user, schema, effort, model }) {
   }
 }
 
+// Primeiro item sozinho, o resto em paralelo: a primeira chamada grava o cache do
+// system prompt e as outras já o leem (em paralelo puro, todas gravam e nenhuma lê).
+async function emOndas(lista, fn) {
+  const arr = Array.isArray(lista) ? lista : [];
+  if (!arr.length) return;
+  await fn(arr[0]);
+  await Promise.all(arr.slice(1).map(fn));
+}
+
 async function configSdr() {
   const rows = await sg('crm_configuracoes?chave=in.(sdr_expressoes_proibidas,sdr_aprendizados,sdr_angulos,sdr_cadencia,sdr_qualidade_nota_minima,sdr_rodada,sdr_estrategista,sdr_modelo_estrategia,sdr_modelo_redacao,sdr_modelo_qc,sdr_oferta_blitz,sdr_nota_encaixe_min,sdr_modo_rascunho,sdr_mix_whatsapp,sdr_refacoes_max,sdr_effort_estrategia,sdr_effort_redacao)&select=chave,valor');
   const m = {}; for (const r of (Array.isArray(rows) ? rows : [])) m[r.chave] = r.valor;
@@ -1446,7 +1455,7 @@ async function jobSdrEstrategia(req, res) {
   const agora = new Date().toISOString();
 
   let avaliados = 0, seguem = 0, descartados = 0, semSinal = 0, semCanal = 0, falhas = 0, custo = 0;
-  await Promise.all((Array.isArray(estados) ? estados : []).map(async (est) => {
+  await emOndas(estados, async (est) => {
     const decisor = est.crm_decisores || {};
     const empresa = est.crm_empresas || {};
     const sinais = ((est.crm_dossies && est.crm_dossies.sinais) || []).filter(s => s && s.url);
@@ -1487,7 +1496,7 @@ async function jobSdrEstrategia(req, res) {
       etapa: v.seguir ? 'estrategia' : 'avaliado', canal, tese, nota_encaixe: Number(tese.nota_encaixe) || 0,
       motivo: v.motivo.slice(0, 500), atualizado_em: agora
     }, agenciaId ? { agencia_id: agenciaId } : {}), 'PATCH');
-  }));
+  });
 
   const ctx = { leads: (estados || []).length, avaliados, seguem, descartados, sem_sinal: semSinal, sem_canal: semCanal, falhas, custo_usd: Math.round(custo * 10000) / 10000, ms: Date.now() - inicio };
   await logCron('sdr-estrategia', nivelTrabalho(avaliados + semSinal + semCanal), 'fim', ctx);
@@ -1515,7 +1524,7 @@ async function jobSdrRedacao(req, res) {
   const agora = new Date().toISOString();
 
   let redigidos = 0, versoes = 0, semSinal = 0, semCanal = 0, falhas = 0, custo = 0;
-  await Promise.all((Array.isArray(estados) ? estados : []).map(async (est) => {
+  await emOndas(estados, async (est) => {
     const decisor = est.crm_decisores || {};
     const empresa = est.crm_empresas || {};
     const agencia = Object.assign({ motivo: est.agencia_motivo }, est.crm_agencias || {});
@@ -1572,7 +1581,7 @@ async function jobSdrRedacao(req, res) {
     } else {
       await sp(`crm_sdr_estado?id=eq.${est.id}`, { tentativas: 1, ultimo_erro: (resultados.find(x => x.erro) || {}).erro || 'sem versão válida', atualizado_em: agora }, 'PATCH');
     }
-  }));
+  });
 
   const ctx = { leads: (estados || []).length, redigidos, versoes, sem_sinal: semSinal, sem_canal: semCanal, falhas, custo_usd: Math.round(custo * 10000) / 10000, ms: Date.now() - inicio };
   await logCron('sdr-redacao', nivelTrabalho(redigidos), 'fim', ctx);
@@ -1599,7 +1608,7 @@ async function jobSdrQualidade(req, res) {
   const agora = new Date().toISOString();
 
   let avaliados = 0, aprovadosAuto = 0, retidos = 0, refeitos = 0, notas = [], custo = 0;
-  await Promise.all((Array.isArray(estados) ? estados : []).map(async (est) => {
+  await emOndas(estados, async (est) => {
     const msgs = await sg(`crm_sdr_mensagens?estado_id=eq.${est.id}&nota_media=is.null&arquivada=eq.false&select=id,assunto,corpo,sinal_url,canal,angulo,versao,case_titulo,etapa,tokens_prompt,tokens_resposta,custo_usd,modelo&order=versao.asc`);
     if (!Array.isArray(msgs) || !msgs.length) return;
     const decisor = est.crm_decisores || {};
@@ -1670,7 +1679,7 @@ async function jobSdrQualidade(req, res) {
       motivo: melhor.dec.aprovado_autonomo ? 'QC aprovado (aguarda Piloto ou toque do Pedro)' : melhor.dec.motivo.slice(0, 500),
       atualizado_em: agora
     }, 'PATCH');
-  }));
+  });
 
   const notaMedia = notas.length ? Math.round((notas.reduce((a, b) => a + b, 0) / notas.length) * 10) / 10 : null;
   const ctx = { leads: (estados || []).length, avaliados, aprovados_qc: aprovadosAuto, retidos, refeitos, nota_media: notaMedia, custo_usd: Math.round(custo * 10000) / 10000, ms: Date.now() - inicio };
