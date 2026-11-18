@@ -199,3 +199,15 @@ Ainda não há leads aceitos, então o custo por **lead aceito** só existe depo
   5. Proibido apelido.
   - A rodada 1 é arquivada (`arquivada=true`), não apagada. Porquê: a regra é refazer o prompt se a reprovação passar de 30%.
 - **Custo real:** ~US$ 0,026 por versão redigida (1.900 tokens de entrada, 950 de saída, incluindo o raciocínio do modelo) e ~US$ 0,01 por avaliação. Por lead com fato: 3 versões + 3 avaliações ≈ US$ 0,11 ≈ R$ 0,58. A estimativa da fase 1 (R$ 440/mês) estava baixa no custo por chamada, mas só lead com fato vai para o modelo (28%). Na meta de ~1.700 leads selecionados por mês, isso dá ~480 leads com fato × R$ 0,58 ≈ **R$ 280/mês**, dentro do teto de R$ 500.
+
+## Fase 2: Modo Sombra, rodada 2 e correção de homônimo
+
+- **Rodada 2 completa:** 17 leads com fato, **10 aprovados no QC e 7 retidos (41%)**, nota média 8,2.
+  - Aprovados em 5 empresas do grupo: A.gente, Catalyst, Galeria, Holding e Vitrine.
+  - Dos 7 retidos, 3 foram redigidos antes das guardas do PR #32 (assunto longo, humor com dieta, gancho de RH) e voltam para a fila.
+  - 3 são retenções legítimas: erro de português, mensagem genérica e uma data inventada que o QC pegou.
+  - 1 era **bug do dossiê**: a notícia de "motorista reserva" foi usada como fato da marca Reserva.
+- **Correção: o dossiê só usa notícia que cita a empresa de verdade.**
+  - Marca com nome de palavra comum ou curta (Reserva, Vivo, Azul, Tigre…) só conta com a forma de marca: inicial maiúscula, e não "Reserva de emergência".
+  - Nome de duas palavras com a primeira arriscada (Porto Seguro, Cacau Show) só vale com o nome completo.
+  - Porquê: um fato de outra coisa com o mesmo nome é o pior erro possível numa mensagem que promete "vi que vocês…".
