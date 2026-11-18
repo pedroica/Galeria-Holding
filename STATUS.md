@@ -247,3 +247,39 @@ Ainda não há leads aceitos, então o custo por **lead aceito** só existe depo
 - **Os 9 retidos são legítimos.** Nenhum vem de bug: são notas 7 em especificidade ou naturalidade, risco alto em 2 casos (ex.: abrir com notícia negativa), e o QC está fazendo o papel dele. Não mexi no prompt de novo. Porquê: a reprovação já está abaixo de 30% e afrouxar o QC aumenta risco de reputação.
 - **Premissa do funil atualizada:** a aprovação no QC medida é 71% (22 de 31), igual à premissa de 70%. O fato público ficou em 26%, perto dos 28% da rodada 2. A conta reversa (≈ 225 leads e 132 e-mails por reunião) continua valendo.
 - **A amostra está na tela SDR** (aba SDR → Amostra), com dossiê, trecho da fonte, case e notas. Nada foi para `crm_fila` (sombra) e nada foi enviado.
+
+## Fase 3: estrategista, modo rascunho e Gmail (18/11)
+
+**No ar** (PRs #35 a #41 e a correção do pipeline):
+- **Estrategista** (`sdr-estrategia`):
+  - Monta a tese por lead: cenário, dor do cargo, alavanca, oferta (blitz de planejamento estratégico) e prova verificável.
+  - Só encaixe 8 ou mais segue para a redação.
+  - Na amostra de 10 leads com fato: 3 seguiram (GetNinjas, Beleza na Web, Sephora). Os outros foram descartados com motivo (fato fraco, timing de Natal, conflito com cliente concorrente).
+- **Redação:**
+  - 1 versão por lead (eram 3); refaz uma vez se o QC reprovar.
+  - Esforço `low` na redação e no estrategista: US$ 0,015 por mensagem, contra US$ 0,026 por versão antes.
+- **QC:**
+  - Continua no Opus com esforço baixo.
+  - Calibração do Sonnet: 32% de concordância com o Opus. Ele é mais rígido (retém por especificidade ou naturalidade 7) e nunca aprovou o que o Opus reteve. Porquê de não trocar: o critério é diferente, não é ruído.
+  - Haiku: mesma rigidez.
+  - Bug corrigido: risco 0 virava 10 e reprovava a mensagem.
+- **Modo rascunho ligado** (`sdr_modo_rascunho=true`, `sdr_modo_sombra=false`, `sdr_relogio_ativo=true`, `sdr_lote_max=80`):
+  - O aprovado no QC entra na Fila como `aprovado`, com `origem='sdr'`.
+  - **Piloto continua desligado. Nada é enviado pelo sistema.**
+  - Porquê: o Pedro quer acordar com rascunhos; ele revisa e envia cada um.
+- **E-mail pelo Gmail:**
+  - O Outlook não conecta: o tenant exige o TI, e o Pedro não é admin.
+  - A Fila abre cada e-mail pronto no Gmail, com Cco para pedro.ica@galeriaholding.co.
+  - A assinatura vem da assinatura padrão do Gmail; o "Pedro Ica" em texto é tirado do corpo.
+  - Porquê Cco e não Cc: o destinatário não vê o endereço duplicado num primeiro contato.
+  - Limite conhecido: a resposta chega no Gmail (a cópia oculta não recebe resposta) e o `sdr-respostas` não lê o Gmail. Por enquanto, a resposta é marcada na Fila.
+- **Bug do pipeline:**
+  - `sdr_pipeline_tick()` falhava com `malformed array literal` (`disparos || 'x'`) e desfazia as chamadas ao `sdr_invoke`.
+  - O "Preparar rascunhos agora" de 14:14 não andou por isso.
+  - Corrigido com `array_append` (`db/migrations/2026-11-18_sdr_pipeline_array_fix.sql`).
+- **Bug do Conectar Outlook:** `supaReq` fazia `r.json()` em 201 sem corpo, então o login da Microsoft nunca abria. Corrigido, com teste.
+- **Volume do primeiro dia:** os 13 aprovados no QC no Modo Sombra (rodadas 2-3, nota 8 ou mais) foram para a Fila (12 e-mails, 1 WhatsApp). Mais os 40 leads em fluxo, processados hoje.
+
+**Pendente:**
+- Medir o custo por mensagem aprovada no modo novo depois da primeira noite (alvo: menos de R$ 0,30).
+- Taxa de reunião por segmento (cross-sell, sinal, frio) a partir das marcações do Pedro.
