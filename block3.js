@@ -3574,6 +3574,16 @@ function FilaDoDia() {
   const [filtAg,     setFiltAg]     = useState('');
   const [filtEt,     setFiltEt]     = useState('');
   const [outlookMode,setOutlookMode]= useState(localStorage.getItem('gh_fila_outlook')||'outlook');
+  // Cópia do e-mail enviado (crm_configuracoes.email_copia, ex.: o endereço da Galeria)
+  // e onde abrir por padrão (crm_configuracoes.email_abrir_em: outlook | gmail | mailto).
+  const [copiaEmail, setCopiaEmail] = useState({ email: '', tipo: 'bcc' });
+  useEffect(function(){
+    sj('/rest/v1/crm_configuracoes?chave=in.(email_copia,email_copia_tipo,email_abrir_em)&select=chave,valor').then(function(rows){
+      var m = {}; (Array.isArray(rows)?rows:[]).forEach(function(r){ m[r.chave] = r.valor; });
+      setCopiaEmail({ email: typeof m.email_copia === 'string' ? m.email_copia : '', tipo: m.email_copia_tipo === 'cc' ? 'cc' : 'bcc' });
+      if (!localStorage.getItem('gh_fila_outlook') && ['outlook','gmail','mailto'].indexOf(m.email_abrir_em) >= 0) setOutlookMode(m.email_abrir_em);
+    }).catch(function(){});
+  }, []);
   const [cfgOpen,    setCfgOpen]    = useState(false);
   const [notif,      setNotif]      = useState(null);
   const [tick,       setTick]       = useState(0);
@@ -3837,17 +3847,28 @@ function FilaDoDia() {
     return corpo||'';
   }
 
+  // Parâmetro de cópia (Cco por padrão: o destinatário não vê).
+  function copiaParam(sep) {
+    if (!copiaEmail.email) return '';
+    return sep + copiaEmail.tipo + '=' + encodeURIComponent(copiaEmail.email);
+  }
+  function linkCurto(email, assunto) {
+    if (outlookMode==='gmail') return 'https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+encodeURIComponent(assunto)+copiaParam('&');
+    if (outlookMode==='mailto') return 'mailto:'+encodeURIComponent(email)+'?subject='+encodeURIComponent(assunto)+copiaParam('&');
+    return 'https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(email)+'&subject='+encodeURIComponent(assunto)+copiaParam('&');
+  }
   function buildLink(email, assunto, corpo) {
     var subj = encodeURIComponent(assunto);
     if (outlookMode==='mailto') {
       var bodyEncMail = corpo.replace(/\r?\n/g,'%0D%0A');
       if (bodyEncMail.length > 1800) return null;
-      return 'mailto:'+encodeURIComponent(email)+'?subject='+subj+'&body='+bodyEncMail;
+      return 'mailto:'+encodeURIComponent(email)+'?subject='+subj+'&body='+bodyEncMail+copiaParam('&');
     }
-    // Outlook Web deeplink: encode body fully including newlines
     var bodyEnc = encodeURIComponent(corpo);
     if (bodyEnc.length > 1800) return null;
-    return 'https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(email)+'&subject='+subj+'&body='+bodyEnc;
+    if (outlookMode==='gmail') return 'https://mail.google.com/mail/?view=cm&fs=1&to='+encodeURIComponent(email)+'&su='+subj+'&body='+bodyEnc+copiaParam('&');
+    // Outlook Web deeplink: encode body fully including newlines
+    return 'https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(email)+'&subject='+subj+'&body='+bodyEnc+copiaParam('&');
   }
 
   function markAberto(item) {
@@ -3887,9 +3908,7 @@ function FilaDoDia() {
       markAberto(item);
       if (!link) {
         if (navigator.clipboard) navigator.clipboard.writeText(corpo);
-        var shortLink = outlookMode==='mailto'
-          ? 'mailto:'+encodeURIComponent(d.email)+'?subject='+encodeURIComponent(assunto)
-          : 'https://outlook.office.com/mail/deeplink/compose?to='+encodeURIComponent(d.email)+'&subject='+encodeURIComponent(assunto);
+        var shortLink = linkCurto(d.email, assunto);
         window.open(shortLink,'_blank','noopener,noreferrer');
         notify('📋 Corpo copiado — cole no e-mail.','#EF9F27');
       } else {
@@ -4028,7 +4047,7 @@ function FilaDoDia() {
 
   function abrirLabel(item){
     var etapaN=Number(item.etapa_cadencia)||1;
-    if (aba==='email') return etapaN>=2?'📋 Copiar + Localizar Thread':'✉ Abrir no Outlook';
+    if (aba==='email') return etapaN>=2?'📋 Copiar + Localizar Thread':(outlookMode==='gmail'?'✉ Abrir no Gmail':outlookMode==='mailto'?'✉ Abrir no e-mail':'✉ Abrir no Outlook');
     if (aba==='whatsapp') return '💬 Abrir no WhatsApp';
     return '🔗 Copiar nota + Abrir LinkedIn';
   }
@@ -4116,7 +4135,8 @@ function FilaDoDia() {
       // Painel de config
       cfgOpen&&React.createElement('div',{style:{background:'#0f1623',border:'.5px solid #2D2D44',borderRadius:4,padding:'8px 12px',marginBottom:5}},
         React.createElement('div',{style:{fontFamily:mono,fontSize:9,color:'#9B9BB4',marginBottom:6}},'Modo de abertura de e-mail:'),
-        [['outlook','Outlook Web (padrão)'],['mailto','cliente de e-mail local (mailto)']].map(function(pair){
+        copiaEmail.email&&React.createElement('div',{style:{fontFamily:mono,fontSize:9,color:'#34D399',marginBottom:6}},'Todo e-mail aberto leva '+(copiaEmail.tipo==='cc'?'cópia (Cc)':'cópia oculta (Cco)')+' para '+copiaEmail.email+'.'),
+        [['outlook','Outlook Web'],['gmail','Gmail (navegador)'],['mailto','cliente de e-mail local (mailto)']].map(function(pair){
           var m=pair[0],lbl=pair[1];
           return React.createElement('label',{key:m,style:{fontFamily:mono,fontSize:9,color:outlookMode===m?'#FF6B2B':'#555',cursor:'pointer',display:'flex',alignItems:'center',gap:6,marginBottom:4}},
             React.createElement('input',{type:'radio',name:'outlookMode',value:m,checked:outlookMode===m,onChange:function(){setOutlookMode(m);localStorage.setItem('gh_fila_outlook',m);}}),
@@ -6832,8 +6852,8 @@ function PausarTudoBtn() {
 // confirmação do Pedro, espaçando 60 a 120 s entre e-mails (entregabilidade).
 var SDR_TUTORIAL = [
   ['1. De madrugada', 'Enquanto você dorme, o SDR escolhe as pessoas certas, lê as notícias de cada empresa, o estrategista decide se vale abordar e com qual tese (a blitz de planejamento estratégico), escreve a mensagem e um revisor dá nota. Só passa quem tem nota 8 ou mais.'],
-  ['2. Onde estão os rascunhos', 'E-mails: na pasta Rascunhos do seu Outlook, prontos. WhatsApp: na aba Fila → WhatsApp, com o texto pronto. Botão "Preparar rascunhos agora" faz a mesma coisa a qualquer hora.'],
-  ['3. Revisar e enviar', 'Leia, ajuste o que quiser e envie você mesmo. No WhatsApp use "▶ Sequência": abre uma conversa por vez já com o texto. Para mandar vários e-mails de uma vez: "Enviar e-mails em lote" (pede confirmação e espaça os envios).'],
+  ['2. Onde estão os rascunhos', 'E-mails: botão "Abrir e-mails prontos" (aba Fila → Email). Cada um abre no Gmail ou no Outlook do navegador já com destinatário, assunto, texto e cópia oculta para o seu e-mail da Galeria. WhatsApp: aba Fila → WhatsApp, com o texto pronto. "Preparar rascunhos agora" faz tudo isso a qualquer hora.'],
+  ['3. Revisar e enviar', 'Leia, ajuste o que quiser e envie você mesmo. No WhatsApp use "▶ Sequência": abre uma conversa por vez já com o texto. Na Fila, atalhos: O abre, E marca como enviado, P pula. Escolha Gmail ou Outlook na engrenagem da Fila.'],
   ['4. Respostas e reuniões', 'Quem responde aparece em "Respostas para ler". Interesse vira oportunidade no Pipeline. Marque a reunião lá: é isso que mede a meta de 3 a 4 reuniões a cada 10 contatos.'],
   ['5. Pausar tudo', 'O botão vermelho "Pausar tudo" (no topo) para qualquer coisa na hora. O sistema nunca envia nada sozinho enquanto o Piloto estiver desligado.']
 ];
@@ -6920,21 +6940,22 @@ function SdrSeuDia(props) {
       React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 18, color: '#F5F5F5', flex: 1 } }, 'Seu dia'),
       React.createElement('button', { 'data-testid': 'sdr-tutorial-abrir', onClick: function () { setTut(true); }, title: 'Como usar', style: { fontFamily: mono, fontSize: 12, width: 26, height: 26, borderRadius: 13, border: '.5px solid #60A5FA', background: 'transparent', color: '#60A5FA', cursor: 'pointer' } }, '?')),
     React.createElement('div', { style: { display: 'flex', flexWrap: 'wrap', gap: 18, marginBottom: 12 } },
-      num(s.prontos.length, 'e-mails nos seus Rascunhos', '#60A5FA'),
-      num(s.emails.length - s.prontos.length, 'e-mails esperando o Outlook', '#9B9BB4'),
+      s.outlook.connected ? num(s.prontos.length, 'e-mails nos seus Rascunhos', '#60A5FA') : num(s.emails.length, 'e-mails prontos para abrir', '#60A5FA'),
       num(s.wa.length, 'WhatsApp prontos', '#34D399'),
       num(s.respostas, 'respostas para ler', '#FBBF24'),
       num(s.enviadosHoje, 'enviados hoje', '#818CF8')),
-    !s.outlook.connected && React.createElement('div', { style: { color: '#FBBF24', marginBottom: 8, fontSize: 11 } }, 'O Outlook não está conectado: os e-mails ficam esperando. Clique em "Conectar Outlook" e entre com a sua conta da Microsoft (uma vez só).'),
+    !s.outlook.connected && React.createElement('div', { style: { color: '#9B9BB4', marginBottom: 8, fontSize: 11 } }, 'Os e-mails abrem prontos (destinatário, assunto e texto) no Gmail ou no Outlook do navegador, com cópia para o seu e-mail da Galeria. Você revisa e clica em Enviar.'),
     React.createElement('div', null,
       grande(demanda ? 'Preparando rascunhos…' : 'Preparar rascunhos agora', preparar, '#FF6B2B', 'sdr-preparar', demanda),
       s.outlook.connected
         ? grande('Abrir Rascunhos no Outlook', function () { window.open('https://outlook.office.com/mail/drafts', '_blank'); }, '#60A5FA', 'sdr-abrir-outlook')
-        : grande(conectando ? 'Abrindo a Microsoft…' : 'Conectar Outlook', conectar, '#60A5FA', 'sdr-conectar-outlook', conectando),
+        : grande('Abrir e-mails prontos', function () { try { localStorage.setItem('gh_fila_tab', 'email'); } catch (_) {} props.navTo && props.navTo('fila'); }, '#60A5FA', 'sdr-abrir-emails', !s.emails.length),
       grande('Abrir WhatsApp em sequência', function () { try { localStorage.setItem('gh_fila_tab', 'whatsapp'); } catch (_) {} props.navTo && props.navTo('fila'); }, '#34D399', 'sdr-whatsapp', !s.wa.length),
-      envio
+      !s.outlook.connected ? null : envio
         ? grande('Parar envio (' + envio.feitos + '/' + envio.total + ')', function () { parar.current = true; }, '#E24B4A', 'sdr-parar-lote')
         : grande('Enviar e-mails em lote (' + s.prontos.length + ')', enviarLote, '#818CF8', 'sdr-enviar-lote', !s.prontos.length)),
+    !s.outlook.connected && React.createElement('div', { style: { marginTop: 2 } },
+      React.createElement('a', { href: '#', 'data-testid': 'sdr-conectar-outlook', onClick: function (e) { e.preventDefault(); conectar(); }, style: { color: '#555', fontSize: 10 } }, conectando ? 'Abrindo a Microsoft…' : 'Conectar Outlook (opcional: rascunhos na pasta e envio em lote)')),
     msg && React.createElement('div', { style: { color: '#34D399', fontSize: 11, marginTop: 4 } }, msg),
     tut && React.createElement('div', { 'data-testid': 'sdr-tutorial', style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
       React.createElement('div', { style: { background: '#0d0d1a', border: '.5px solid #FF6B2B', borderRadius: 10, padding: 20, maxWidth: 480, width: '100%', fontFamily: mono } },
