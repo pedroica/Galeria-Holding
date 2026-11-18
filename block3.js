@@ -3913,6 +3913,13 @@ function FilaDoDia() {
         markAberto(item);
         return;
       }
+      // Rascunho já criado no Gmail/Outlook: abre ele (texto, assinatura e cópia
+      // prontos), em vez de montar um e-mail novo.
+      if (item.outlook_draft_link) {
+        markAberto(item);
+        window.open(item.outlook_draft_link,'_blank','noopener,noreferrer');
+        return;
+      }
       var link = buildLink(d.email, assunto, corpo);
       markAberto(item);
       if (!link) {
@@ -4056,6 +4063,7 @@ function FilaDoDia() {
 
   function abrirLabel(item){
     var etapaN=Number(item.etapa_cadencia)||1;
+    if (aba==='email' && item.outlook_draft_link) return /mail\.google\.com/.test(item.outlook_draft_link) ? '✉ Abrir rascunho no Gmail' : '✉ Abrir rascunho no Outlook';
     if (aba==='email') return etapaN>=2?'📋 Copiar + Localizar Thread':(outlookMode==='gmail'?'✉ Abrir no Gmail':outlookMode==='mailto'?'✉ Abrir no e-mail':'✉ Abrir no Outlook');
     if (aba==='whatsapp') return '💬 Abrir no WhatsApp';
     return '🔗 Copiar nota + Abrir LinkedIn';
@@ -6969,12 +6977,17 @@ function SdrSeuDia(props) {
       num(s.wa.length, 'WhatsApp prontos', '#34D399'),
       num(s.respostas, 'respostas para ler', '#FBBF24'),
       num(s.enviadosHoje, 'enviados hoje', '#818CF8')),
-    s.gmail.connected && React.createElement('div', { style: { color: '#34D399', marginBottom: 8, fontSize: 11 } }, 'Gmail conectado' + (s.gmail.email ? ' (' + s.gmail.email + ')' : '') + ': os e-mails aprovados viram rascunho no seu Gmail, com a sua assinatura e cópia oculta para o e-mail da Galeria. Nada sai sem você.'),
+    s.gmail.connected && React.createElement('div', { 'data-testid': 'sdr-passos-gmail', style: { color: '#D0D0E0', marginBottom: 10, fontSize: 12, lineHeight: 1.7, borderLeft: '2px solid #34D399', paddingLeft: 10 } },
+      React.createElement('div', { style: { color: '#34D399', fontSize: 11 } }, 'Gmail conectado' + (s.gmail.email ? ' (' + s.gmail.email + ')' : '') + '. Nada sai sem você.'),
+      React.createElement('div', null, '1. Clique em "Abrir Rascunhos no Gmail".'),
+      React.createElement('div', null, '2. Abra cada rascunho, leia e ajuste o que quiser (assinatura e cópia oculta para a Galeria já estão lá).'),
+      React.createElement('div', null, '3. Clique em Enviar no próprio Gmail. Ou envie vários de uma vez aqui, em "Enviar e-mails em lote".')),
+    s.gmail.connected && s.emails.length > s.prontos.length && React.createElement('div', { style: { color: '#FBBF24', fontSize: 11, marginBottom: 8 } }, (s.emails.length - s.prontos.length) + ' e-mail(s) aprovados ainda virando rascunho. Leva até 3 minutos; se não aparecer, clique em "Criar rascunhos agora".'),
     !s.gmail.connected && !s.outlook.connected && React.createElement('div', { style: { color: '#9B9BB4', marginBottom: 8, fontSize: 11 } }, 'Os e-mails abrem prontos (destinatário, assunto e texto) no Gmail, com cópia para o seu e-mail da Galeria. Conecte o Gmail para recebê-los já na pasta Rascunhos.'),
     React.createElement('div', null,
-      grande(demanda ? 'Preparando rascunhos…' : 'Preparar rascunhos agora', preparar, '#FF6B2B', 'sdr-preparar', demanda),
+      grande(demanda ? 'Preparando rascunhos…' : (s.gmail.connected && s.emails.length > s.prontos.length ? 'Criar rascunhos agora' : 'Preparar rascunhos agora'), preparar, '#FF6B2B', 'sdr-preparar', demanda),
       s.gmail.connected
-        ? grande('Abrir Rascunhos no Gmail', function () { window.open('https://mail.google.com/mail/u/0/#drafts', '_blank'); }, '#60A5FA', 'sdr-abrir-gmail')
+        ? grande('Abrir Rascunhos no Gmail', function () { window.open('https://mail.google.com/mail/' + (s.gmail.email ? '?authuser=' + encodeURIComponent(s.gmail.email) : 'u/0/') + '#drafts', '_blank'); }, '#60A5FA', 'sdr-abrir-gmail')
         : s.outlook.connected
         ? grande('Abrir Rascunhos no Outlook', function () { window.open('https://outlook.office.com/mail/drafts', '_blank'); }, '#60A5FA', 'sdr-abrir-outlook')
         : grande('Abrir e-mails prontos', function () { try { localStorage.setItem('gh_fila_tab', 'email'); } catch (_) {} props.navTo && props.navTo('fila'); }, '#60A5FA', 'sdr-abrir-emails', !s.emails.length),
