@@ -969,14 +969,17 @@ async function jobRascunhosMatinais(req, res) {
   // Ordena por tentativas asc: os que nunca falharam vêm primeiro.
   const itens = await sg(
     'crm_fila?status=eq.aprovado&canal=eq.email&outlook_message_id=is.null&apagado_em=is.null&rascunho_tentativas=lt.3' +
-    '&select=id,assunto,corpo,etapa_cadencia,thread_ref,rascunho_tentativas,crm_decisores(email,nome)' +
+    '&select=id,assunto,corpo,etapa_cadencia,thread_ref,rascunho_tentativas,origem,crm_decisores(email,nome)' +
     '&order=origem.asc.nullslast,rascunho_tentativas.asc,aprovado_em.asc&limit=' + teto
   );
   if (itens === null) return erroLeitura('rascunhos-matinais', res, inicio, 'crm_fila');
   const lista = (Array.isArray(itens) ? itens : []).filter(it => {
     const email = it.crm_decisores && it.crm_decisores.email;
     if (!email) return false;
-    if (pausado && Number(it.etapa_cadencia || 1) <= 1) return false;
+    // A pausa de primeiros contatos (13/11) vale para a fila genérica antiga. O SDR
+    // (dossiê + estrategista + QC) é o que o Pedro pediu para receber todo dia, e
+    // criar rascunho não envia nada: o envio continua sendo o clique dele.
+    if (pausado && Number(it.etapa_cadencia || 1) <= 1 && it.origem !== 'sdr') return false;
     return true;
   });
 
@@ -994,7 +997,7 @@ async function jobRascunhosMatinais(req, res) {
     if (gmail) {
       try {
         const d = await criarRascunhoGmail(gmail.token, {
-          para: item.crm_decisores.email, assunto: item.assunto || '', corpo: item.corpo || '',
+          conta: gmail.email, para: item.crm_decisores.email, assunto: item.assunto || '', corpo: item.corpo || '',
           cco: copia && copia.tipo === 'bcc' ? copia.email : null, cc: copia && copia.tipo === 'cc' ? copia.email : null
         });
         await sp('crm_fila?id=eq.' + item.id + '&outlook_message_id=is.null', { outlook_message_id: d.id, rascunho_criado_em: new Date().toISOString(), outlook_draft_link: d.link, rascunho_erro: null }, 'PATCH');

@@ -29,7 +29,10 @@ let db, escritas, gmailCalls;
 function reset() {
   db = {
     tokens: [{ id: 'tk1', access_token: 'gtok', refresh_token: 'r1', expires_at: new Date(Date.now() + 3600e3).toISOString(), account_email: CONTA }],
-    fila: [{ id: 'f1', assunto: 'Acme e a expansão', corpo: 'Ana, li que a Acme...\n\nTopa 20 minutos?\n\nPedro Ica', etapa_cadencia: 1, rascunho_tentativas: 0, crm_decisores: { email: 'ana@acme.example', nome: 'Ana' } }],
+    fila: [
+      { id: 'f1', origem: 'sdr', assunto: 'Acme e a expansão', corpo: 'Ana, li que a Acme...\n\nTopa 20 minutos?\n\nPedro Ica', etapa_cadencia: 1, rascunho_tentativas: 0, crm_decisores: { email: 'ana@acme.example', nome: 'Ana' } },
+      { id: 'f9', origem: null, assunto: 'Fila antiga', corpo: 'Texto genérico', etapa_cadencia: 1, rascunho_tentativas: 0, crm_decisores: { email: 'bia@beta.example', nome: 'Bia' } }
+    ],
     filaItem: { status: 'aprovado', outlook_message_id: 'dr1' },
     inbox: [{ id: 'g1', threadId: 't1', internalDate: String(Date.now()), snippet: 'Faz sentido, podemos marcar quinta?', payload: { headers: [{ name: 'From', value: 'Ana <ana@acme.example>' }, { name: 'Subject', value: 'Re: Acme e a expansão' }] } }]
   };
@@ -54,6 +57,7 @@ globalThis.fetch = async (url, opts = {}) => {
   if (u.includes('crm_oauth_tokens') && u.includes('provider=eq.google') && m === 'GET') return json(u.includes('pkce_state=eq.') ? [{ id: 'st1' }] : db.tokens);
   if (u.includes('crm_oauth_tokens')) return m === 'GET' ? json([]) : new Response('', { status: 201 });
   if (u.includes('crm_logs')) return json([]);
+  if (u.includes('crm_configuracoes') && m === 'GET' && u.includes('pausar_primeiros_contatos')) return json([{ valor: true }]);
   if (u.includes('crm_configuracoes') && m === 'GET') return json(u.includes('email_copia') ? [{ chave: 'email_copia', valor: COPIA }, { chave: 'email_copia_tipo', valor: 'bcc' }] : []);
   if (u.includes('crm_fila') && m === 'GET' && u.includes('id=eq.')) return json([db.filaItem]);
   if (u.includes('crm_fila') && m === 'GET') return json(db.fila);
@@ -93,6 +97,9 @@ const corpoHtml = mime ? Buffer.from(mime.split('\r\n\r\n')[1].replace(/\r\n/g, 
 ok(/sig\.png/.test(corpoHtml) && !/Pedro Ica/.test(corpoHtml), 'assinatura do Gmail no fim e sem "Pedro Ica" duplicado');
 ok(escritas.some(e => e.u.includes('crm_fila?id=eq.f1&outlook_message_id=is.null') && e.body.outlook_message_id === 'dr1'), 'grava o id do rascunho (nunca cria duas vezes)');
 ok(!gmailCalls.some(c => c.u.includes('/drafts/send')), 'madrugada não envia nada');
+ok(!escritas.some(e => e.u.includes('crm_fila?id=eq.f9')) && gmailCalls.filter(c => c.u.endsWith('/drafts') && c.m === 'POST').length === 1, 'com a pausa de primeiros contatos ligada, só o SDR vira rascunho (fila antiga continua pausada)');
+const linkSalvo = (escritas.find(e => e.u.includes('crm_fila?id=eq.f1&outlook_message_id=is.null')) || {}).body || {};
+ok(new RegExp('authuser=' + encodeURIComponent(CONTA).replace(/\./g, '\\.') + '#drafts\\?compose=msg1').test(linkSalvo.outlook_draft_link || ''), 'link do rascunho abre na conta certa (authuser), não na primeira conta logada (' + linkSalvo.outlook_draft_link + ')');
 
 console.log('\nEnvio só com o clique do Pedro');
 reset();

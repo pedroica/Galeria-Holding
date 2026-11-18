@@ -283,3 +283,14 @@ Ainda não há leads aceitos, então o custo por **lead aceito** só existe depo
 **Pendente:**
 - Medir o custo por mensagem aprovada no modo novo depois da primeira noite (alvo: menos de R$ 0,30).
 - Taxa de reunião por segmento (cross-sell, sinal, frio) a partir das marcações do Pedro.
+
+## Gmail conectado, mas sem rascunhos (18/11, noite)
+- **Sintoma:** o Gmail conectou às 21:11, mas "Abrir Rascunhos no Gmail" abria a pasta vazia.
+- **Causa 1:** a chave `pausar_primeiros_contatos=true` (13/11, antes do SDR) fazia o `rascunhos-matinais` descartar todo primeiro contato.
+  - Decisão: a pausa continua valendo para a fila genérica antiga. Os e-mails do SDR (`origem='sdr'`, com estrategista e QC) passam.
+  - Porquê: são os rascunhos que o Pedro pediu todo dia, e criar rascunho não envia nada.
+- **Causa 2:** o pipeline só criava rascunho na janela da madrugada. Agora cria a qualquer hora, sempre que houver e-mail do SDR aprovado e caixa conectada (só rascunho).
+- **Ajustes de tela:**
+  - Os links do Gmail abrem na conta conectada (`authuser`), não na primeira conta logada no navegador.
+  - A Fila abre o rascunho pronto em vez de montar um e-mail novo.
+  - O "Seu dia" mostra o fluxo em 3 passos.
