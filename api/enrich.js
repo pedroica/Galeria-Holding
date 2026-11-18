@@ -243,6 +243,12 @@ export default async function handler(req, res) {
   if (req.method === 'GET' && req.query.code && req.query.state) {
     return handleOAuthCallback(req, res);
   }
+  // ── Consentimento do administrador (link adminconsent): volta para o CRM ──
+  if (req.method === 'GET' && (req.query.admin_consent || req.query.state === 'adminconsent')) {
+    const CRM_ROOT = 'https://galeria-holding-sage.vercel.app';
+    if (req.query.error) return res.redirect(302, CRM_ROOT + '?graph_error=' + encodeURIComponent(req.query.error_description || req.query.error));
+    return res.redirect(302, CRM_ROOT + '?graph_admin_ok=1');
+  }
 
   // ── Health check ──────────────────────────────────────────────────────────
   if (health || provider === 'health') {
