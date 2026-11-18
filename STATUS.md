@@ -212,3 +212,38 @@ Ainda não há leads aceitos, então o custo por **lead aceito** só existe depo
   - Nome de duas palavras com a primeira arriscada (Porto Seguro, Cacau Show) só vale com o nome completo.
   - Porquê: um fato de outra coisa com o mesmo nome é o pior erro possível numa mensagem que promete "vi que vocês…".
 - **Seleção não pega de novo quem já entrou no fluxo nos últimos 14 dias** (motivo `ja_em_curso`). Porquê: a chave do estado é por dia, então no dia seguinte os mesmos leads seriam selecionados de novo; quem ficou sem fato voltaria todo dia. 14 dias é a validade do dossiê, depois disso vale tentar de novo com notícia nova.
+
+## Fase 2: Modo Sombra, rodada 3 e placar final (18/11)
+
+- **Rodada 3:** reenfileirei Omie, Cacau Show e Leroy Merlin, e o Reserva com dossiê novo (sem fato após o filtro de homônimo). Depois disso, mais 60 leads entraram pela seleção, já com a exclusão `ja_em_curso` no ar.
+- **Placar final** (só mensagens não arquivadas; a rodada 1 e as versões refeitas ficam arquivadas, nunca apagadas):
+
+| medida | valor |
+|---|---|
+| leads selecionados no Modo Sombra | 120 |
+| com fato público e canal (foram ao modelo) | 31 (26%) |
+| sem fato público | 77 |
+| sem canal | 12 |
+| versões redigidas | 93 (3 por lead) |
+| **aprovados no QC** (nota ≥ 8 em tudo, risco ≤ 3) | **22** |
+| retidos | 9 (**reprovação de 29%**, abaixo do teto de 30%) |
+| custo total do modelo (redação + QC) | US$ 3,90 |
+| **custo por mensagem aprovada** | **US$ 0,18 ≈ R$ 0,96** (câmbio 5,40) |
+
+- **Aprovadas por empresa do grupo (7 empresas):**
+
+| empresa | aprovadas / redigidas |
+|---|---|
+| Holding | 9 / 11 |
+| Vitrine | 4 / 7 |
+| A.gente | 3 / 4 |
+| Catalyst | 2 / 3 |
+| Galeria | 2 / 2 |
+| 404 | 1 / 1 |
+| Caramelo | 1 / 1 |
+| GUX | 0 / 2 |
+| GAIA, Milà, Mantiqueira | sem lead com fato |
+
+- **Os 9 retidos são legítimos.** Nenhum vem de bug: são notas 7 em especificidade ou naturalidade, risco alto em 2 casos (ex.: abrir com notícia negativa), e o QC está fazendo o papel dele. Não mexi no prompt de novo. Porquê: a reprovação já está abaixo de 30% e afrouxar o QC aumenta risco de reputação.
+- **Premissa do funil atualizada:** a aprovação no QC medida é 71% (22 de 31), igual à premissa de 70%. O fato público ficou em 26%, perto dos 28% da rodada 2. A conta reversa (≈ 225 leads e 132 e-mails por reunião) continua valendo.
+- **A amostra está na tela SDR** (aba SDR → Amostra), com dossiê, trecho da fonte, case e notas. Nada foi para `crm_fila` (sombra) e nada foi enviado.
