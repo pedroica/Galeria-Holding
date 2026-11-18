@@ -13,6 +13,9 @@ const {
       localStorage.setItem('gh_graph_connected', '1');
       history.replaceState({}, '', window.location.pathname);
     }
+    if (p.get('graph_admin_ok') === '1') {
+      localStorage.setItem('gh_graph_admin_ok', '1');
+    }
     if (p.get('graph_error')) {
       localStorage.setItem('gh_graph_error', p.get('graph_error'));
       history.replaceState({}, '', window.location.pathname);
@@ -5449,7 +5452,8 @@ function App() {
   // Auto-navega para Fila quando retorna do OAuth Microsoft
   useEffect(() => {
     try {
-      if (localStorage.getItem('gh_graph_connected') || localStorage.getItem('gh_graph_error')) navTo('fila', null, null);
+      if (localStorage.getItem('gh_graph_admin_ok')) navTo('sdr', null, null);
+      else if (localStorage.getItem('gh_graph_connected') || localStorage.getItem('gh_graph_error')) navTo('fila', null, null);
     } catch(e) {}
   }, []);
   // Alerta cron: verifica se crons rodaram no dia esperado
@@ -6875,10 +6879,21 @@ function SdrSeuDia(props) {
       setTimeout(carregar, 4000);
     });
   }
+  var _c = React.useState(false); var conectando = _c[0]; var setConectando = _c[1];
+  React.useEffect(function () {
+    try {
+      var er = localStorage.getItem('gh_graph_error');
+      if (er) { localStorage.removeItem('gh_graph_error'); setMsg('A Microsoft recusou a conexão: ' + er); }
+      if (localStorage.getItem('gh_graph_admin_ok')) { localStorage.removeItem('gh_graph_admin_ok'); setMsg('Aprovado pelo administrador. Agora clique uma vez em "Conectar Outlook".'); }
+    } catch (_) {}
+  }, []);
   function conectar() {
+    if (conectando) return;
+    setConectando(true); setMsg('Abrindo a Microsoft…');
     api('/api/enrich?provider=graph-init', { method: 'POST', body: '{}' }).then(function (d) {
-      if (d && d.authUrl) window.location.href = d.authUrl; else setMsg('Não deu para abrir o login da Microsoft: ' + ((d && d.error) || 'erro'));
-    });
+      if (d && d.authUrl) window.location.href = d.authUrl;
+      else { setConectando(false); setMsg('Não deu para abrir o login da Microsoft: ' + ((d && d.error) || 'erro')); }
+    }).catch(function () { setConectando(false); setMsg('Erro de rede ao abrir a Microsoft. Tente de novo.'); });
   }
   function enviarLote() {
     var lista = (s && s.prontos) || [];
@@ -6915,7 +6930,7 @@ function SdrSeuDia(props) {
       grande(demanda ? 'Preparando rascunhos…' : 'Preparar rascunhos agora', preparar, '#FF6B2B', 'sdr-preparar', demanda),
       s.outlook.connected
         ? grande('Abrir Rascunhos no Outlook', function () { window.open('https://outlook.office.com/mail/drafts', '_blank'); }, '#60A5FA', 'sdr-abrir-outlook')
-        : grande('Conectar Outlook', conectar, '#60A5FA', 'sdr-conectar-outlook'),
+        : grande(conectando ? 'Abrindo a Microsoft…' : 'Conectar Outlook', conectar, '#60A5FA', 'sdr-conectar-outlook', conectando),
       grande('Abrir WhatsApp em sequência', function () { try { localStorage.setItem('gh_fila_tab', 'whatsapp'); } catch (_) {} props.navTo && props.navTo('fila'); }, '#34D399', 'sdr-whatsapp', !s.wa.length),
       envio
         ? grande('Parar envio (' + envio.feitos + '/' + envio.total + ')', function () { parar.current = true; }, '#E24B4A', 'sdr-parar-lote')
