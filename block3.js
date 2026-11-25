@@ -7276,12 +7276,12 @@ function PainelAgente(props) {
     var nome = (x.crm_decisores && x.crm_decisores.nome) || '—';
     var emp = (x.crm_empresas && x.crm_empresas.nome) || '';
     var st = x.status === 'enviado' || x.status === 'respondido' ? ['enviado', '#34D399'] : x.status === 'pulado' ? ['descartado', '#555'] : x.outlook_message_id ? ['no Gmail', '#60A5FA'] : x.rascunho_erro ? ['erro', '#E24B4A'] : ['criando…', '#FBBF24'];
-    var semFato = /sem fato p[úu]blico/.test(x.contexto_para_aprovacao || '');
+    var semFato = / · contexto: /.test(x.contexto_para_aprovacao || '');
     return React.createElement("div", { key: x.id, title: x.contexto_para_aprovacao || '', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '.5px solid #1A1A2E', fontSize: 12 } },
       React.createElement("span", { style: { fontFamily: mono, fontSize: 8, color: st[1], border: '.5px solid ' + st[1], borderRadius: 3, padding: '1px 5px', whiteSpace: 'nowrap' } }, st[0]),
       React.createElement("span", { style: { color: '#F5F5F5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: '0 1 auto' } }, nome + (emp ? ' · ' + emp : '')),
       React.createElement("span", { style: { color: '#9B9BB4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 } }, x.assunto || ''),
-      semFato && React.createElement("span", { title: 'Sem notícia pública: mensagem pelo desafio do cargo no setor', style: { fontFamily: mono, fontSize: 8, color: '#818CF8' } }, 'setor'),
+      semFato && React.createElement("span", { title: 'Sem notícia: retoma um contexto real do CRM (conversa, oportunidade parada ou pedido de retomar)', style: { fontFamily: mono, fontSize: 8, color: '#818CF8' } }, 'retomada'),
       x.outlook_draft_link && x.status === 'aprovado' && React.createElement("a", { href: x.outlook_draft_link, target: '_blank', rel: 'noopener noreferrer', style: { fontFamily: mono, fontSize: 9, color: '#60A5FA', textDecoration: 'none', whiteSpace: 'nowrap' } }, 'abrir →')
     );
   }
@@ -7333,7 +7333,7 @@ function PainelAgente(props) {
     ),
     // Funil da noite
     React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555', lineHeight: 1.6 } },
-      'Esta noite: ' + d.funil.avaliados + ' leads analisados · ' + d.funil.prontos + ' viraram mensagem · ' + d.funil.semFato + ' sem notícia nem encaixe · ' +
+      'Esta noite: ' + d.funil.avaliados + ' leads analisados · ' + d.funil.prontos + ' viraram mensagem · ' + d.funil.semFato + ' sem notícia nem contexto (não abordados) · ' +
       d.funil.vetados + ' vetados pelo estrategista · ' + d.funil.retidos + ' retidos no controle de qualidade' +
       (d.semRascunho ? ' · ' + d.semRascunho + ' e-mail(s) aguardando o Gmail' : '') + (d.waHoje.length ? ' · ' + d.waHoje.length + ' WhatsApp' : ''))
   );

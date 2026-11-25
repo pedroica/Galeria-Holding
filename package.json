@@ -19,7 +19,7 @@
     "test:bloco5": "node tests/cron-bloco5.test.mjs",
     "test:relatorio": "node tests/relatorio-route.test.mjs",
     "test:guard": "node tests/cron-guard.test.mjs",
-    "test:sdr": "node tests/sdr-auth.test.mjs && node tests/sdr-auth-vault.test.mjs && node tests/sdr-dossie.test.mjs && node tests/sdr-selecao.test.mjs && node tests/sdr-redacao.test.mjs && node tests/sdr-qualidade.test.mjs && node tests/sdr-jobs-c.test.mjs && node tests/sdr-respostas.test.mjs && node tests/sdr-envio.test.mjs && node tests/sdr-topo.test.mjs && node tests/sdr-chave-vault.test.mjs && node tests/sdr-fase3.test.mjs && node tests/graph-init.test.mjs && node tests/gmail.test.mjs && node tests/sdr-meta.test.mjs && node tests/sdr-envios.test.mjs",
+    "test:sdr": "node tests/sdr-auth.test.mjs && node tests/sdr-auth-vault.test.mjs && node tests/sdr-dossie.test.mjs && node tests/sdr-selecao.test.mjs && node tests/sdr-redacao.test.mjs && node tests/sdr-qualidade.test.mjs && node tests/sdr-jobs-c.test.mjs && node tests/sdr-respostas.test.mjs && node tests/sdr-envio.test.mjs && node tests/sdr-topo.test.mjs && node tests/sdr-chave-vault.test.mjs && node tests/sdr-fase3.test.mjs && node tests/graph-init.test.mjs && node tests/gmail.test.mjs && node tests/sdr-meta.test.mjs && node tests/sdr-envios.test.mjs && node tests/sdr-vigia.test.mjs",
     "test:e2e": "npx playwright test tests/lusha-e2e.playwright.mjs --reporter=list",
     "typecheck": "cd agent && npm run typecheck",
     "test:gh-core": "node tests/gh-core-auth.test.mjs",

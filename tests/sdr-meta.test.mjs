@@ -1,7 +1,7 @@
 // tests/sdr-meta.test.mjs — meta diária de 20 rascunhos, teto de gasto e trilha
 // "sem fato" (lead com encaixe, sem notícia com fonte). Puro, sem rede.
 // Rodar: node tests/sdr-meta.test.mjs
-import { inicioDiaBRT, dataBRT, vagasDoDia, gastoDosLogs, orcamentoOk, alegaFato, elegivelSemFato, cargoDecideComunicacao } from '../lib/sdr-meta.js';
+import { inicioDiaBRT, dataBRT, vagasDoDia, gastoDosLogs, orcamentoOk, alegaFato, contextoDoLead, conversaRecente } from '../lib/sdr-meta.js';
 import { validarTese, construirPromptEstrategia } from '../lib/sdr-estrategista.js';
 import { checagensCodigo } from '../lib/sdr-qualidade.js';
 import { construirPromptRedacao, construirPromptAvaliacao } from '../lib/sdr-redacao.js';
@@ -29,12 +29,22 @@ ok(gastoDosLogs([{ contexto: { custo_usd: 0.5 } }, { contexto: { custo_usd: 1.25
 ok(orcamentoOk({ gastoHoje: 4.99, tetoUsd: 5 }) && !orcamentoOk({ gastoHoje: 5, tetoUsd: 5 }), 'para no teto');
 ok(orcamentoOk({ gastoHoje: 100, tetoUsd: 0 }), 'teto 0 = sem teto');
 
-console.log('trilha sem fato: quem entra');
-ok(cargoDecideComunicacao('Diretora de Marketing') && cargoDecideComunicacao('CEO') && cargoDecideComunicacao('Head de Brand'), 'cargos de decisão entram');
-ok(!cargoDecideComunicacao('Analista Fiscal') && !cargoDecideComunicacao('Coordenador de RH'), 'cargos fora da decisão ficam de fora');
-ok(elegivelSemFato({ cargo: 'CMO', estrelas: 4 }) && !elegivelSemFato({ cargo: 'CMO', estrelas: 2 }), 'exige encaixe (estrelas >= 3)');
+console.log('trilha de contexto: só com histórico real');
+const AG = Date.parse('2026-11-25T12:00:00Z');
+let cx = contextoDoLead({ toques: [{ canal: 'email', direcao: 'enviado', resultado: 'sem_resposta', assunto: 'Ideia', data: '2026-06-01' }], oportunidades: [], agora: AG });
+ok(cx.length === 0, 'contato anterior sem resposta NÃO é contexto');
+cx = contextoDoLead({ toques: [{ canal: 'email', direcao: 'recebido', assunto: 'RE: blitz de planejamento', data: '2026-04-10' }], agora: AG });
+ok(cx.length === 1 && cx[0].tipo === 'conversa' && /10\/04\/2026/.test(cx[0].texto) && /blitz/.test(cx[0].texto), 'resposta dela vira contexto com data e assunto');
+cx = contextoDoLead({ toques: [{ canal: 'reuniao', direcao: 'enviado', resultado: 'reuniao', resumo: 'Apresentação da 404', data: '2026-03-02' }], agora: AG });
+ok(cx.length === 1 && /reuniao/.test(cx[0].texto), 'reunião anterior é contexto');
+cx = contextoDoLead({ oportunidades: [{ titulo: 'Campanha verão', estagio: 'Pausado', atualizado_em: '2026-08-01' }, { titulo: 'Novo site', estagio: 'Negociação', atualizado_em: '2026-08-01' }, { titulo: 'Recente', estagio: 'Wishlist', atualizado_em: '2026-11-20' }], agora: AG });
+ok(cx.length === 1 && /Campanha verão/.test(cx[0].texto), 'só oportunidade parada (Wishlist/Pausado há 30+ dias); em negociação ou mexida agora é do dono');
+cx = contextoDoLead({ pausaAteEm: '2026-11-01', agora: AG });
+ok(cx.length === 1 && cx[0].tipo === 'momento', '"não agora" com pausa vencida é momento de retomar');
+ok(contextoDoLead({ pausaAteEm: '2026-12-30', agora: AG }).length === 0, 'pausa ainda valendo não é contexto');
+ok(conversaRecente('2026-10-01', AG) && !conversaRecente('2026-06-01', AG), 'conversa < 90 dias é do Pedro; > 90 dias pode ser retomada');
 
-console.log('trilha sem fato: nada de fato inventado');
+console.log('trilha de contexto: nada de fato inventado');
 ok(alegaFato('Vi que a Acme anunciou 40 lojas') && alegaFato('Li que vocês lançaram') && alegaFato('segundo o Valor, a empresa'), 'pega fato alegado');
 ok(!alegaFato('Marketing de varejo de moda vive a pressão de margem no fim de ano. Faz sentido conversarmos 20 minutos?'), 'texto de setor/cargo passa');
 
@@ -46,13 +56,14 @@ ok(!v.seguir, 'com fato exigido (padrão) e sem sinal: não segue');
 v = validarTese(Object.assign({}, tese, { nota_encaixe: 5 }), { sinais: [], knowledge: { cases_destaque: [] }, clientes: [], notaMin: 6, semFato: true });
 ok(!v.seguir, 'sem fato com nota 5 não segue');
 
-const pe = construirPromptEstrategia({ ecossistema: 'eco', empresa: { nome: 'Acme', setor: 'varejo' }, decisor: { nome: 'Ana', cargo: 'CMO' }, sinais: [], notaMin: 6, semFato: true });
-ok(/TRILHA SEM FATO/.test(pe.user) && /fato_url fica vazio/.test(pe.user), 'prompt do estrategista avisa a trilha sem fato');
-const pr = construirPromptRedacao({ dossie: { sinais: [] }, nome: 'Ana', cargo: 'CMO', empresa: { nome: 'Acme' }, canal: 'email', semFato: true, tese: Object.assign({}, tese, { sem_fato: true }) });
-ok(/NÃO há fato público/.test(pr.system) && /Nunca diga "vi que"/.test(pr.system), 'redação proíbe "vi que" na trilha sem fato');
-ok(!/a partir de um fato do dossiê, como quem acompanha/.test(pr.system), 'redação sem fato não pede fato na primeira frase');
-const pa = construirPromptAvaliacao({ mensagem: { canal: 'email', assunto: 'a', corpo: 'b' }, dossie: { sinais: [] }, empresa: { nome: 'Acme' }, semFato: true });
-ok(/trilha sem fato/.test(pa.system), 'avaliador sabe que é trilha sem fato');
+const CX = [{ tipo: 'conversa', texto: 'mensagem dela por email em 10/04/2026: RE: blitz de planejamento' }];
+const pe = construirPromptEstrategia({ ecossistema: 'eco', empresa: { nome: 'Acme', setor: 'varejo' }, decisor: { nome: 'Ana', cargo: 'CMO' }, sinais: [], notaMin: 7, semFato: true, contexto: CX });
+ok(/TRILHA DE CONTEXTO/.test(pe.user) && /blitz de planejamento/.test(pe.user) && /fato_url fica vazio/.test(pe.user), 'estrategista recebe o contexto real do CRM');
+const pr = construirPromptRedacao({ dossie: { sinais: [] }, nome: 'Ana', cargo: 'CMO', empresa: { nome: 'Acme' }, canal: 'email', semFato: true, contexto: CX, tese: Object.assign({}, tese, { sem_fato: true, contexto: CX }) });
+ok(/NÃO há notícia/.test(pr.system) && /Nunca diga "vi que"/.test(pr.system), 'redação proíbe "vi que" e ancora no contexto');
+ok(/blitz de planejamento/.test(pr.user) && !/a partir de um fato do dossiê, como quem acompanha/.test(pr.system), 'redação recebe o contexto e não pede notícia');
+const pa = construirPromptAvaliacao({ mensagem: { canal: 'email', assunto: 'a', corpo: 'b' }, dossie: { sinais: [] }, empresa: { nome: 'Acme' }, semFato: true, contexto: CX });
+ok(/trilha de contexto/.test(pa.system) && /contexto do CRM: conversa/.test(pa.user), 'avaliador confere a mensagem contra o contexto');
 
 const corpoBom = 'Ana, marketing de varejo de moda vive a pressão de margem no fim de ano e o CRM costuma ficar subaproveitado justamente nessa hora. ' +
   'Na Acme, imagino que reativar a base de clientes antigos pesa tanto quanto mídia nova. ' +
@@ -69,6 +80,17 @@ console.log('Gmail e seleção');
 ok(ehRascunhoGmail('r-1234567890123') && ehRascunhoGmail('r987') && !ehRascunhoGmail('AAMkAGI2TG93AAA='), 'distingue id de rascunho do Gmail do Graph');
 const r0 = selecionarLote({ candidatos: [{ id: 'd1', empresa_id: 'e1', email: 'a@b.com', empresa: { id: 'e1', nome: 'X' } }], config: { lote_max: 0 }, agora: Date.now() });
 ok(r0.lote.length === 0, 'lote_max 0 (noite anterior ainda pendente) não seleciona ninguém');
+const cand = [
+  { id: 'frio', empresa_id: 'e1', email: 'a@x.com', empresa: { id: 'e1', nome: 'Fria' } },
+  { id: 'velho', empresa_id: 'e2', email: 'b@x.com', respondeu: true, empresa: { id: 'e2', nome: 'Velha' } },
+  { id: 'quente', empresa_id: 'e3', email: 'c@x.com', respondeu: true, empresa: { id: 'e3', nome: 'Quente' } },
+  { id: 'orfao', empresa_id: null, email: 'd@x.com', empresa: {} }
+];
+const rs = selecionarLote({ candidatos: cand, config: { lote_max: 10, intercalar_agencias: false }, agora: AG,
+  contexto: { ultimaConversa: { velho: '2026-05-01', quente: '2026-11-10' }, empresasOppParada: new Set() } });
+ok(rs.lote[0] && rs.lote[0].decisor_id === 'velho' && rs.lote[0].prioridade === 'contexto', 'quem tem contexto (conversa de 6 meses atrás) vem primeiro');
+ok(rs.excluidos.some(e => e.decisor_id === 'quente' && e.motivo === 'ja_respondeu'), 'quem respondeu há 15 dias continua com o Pedro');
+ok(rs.excluidos.some(e => e.decisor_id === 'orfao' && e.motivo === 'sem_empresa'), 'lead sem empresa não entra (travava o relógio)');
 
 console.log(`\n${pass} ok, ${fail} falha(s)`);
 process.exit(fail ? 1 : 0);
