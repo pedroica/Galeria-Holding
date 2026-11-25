@@ -2477,7 +2477,8 @@ async function jobGmailCrm(req, res) {
     await spUpsert('crm_gmail_status', { empresa_id: c.empresa_id, sinal: st.sinal, confianca: st.confianca, resumo: String(st.resumo || '').slice(0, 400),
       proximo_passo: String(st.proximo_passo || '').slice(0, 300), proximo_passo_em: dataPP, evidencia: String(st.evidencia || '').slice(0, 300),
       thread_id: c.threadId, ultima_mensagem_em: c.ultima, ultima_direcao: c.direcao, atualizado_em: new Date().toISOString() }, 'empresa_id');
-    const dec = decidirPipeline({ sinal: st.sinal, confianca: st.confianca, estagioAtual: op ? op.estagio : null });
+    const dec = decidirPipeline({ sinal: st.sinal, confianca: st.confianca, estagioAtual: op ? op.estagio : null,
+      clienteRespondeu: mensagens.some(x => x.direcao === 'recebido') });
     if (dec.acao === 'nada') { cont.sem_mudanca++; continue; }
     const base = { empresa_id: c.empresa_id, thread_id: c.threadId, sinal: st.sinal, confianca: st.confianca, estagio_para: dec.para,
       resumo: String(st.resumo || '').slice(0, 400), evidencia: String(st.evidencia || '').slice(0, 300), motivo: dec.motivo };

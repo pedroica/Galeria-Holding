@@ -41,6 +41,9 @@ ok(decidirPipeline({ sinal: 'fechado_ganho', confianca: 'alta', estagioAtual: 'N
 ok(decidirPipeline({ sinal: 'interesse', confianca: 'alta', estagioAtual: null }).acao === 'criar', 'interesse claro sem oportunidade abre uma');
 ok(decidirPipeline({ sinal: 'interesse', confianca: 'alta', estagioAtual: 'Perdido' }).acao === 'sugerir', 'reabrir oportunidade perdida é decisão do Pedro');
 ok(decidirPipeline({ sinal: 'sem_sinal', confianca: 'alta', estagioAtual: 'Contato direto' }).acao === 'nada', 'sem sinal, nada muda');
+ok(decidirPipeline({ sinal: 'conversa_inicial', confianca: 'alta', estagioAtual: null, clienteRespondeu: false }).acao === 'nada', 'e-mail frio sem resposta não abre oportunidade');
+ok(decidirPipeline({ sinal: 'reuniao_marcada', confianca: 'alta', estagioAtual: 'Contato direto', clienteRespondeu: false }).acao === 'nada', 'sem resposta da empresa o funil não anda');
+ok(decidirPipeline({ sinal: 'interesse', confianca: 'alta', estagioAtual: null, clienteRespondeu: true }).acao === 'criar', 'com resposta e interesse claro, abre');
 
 console.log('Texto da conversa');
 ok(semCitacao('Pode ser quinta 10h.\n\nEm seg., 24 de nov. de 2026 às 10:00, Pedro <p@x.com> escreveu:\n> texto antigo') === 'Pode ser quinta 10h.', 'tira a citação da mensagem anterior');
