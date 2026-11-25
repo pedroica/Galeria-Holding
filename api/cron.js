@@ -24,7 +24,7 @@ import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTempl
 import { obterTokenGraph } from '../lib/graph-token.js';
 import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail, gmailReq, consultaRascunho, filaIdDaFronteira } from '../lib/gmail-token.js';
 import { perfilGmail, historicoGmail, eventosDoHistorico, metadadosMensagem, corpoMensagem, filaIdDoMessageId, textoDoPayload } from '../lib/gmail-sync.js';
-import { montarIndice, casarMensagem, decidirPipeline, construirPromptStatus, SCHEMA_STATUS, semCitacao } from '../lib/gmail-crm.js';
+import { montarIndice, casarMensagem, decidirPipeline, construirPromptStatus, SCHEMA_STATUS, semCitacao, respostaReal } from '../lib/gmail-crm.js';
 import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
 import { tokenSdrValido } from '../lib/sdr-auth.js';
 import { crossSell, sinaisDeCompra } from '../lib/sdr-topo.js';
@@ -2456,6 +2456,13 @@ async function jobGmailCrm(req, res) {
   let gastoHoje = gastoDosLogs(logsHoje);
   const modelo = typeof cfg.gmail_crm_modelo === 'string' && cfg.gmail_crm_modelo ? cfg.gmail_crm_modelo : MODELO_SDR;
   const temLLM = await temChaveLLM();
+  // Conversas que uma execução anterior não conseguiu ler (tempo, teto de custo, falha
+  // do modelo) ficam com sinal vazio: entram de novo aqui, depois das novas.
+  const pendentes = await sg(`crm_gmail_status?sinal=is.null&thread_id=not.is.null&select=empresa_id,thread_id,ultima_mensagem_em,ultima_direcao&order=ultima_mensagem_em.desc.nullslast&limit=15`);
+  for (const p of (Array.isArray(pendentes) ? pendentes : [])) {
+    const k = p.empresa_id + '|' + p.thread_id;
+    if (![...conversas.values()].some(c => c.empresa_id === p.empresa_id)) conversas.set(k, { empresa_id: p.empresa_id, threadId: p.thread_id, ultima: p.ultima_mensagem_em, direcao: p.ultima_direcao });
+  }
   for (const c of conversas.values()) {
     await spUpsert('crm_gmail_status', { empresa_id: c.empresa_id, ultima_mensagem_em: c.ultima, ultima_direcao: c.direcao, thread_id: c.threadId, atualizado_em: new Date().toISOString() }, 'empresa_id');
     if (!temLLM || gastoHoje >= tetoUsd || Date.now() - inicio > LIMITE) { completo = completo && true; continue; }
@@ -2478,7 +2485,7 @@ async function jobGmailCrm(req, res) {
       proximo_passo: String(st.proximo_passo || '').slice(0, 300), proximo_passo_em: dataPP, evidencia: String(st.evidencia || '').slice(0, 300),
       thread_id: c.threadId, ultima_mensagem_em: c.ultima, ultima_direcao: c.direcao, atualizado_em: new Date().toISOString() }, 'empresa_id');
     const dec = decidirPipeline({ sinal: st.sinal, confianca: st.confianca, estagioAtual: op ? op.estagio : null,
-      clienteRespondeu: mensagens.some(x => x.direcao === 'recebido') });
+      clienteRespondeu: respostaReal(mensagens, proprios) });
     if (dec.acao === 'nada') { cont.sem_mudanca++; continue; }
     const base = { empresa_id: c.empresa_id, thread_id: c.threadId, sinal: st.sinal, confianca: st.confianca, estagio_para: dec.para,
       resumo: String(st.resumo || '').slice(0, 400), evidencia: String(st.evidencia || '').slice(0, 300), motivo: dec.motivo };
