@@ -46,6 +46,8 @@ globalThis.fetch = async (url, opts = {}) => {
   if (u.includes('crm_oauth_tokens')) return json([{ id: 't1', access_token: 'tok', refresh_token: 'r', expires_at: new Date(Date.now() + 3600e3).toISOString(), account_email: 'pedro@galeria.ag' }]);
   if (u.startsWith('https://graph.microsoft.com')) return json({ value: INBOX });
   if (u.includes('crm_logs')) return json([]);
+  // Cursor fixo: o padrão é "agora - 2 dias", e o teste quebrava sozinho depois de 19/11.
+  if (u.includes('crm_configuracoes') && u.includes('sdr_inbox_cursor') && metodo === 'GET') return json([{ valor: '2026-11-16T00:00:00Z' }]);
   if (u.includes('crm_configuracoes') && metodo === 'GET') return json([]);
   if (u.includes('crm_decisores') && metodo === 'GET') { const k = Object.keys(DEC).find(e => u.includes('"' + e + '"')); return json(k ? [DEC[k]] : []); }
   if (u.includes('crm_sdr_respostas') && metodo === 'POST') { if (vistas.has(body.graph_message_id)) return json([], 201); vistas.add(body.graph_message_id); return json([{ id: 'r-' + body.graph_message_id }], 201); }
