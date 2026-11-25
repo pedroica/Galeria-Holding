@@ -54,6 +54,11 @@ ok(analisarEdicao(orig, { assunto: orig.assunto, corpo: orig.corpo.replace('\n\n
 ok(!analisarEdicao({ assunto: 'a', corpo: 'Contato, para nos ajudar no teste do agente.' }, { assunto: 'a', corpo: 'Contato, versão editada curta.' }).categorias.includes('solucao'), '"nos" comum não é a solução NOS (falso positivo do teste real)');
 ok(analisarEdicao({ assunto: 'a', corpo: 'Ana, o BrandSync resolve.' }, { assunto: 'a', corpo: 'Ana, o CR.IA resolve.' }).categorias.includes('solucao'), 'troca real de solução continua detectada');
 
+const agente = 'Marco, vi na InfoMoney a campanha da Latam Pass que dá milhas para quem come em restaurantes parceiros. É o tipo de ação que se decide na hora.\n\nFaz sentido eu te mandar a ideia desenvolvida?\n\nPedro Ica';
+const gmailEnviou = 'Marco, vi na InfoMoney a campanha da Latam Pass que dá milhas para quem\r\ncome em restaurantes parceiros. É o tipo de ação que se decide na hora.\r\n\r\nFaz sentido eu te mandar a ideia desenvolvida?\r\n\r\n[image: Pedro Ica | Growth | Galeria Holding]';
+ok(analisarEdicao({ assunto: 'a', corpo: agente }, { assunto: 'a', corpo: gmailEnviou }).sem_alteracao, 'quebra de linha do Gmail e assinatura em imagem NÃO são edição (caso real LATAM)');
+ok(!analisarEdicao({ assunto: 'a', corpo: agente }, { assunto: 'a', corpo: gmailEnviou.replace('na hora', 'no balcão') }).sem_alteracao, 'mudança real de palavra continua sendo edição');
+
 console.log('Propostas: nada com pouca amostra; nada ativo sozinho');
 const poucos = [{ tipo: 'editado', diff: { categorias: ['encurtou'] } }, { tipo: 'editado', diff: { categorias: ['encurtou'] } }];
 ok(propostasDeAprendizado(poucos).length === 0, '2 edições não viram aprendizado');
