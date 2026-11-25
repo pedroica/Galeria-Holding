@@ -89,3 +89,56 @@ Depois disso o **estrategista** decide se vale abordar, com qual tese e qual ag�
 - A detecção de envio confere o destinatário na pasta Enviados depois da criação do rascunho. Se você mandar outro e-mail para a mesma pessoa por fora, ele conta como envio do rascunho.
 - Lusha e reveal continuam com o teto diário de créditos de `enriquecimento_diario_max`. Sem e-mail revelado, a pessoa não entra.
 - Contas Vercel e GitHub CLI sem login nesta máquina: deploy e PR passam pelo Git e pelo navegador.
+
+## Fase 2: inteligência, Gmail como fonte de verdade e aprendizado (26/11)
+
+### Score de oportunidade (0-100, explicável) — `lib/sdr-score.js`
+São 8 fatores, cada um com os pontos e o motivo em português:
+
+| Fator | Peso | Como é calculado |
+|---|---|---|
+| Aderência ao portfólio | 15 | estrelas da empresa com as agências |
+| Porte | 10 | `rank` da base, usado como **aproximação**: a base não tem receita nem funcionários, e a explicação diz isso |
+| Cases e clientes do mesmo setor | 10 | case do grupo ou cliente ativo no setor |
+| Gatilho público | 20 | tipo e recência do sinal, com fonte, data e por que importa |
+| Oportunidade identificável | 10 | solução do portfólio que casa com o setor ou com o gatilho |
+| Senioridade e área do contato | 10 | nível do cargo e se a área decide comunicação |
+| Acesso | 10 | e-mail válido e WhatsApp |
+| Relacionamento prévio | 15 | conversa anterior, oportunidade parada ou pausa vencida |
+
+- **Soluções:** BrandSync, CR.IA, Catalyst, Gaia Data as a Service ou Galeria. BrandSync só entra por setor de franquia ou distribuição, ou quando o próprio fato fala de rede.
+- **Seleção:** ordena pelo score. O topo de funil aceito por você continua na frente.
+- **Diversidade:** primeiro no máximo 30% do lote por setor; se sobrar vaga, completa com os melhores. Continua 1 empresa por semana.
+- **Estrategista:** recalcula o score com o dossiê fresco e atende os maiores primeiro.
+- **Teste com 500 leads reais (26/11):**
+  - score médio 37; 69 leads entre 55 e 74; nenhum acima de 75;
+  - 171 com gatilho para abordar agora, 9 para retomar conversa, 320 sem motivo concreto (não abordar);
+  - lote de 20 distribuído em 15 setores.
+- **Tela:** área **Inteligência** no topo e score, solução, gatilho e próxima ação em cada card da Fila.
+
+### Gmail como fonte de verdade — `lib/gmail-sync.js`
+- **Incremental pela History API**, a cada 15 min, dentro do `sdr-respostas`:
+  - mensagem SENT associada ao agente pelo `Message-ID` (`<fila-ID@agente.galeriaholding.crm>`) ou pela conversa do rascunho vira envio **confirmado**;
+  - mensagem DRAFT nova numa conversa do agente vira "editado no Gmail".
+- **Reconciliação completa:**
+  - roda uma vez por dia, ou quando o `historyId` expira ou falta;
+  - confere rascunho por rascunho: enviado, apagado ou duplicado (duplicado só é registrado, nada é apagado).
+- **Datas de envio:**
+  - `enviado_real_em` só é preenchida pela API;
+  - `enviado_estimado_em` guarda o que você informou à mão;
+  - a data real substitui a estimada, que continua guardada; uma estimativa nunca sobrescreve uma data real.
+- **Deduplicação e auditoria:** cada evento vai uma única vez para `crm_gmail_eventos` (índice único `gmail_id + tipo`). E-mail pessoal não é registrado.
+- **Pub/Sub (push):** não existe tópico Google Cloud no projeto. A History API a cada 15 min cumpre o papel sem custo.
+- **Envio pelo botão do CRM:** grava a data real e o id da mensagem.
+
+### Aprendizado comercial — `lib/sdr-aprendizado.js`
+- **Eventos em `crm_aprendizado_eventos`:**
+  - aprovação e rejeição, com motivo;
+  - edição, com a versão original do agente e a sua versão final;
+  - enviado sem alteração ou com alteração, comparando o texto que saiu do Gmail com o original.
+- **O que a análise da edição classifica:** encurtou ou alongou, abertura, CTA, adjetivos, linguagem artificial, troca de solução, reescrita e assunto.
+- **Job `sdr-aprendizado`** (diário às 06h, ou pelo botão "Recalcular aprendizados"):
+  - transforma os eventos em **propostas** na `crm_memoria_comercial`, com status `proposto` e as evidências;
+  - exige amostra mínima: 5 eventos e 40% das revisões para padrões de edição, 3 rejeições iguais, 10 envios para desempenho e 10 e-mails para o perfil;
+  - desempenho é sempre registrado como correlação, e e-mail sem resposta não conta como abordagem ruim.
+- **Memória comercial:** só o que está **ativo** entra no estrategista e na redação, filtrado por setor e solução. Na tela você ativa, desativa, corrige, descarta (o histórico fica) e adiciona preferências. As 3 preferências que você já deu estão ativas.

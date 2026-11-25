@@ -22,12 +22,15 @@ import { aplicarResposta } from '../lib/sdr-acoes.js';
 import { podeEnviar, slotsDoDia, proximoPasso, corpoFinal, htmlDeTexto, horaBRT, tetoEmailHoje } from '../lib/sdr-envio.js';
 import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTemplate } from '../lib/canais-envio.js';
 import { obterTokenGraph } from '../lib/graph-token.js';
-import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail } from '../lib/gmail-token.js';
+import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail, gmailReq } from '../lib/gmail-token.js';
+import { perfilGmail, historicoGmail, eventosDoHistorico, metadadosMensagem, corpoMensagem, filaIdDoMessageId } from '../lib/gmail-sync.js';
 import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
 import { tokenSdrValido } from '../lib/sdr-auth.js';
 import { crossSell, sinaisDeCompra } from '../lib/sdr-topo.js';
 import { construirPromptEstrategia, validarTese, resumoEcossistema, SCHEMA_ESTRATEGIA, OFERTA_BLITZ_PADRAO } from '../lib/sdr-estrategista.js';
 import { inicioDiaBRT, vagasDoDia, gastoDosLogs, orcamentoOk, contextoDoLead, conversaRecente } from '../lib/sdr-meta.js';
+import { scoreOportunidade } from '../lib/sdr-score.js';
+import { montarMemoriaPrompt, analisarEdicao, propostasDeAprendizado, perfilDeComunicacao } from '../lib/sdr-aprendizado.js';
 
 // Base de conhecimento (agências, cases com números exatos). Carregada no cold start.
 let KNOWLEDGE = { agencias: [], cases_destaque: [] };
@@ -1011,7 +1014,7 @@ async function jobRascunhosMatinais(req, res) {
           d = await criarRascunhoGmail(gmail.token, args);   // idempotente: adota se o 1º chegou a criar
         }
         // Sucesso = id devolvido pela API E gravado no banco. Sem as duas coisas, não conta.
-        const gravou = await sp('crm_fila?id=eq.' + item.id + '&outlook_message_id=is.null', { outlook_message_id: d.id, rascunho_criado_em: new Date().toISOString(), outlook_draft_link: d.link, rascunho_erro: null }, 'PATCH');
+        const gravou = await sp('crm_fila?id=eq.' + item.id + '&outlook_message_id=is.null', Object.assign({ outlook_message_id: d.id, rascunho_criado_em: new Date().toISOString(), outlook_draft_link: d.link, rascunho_erro: null }, d.threadId ? { thread_ref: d.threadId } : {}), 'PATCH');
         if (!gravou) throw new Error('rascunho criado no Gmail (' + d.id + '), mas o banco não gravou o id; a próxima rodada adota o mesmo rascunho');
         if (d.adotado) adotados++; else criados++;
       } catch (e) {
@@ -1176,7 +1179,7 @@ async function jobSdrSelecao(req, res) {
   const pendentes = Array.isArray(pend) ? pend.length : 0;
   const loteMax = Math.max(0, loteCfg - pendentes);
 
-  const decisores = await sg('crm_decisores?etapa_cadencia=neq.off&status=neq.inativo&apagado_em=is.null&select=id,nome,cargo,empresa_id,email,wa,email_valido,status,etapa_cadencia,ultimo_toque_em,opt_out,respondeu,pausa_ate_em,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,dominio,cliente_ativo)&order=ultimo_toque_em.asc.nullsfirst&limit=800');
+  const decisores = await sg('crm_decisores?etapa_cadencia=neq.off&status=neq.inativo&apagado_em=is.null&select=id,nome,cargo,empresa_id,email,wa,email_valido,status,etapa_cadencia,ultimo_toque_em,opt_out,respondeu,pausa_ate_em,crm_empresas!empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe,dominio,cliente_ativo,rank)&order=ultimo_toque_em.asc.nullsfirst&limit=800');
   if (decisores === null) return erroLeitura('sdr-selecao', res, inicio, 'crm_decisores');
   const candidatos = (Array.isArray(decisores) ? decisores : []).map(d => ({ ...d, empresa: d.crm_empresas || {} }));
 
@@ -1231,7 +1234,7 @@ async function jobSdrSelecao(req, res) {
   const jaNaLista = new Set(candidatos.map(d => d.id));
   const faltam = Object.keys(ultimaConversa).filter(id => !jaNaLista.has(id)).slice(0, 300);
   if (faltam.length) {
-    const extra = await sg(`crm_decisores?id=in.(${faltam.join(',')})&etapa_cadencia=neq.off&status=neq.inativo&apagado_em=is.null&select=id,nome,cargo,empresa_id,email,wa,email_valido,status,etapa_cadencia,ultimo_toque_em,opt_out,respondeu,pausa_ate_em,crm_empresas!empresa_id(id,nome,setor,segmento_detalhe,dominio,cliente_ativo)`);
+    const extra = await sg(`crm_decisores?id=in.(${faltam.join(',')})&etapa_cadencia=neq.off&status=neq.inativo&apagado_em=is.null&select=id,nome,cargo,empresa_id,email,wa,email_valido,status,etapa_cadencia,ultimo_toque_em,opt_out,respondeu,pausa_ate_em,crm_empresas!empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe,dominio,cliente_ativo,rank)`);
     for (const d of (Array.isArray(extra) ? extra : [])) candidatos.push({ ...d, empresa: d.crm_empresas || {} });
   }
 
@@ -1239,9 +1242,15 @@ async function jobSdrSelecao(req, res) {
   const rej = await sg('crm_fila?decisao=eq.rejeitado&select=decisor_id&limit=5000');
   const rejeitados = new Set((Array.isArray(rej) ? rej : []).map(r => r.decisor_id).filter(Boolean));
 
+  // Insumos do score: setores com case do grupo e setores de clientes ativos.
+  const KVs = await knowledgeVivo();
+  const setoresComCase = new Set((KVs.cases_destaque || []).flatMap(c => [c.categoria_da_marca, ...(c.tags || [])]).filter(Boolean).map(x => String(x).toLowerCase()));
+  const cliAt = await clientesAtivos();
+  const setoresClientes = new Set((cliAt.lista || []).map(c => String(c.setor || '').toLowerCase()).filter(Boolean));
+
   const sombra = await modoSombra();
   const { lote, upsell, excluidos, total_elegiveis } = selecionarLote({
-    contexto: { ultimaConversa, empresasOppParada }, rejeitados,
+    contexto: { ultimaConversa, empresasOppParada }, rejeitados, setoresComCase, setoresClientes,
     candidatos, estrelas, blocklist, toquesEmpresa30d, dossies, agencias, topoAceitos, emCurso,
     primeirosContatoSemana, config: { lote_max: loteMax }, agora: Date.now()
   });
@@ -1252,12 +1261,14 @@ async function jobSdrSelecao(req, res) {
     const ok = await spUpsert('crm_sdr_estado', {
       decisor_id: item.decisor_id, empresa_id: item.empresa_id, agencia_id: item.agencia_id || null,
       agencia_motivo: item.agencia_motivo || null, data_lote: dataLote, dia_cadencia: item.dia_cadencia || 0,
-      canal: null, etapa: 'selecionado', status: 'ativo', sombra, atualizado_em: new Date().toISOString()
+      canal: null, etapa: 'selecionado', status: 'ativo', sombra, atualizado_em: new Date().toISOString(),
+      score: item.score_oportunidade ?? null, score_detalhe: item.score_detalhe || null, solucao: item.solucao || null
     }, 'decisor_id,data_lote,dia_cadencia', true);   // rodar de novo no mesmo dia não reinicia quem já avançou
     if (ok) gravados++;
   }
 
-  const ctx = { sombra, selecionados: lote.length, gravados, upsell: upsell.length, excluidos: excluidos.length, total_elegiveis, lote_max: loteMax, pendentes_da_noite_anterior: pendentes, ms: Date.now() - inicio };
+  const scs = lote.map(i => i.score_oportunidade).filter(n => typeof n === 'number');
+  const ctx = { sombra, score_medio: scs.length ? Math.round(scs.reduce((a, b) => a + b, 0) / scs.length) : null, selecionados: lote.length, gravados, upsell: upsell.length, excluidos: excluidos.length, total_elegiveis, lote_max: loteMax, pendentes_da_noite_anterior: pendentes, ms: Date.now() - inicio };
   await logCron('sdr-selecao', nivelTrabalho(gravados), 'fim', ctx);
   return res.status(200).json({ ok: true, ...ctx });
 }
@@ -1465,6 +1476,17 @@ async function configSdr() {
   };
 }
 
+// Memória comercial ATIVA para o prompt (só o que o Pedro ativou ou escreveu).
+// Filtra pelo escopo (setor/solução) e limita o tamanho. Cache de 5 min.
+let _memCache = { ate: 0, rows: null };
+async function memoriaParaPrompt({ setor, solucao } = {}) {
+  if (_memCache.ate < Date.now()) {
+    const r = await sg('crm_memoria_comercial?status=eq.ativo&select=tipo,texto,escopo,evidencias&order=evidencias.desc&limit=200');
+    _memCache = { ate: Date.now() + 5 * 60000, rows: Array.isArray(r) ? r : [] };
+  }
+  return montarMemoriaPrompt(_memCache.rows, { setor, solucao });
+}
+
 // Contexto do CRM por lead (id do estado → itens). 3 consultas para o lote todo.
 async function contextoDosLeads(estados, cfg) {
   const out = {};
@@ -1568,19 +1590,30 @@ async function jobSdrEstrategia(req, res) {
     await logCron('sdr-estrategia', 'aviso', 'fim — pulado', { motivo: 'sem chave da Anthropic (env e Vault)' });
     return res.status(200).json({ ok: true, pulado: true, motivo: 'sem chave da Anthropic (env e Vault)' });
   }
-  const brutos = await sg(`crm_sdr_estado?etapa=eq.dossie&status=eq.ativo&select=id,decisor_id,empresa_id,agencia_motivo,dia_cadencia,crm_decisores:decisor_id(id,nome,cargo,email,wa,pausa_ate_em),crm_empresas:empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote * 8}`);
+  const brutos = await sg(`crm_sdr_estado?etapa=eq.dossie&status=eq.ativo&select=id,decisor_id,empresa_id,agencia_motivo,dia_cadencia,score,crm_decisores:decisor_id(id,nome,cargo,email,email_valido,wa,pausa_ate_em),crm_empresas:empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe,rank),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote * 8}`);
   if (brutos === null) return erroLeitura('sdr-estrategia', res, inicio, 'crm_sdr_estado');
   // Contexto verificável do CRM (conversa, oportunidade parada, pausa vencida):
   // é o que permite abordar sem notícia sem virar mensagem artificial.
   const contextoPor = await contextoDosLeads(brutos, cfg);
   const temFato = (e) => ((e.crm_dossies && e.crm_dossies.sinais) || []).some(s => s && s.url);
   const semFatoOk = (e) => cfg.semFato && (contextoPor[e.id] || []).length > 0;
-  // Fila da noite: com fato primeiro; com contexto depois (o mais recente antes);
+  // Score recalculado com o dossiê fresco (gatilhos públicos) e o contexto real.
+  const estrelasE = {};
+  const empIdsE = [...new Set(brutos.map(e => e.empresa_id).filter(Boolean))];
+  if (empIdsE.length) {
+    const er = await sg(`crm_empresa_agencia_estrelas?empresa_id=in.(${empIdsE.join(',')})&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=2000`);
+    for (const r of (Array.isArray(er) ? er : [])) { const v = Number(r.estrelas_manual ?? r.estrelas_calculadas ?? 0) || 0; if (v > (estrelasE[r.empresa_id] || 0)) estrelasE[r.empresa_id] = v; }
+  }
+  const scorePor = {};
+  for (const e of brutos) scorePor[e.id] = scoreOportunidade({ decisor: e.crm_decisores || {}, empresa: e.crm_empresas || {}, estrelas: estrelasE[e.empresa_id] || 0,
+    sinais: (e.crm_dossies && e.crm_dossies.sinais) || [], contexto: contextoPor[e.id] || [] });
+  const porScore = (a, b) => (scorePor[b.id].score - scorePor[a.id].score);
+  // Fila da noite: os de maior score primeiro (com notícia ou com contexto);
   // sem fato e sem contexto não gasta modelo e sai já (não conta na meta).
   const comFato = brutos.filter(temFato);
   const semFatoElegiveis = brutos.filter(e => !temFato(e) && semFatoOk(e));
   const descartaveis = brutos.filter(e => !temFato(e) && !semFatoOk(e));
-  const estados = [...comFato, ...semFatoElegiveis].slice(0, Math.min(lote, sit.vagas)).concat(descartaveis);
+  const estados = [...comFato, ...semFatoElegiveis].sort(porScore).slice(0, Math.min(lote, sit.vagas)).concat(descartaveis);
   const KV = await knowledgeVivo();
   const cli = await clientesAtivos();
   const ecossistema = resumoEcossistema(KV, cli.porAgencia);
@@ -1610,6 +1643,8 @@ async function jobSdrEstrategia(req, res) {
     const { system, user } = construirPromptEstrategia({
       ecossistema, oferta: cfg.oferta, empresa, decisor, sinais, historico,
       agenciaSugerida: est.crm_agencias ? { slug: est.crm_agencias.slug, motivo: est.agencia_motivo } : null,
+      solucaoSugerida: scorePor[est.id] ? { nome: scorePor[est.id].solucao_nome, motivo: scorePor[est.id].motivo } : null,
+      memoria: await memoriaParaPrompt({ setor: empresa.setor || empresa.setor_sugerido, solucao: scorePor[est.id] && scorePor[est.id].solucao }),
       notaMin: semFato ? cfg.notaEncaixeMinSemFato : cfg.notaEncaixeMin, semFato, contexto: contextoPor[est.id] || []
     });
     const r = await gerarJSON({ system, user, schema: SCHEMA_ESTRATEGIA, effort: cfg.effortEstrategia, model: cfg.modeloEstrategia });
@@ -1627,7 +1662,9 @@ async function jobSdrEstrategia(req, res) {
     const slugEsc = (tese.agencias || [])[0];
     if (slugEsc && v.seguir && idPorSlug[slugEsc]) agenciaId = idPorSlug[slugEsc];
     if (v.seguir) seguem++; else descartados++;
+    const scE = scorePor[est.id];
     await sp(`crm_sdr_estado?id=eq.${est.id}`, Object.assign({
+      score: scE ? scE.score : null, score_detalhe: scE || null, solucao: scE ? scE.solucao : null,
       etapa: v.seguir ? 'estrategia' : 'avaliado', canal, tese, nota_encaixe: Number(tese.nota_encaixe) || 0,
       motivo: v.motivo.slice(0, 500), atualizado_em: agora
     }, agenciaId ? { agencia_id: agenciaId } : {}), 'PATCH');
@@ -1658,7 +1695,7 @@ async function jobSdrRedacao(req, res) {
   }
   // Com o estrategista ligado, a redação só pega quem já tem tese (etapa 'estrategia').
   const etapaIn = cfg.estrategista ? 'estrategia' : 'dossie';
-  const estados = await sg(`crm_sdr_estado?etapa=eq.${etapaIn}&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,agencia_motivo,dia_cadencia,dossie_id,canal,tese,refacoes,motivo,crm_decisores:decisor_id(id,nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote}`);
+  const estados = await sg(`crm_sdr_estado?etapa=eq.${etapaIn}&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,agencia_motivo,dia_cadencia,dossie_id,canal,tese,refacoes,motivo,solucao,crm_decisores:decisor_id(id,nome,cargo,email,wa),crm_empresas:empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote}`);
   if (estados === null) return erroLeitura('sdr-redacao', res, inicio, 'crm_sdr_estado');
   const KV = await knowledgeVivo();
   const agora = new Date().toISOString();
@@ -1696,7 +1733,8 @@ async function jobSdrRedacao(req, res) {
       const { system, user } = construirPromptRedacao({
         dossie: { sinais }, nome: decisor.nome, cargo: decisor.cargo, empresa, agencia, caso: caseUsado,
         etapa: 'D' + (est.dia_cadencia || 0), canal, angulo, sinal, tese, feedback, semFato, contexto: (tese && tese.contexto) || [],
-        historicoToques: [], aprendizados: cfg.aprendizados, expressoesProibidas: cfg.proibidas
+        historicoToques: [], aprendizados: cfg.aprendizados, expressoesProibidas: cfg.proibidas,
+        memoria: await memoriaParaPrompt({ setor: empresa.setor || empresa.setor_sugerido, solucao: est.solucao })
       });
       const r = await gerarJSON({ system, user, schema: SCHEMA_MSG, effort: tese ? cfg.effortRedacao : 'medium', model: cfg.modeloRedacao });
       return { angulo, versao: versaoBase + i + 1, ...r };
@@ -1742,7 +1780,7 @@ async function jobSdrQualidade(req, res) {
     await logCron('sdr-qualidade', 'aviso', 'fim — pulado', { motivo: 'sem chave da Anthropic (env e Vault)' });
     return res.status(200).json({ ok: true, pulado: true, motivo: 'sem chave da Anthropic (env e Vault)' });
   }
-  const estados = await sg(`crm_sdr_estado?etapa=eq.redigido&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,canal,dia_cadencia,tese,refacoes,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=atualizado_em.asc&limit=${lote}`);
+  const estados = await sg(`crm_sdr_estado?etapa=eq.redigido&status=eq.ativo&select=id,sombra,decisor_id,empresa_id,agencia_id,canal,dia_cadencia,tese,refacoes,solucao,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(id,nome,setor),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=atualizado_em.asc&limit=${lote}`);
   if (estados === null) return erroLeitura('sdr-qualidade', res, inicio, 'crm_sdr_estado');
   const cfg = await configSdr();
   const sitQ = await situacaoDoDia(cfg);
@@ -1816,6 +1854,7 @@ async function jobSdrQualidade(req, res) {
       tema: tese ? String(tese.alavanca || '').slice(0, 60) : null,
       etapa_cadencia: ({ 0: 1, 3: 2, 7: 3, 14: 4 })[est.dia_cadencia || 0] || 1,
       assunto: melhor.m.assunto || null, corpo: melhor.m.corpo,
+      assunto_original: melhor.m.assunto || null, corpo_original: melhor.m.corpo, solucao: est.solucao || null,
       tokens_prompt: melhor.m.tokens_prompt, tokens_resposta: melhor.m.tokens_resposta, custo_usd: melhor.m.custo_usd,
       modelo: melhor.m.modelo || MODELO_SDR, contexto_para_aprovacao: contexto.slice(0, 900)
     });
@@ -2156,6 +2195,139 @@ async function jobSdrVigia(req, res) {
   return res.status(200).json({ ok: true, ...ctx });
 }
 
+
+// Registra um evento do Gmail uma única vez (índice único gmail_id+tipo).
+// Devolve false se já tinha sido aplicado: é a deduplicação de eventos.
+async function eventoGmailNovo(gmailId, tipo, filaId, threadId, detalhe) {
+  const r = await fetch(SUPA_URL + '/rest/v1/crm_gmail_eventos?on_conflict=gmail_id,tipo', { method: 'POST',
+    headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=representation' },
+    body: JSON.stringify({ gmail_id: String(gmailId), tipo, fila_id: filaId || null, thread_id: threadId || null, detalhe: detalhe || null }) });
+  if (!r.ok) return false;
+  const j = await r.json().catch(() => []);
+  return Array.isArray(j) && j.length > 0;
+}
+
+// Envio CONFIRMADO pela API do Gmail. Data real; nunca é sobrescrita por estimativa
+// (e a real sobrepõe a estimada). Toque, último contato, aprendizado e follow-up.
+async function registrarEnvioReal(gm, filaId, { messageId, threadId, enviadoEm, assunto, origem }) {
+  const fl = await sg(`crm_fila?id=eq.${filaId}&select=id,status,decisor_id,empresa_id,agencia_id,assunto,corpo,assunto_original,corpo_original,solucao,enviado_real_em,crm_decisores(cargo),crm_empresas(setor,setor_sugerido)`);
+  const f = Array.isArray(fl) && fl[0];
+  if (!f || f.enviado_real_em) return false;
+  const jaEnviado = f.status === 'enviado' || f.status === 'respondido';
+  const rows = await spPatchRet(`crm_fila?id=eq.${filaId}&enviado_real_em=is.null`, Object.assign({
+    enviado_real_em: enviadoEm, enviado_em: enviadoEm, gmail_message_id: messageId, rascunho_erro: null,
+    enviado_obs: 'confirmado pela API do Gmail (' + origem + ')'
+  }, threadId ? { thread_ref: threadId } : {}, jaEnviado ? {} : { status: 'enviado' }));
+  if (!rows.length) return false;
+  if (!jaEnviado) {
+    await sp('crm_toques', { decisor_id: f.decisor_id, empresa_id: f.empresa_id, canal: 'email', direcao: 'enviado', assunto: String(assunto || f.assunto || '').slice(0, 500),
+      resumo: 'SDR: enviado pelo Gmail (confirmado pela API)', texto_enviado: String(f.corpo || '').slice(0, 4000), data: enviadoEm, fonte: 'sistema', resultado: 'enviado', agencia_id: f.agencia_id ? String(f.agencia_id) : null });
+  }
+  await sp(`crm_decisores?id=eq.${f.decisor_id}&or=(ultimo_toque_em.is.null,ultimo_toque_em.lt.${enviadoEm})`, { ultimo_toque_em: enviadoEm }, 'PATCH');
+  // Aprendizado: o que saiu x o que o agente escreveu.
+  try {
+    const enviado = await corpoMensagem(gm.token, messageId);
+    const orig = { assunto: f.assunto_original || f.assunto, corpo: f.corpo_original || f.corpo };
+    const fin = { assunto: assunto || f.assunto, corpo: enviado || f.corpo };
+    const diff = analisarEdicao(orig, fin);
+    await sp('crm_aprendizado_eventos', {   // índice único parcial: 2º registro do mesmo envio é recusado (409)
+ fila_id: f.id, decisor_id: f.decisor_id, empresa_id: f.empresa_id,
+      tipo: diff.sem_alteracao ? 'enviado_sem_alteracao' : 'enviado_com_alteracao', original: orig, final: fin, diff,
+      contexto: { solucao: f.solucao || null, setor: (f.crm_empresas && (f.crm_empresas.setor || f.crm_empresas.setor_sugerido)) || null, cargo: f.crm_decisores && f.crm_decisores.cargo } });
+  } catch (_) { /* aprendizado não bloqueia o registro do envio */ }
+  await logCron('gmail-sync', 'info', 'envio confirmado', { fila_id: filaId, gmail_message_id: messageId, origem, enviado_em: enviadoEm, era_estimado: jaEnviado });
+  return true;
+}
+
+async function aplicarHistoricoGmail(gm, registros, cont) {
+  // Conversas rastreadas: rascunhos do agente ainda não confirmados.
+  const ab = await sg('crm_fila?origem=eq.sdr&canal=eq.email&outlook_message_id=not.is.null&thread_ref=not.is.null&enviado_real_em=is.null&apagado_em=is.null&select=id,thread_ref&limit=1000');
+  const porThread = new Map((Array.isArray(ab) ? ab : []).map(r => [r.thread_ref, r.id]));
+  const evs = eventosDoHistorico(registros, porThread);
+  for (const ev of evs) {
+    cont.verificados++;
+    if (ev.tipo === 'rascunho_editado') {
+      const filaId = porThread.get(ev.threadId);
+      if (await eventoGmailNovo(ev.messageId, 'rascunho_editado', filaId, ev.threadId, null)) {
+        cont.editados_gmail++;
+        await sp(`crm_fila?id=eq.${filaId}`, { editado_no_gmail_em: new Date().toISOString() }, 'PATCH');
+      }
+      continue;
+    }
+    // Enviado: associa pelo Message-ID do agente ou pela conversa do rascunho.
+    const meta = await metadadosMensagem(gm.token, ev.messageId).catch(() => null);
+    if (!meta || !meta.labelIds.includes('SENT')) continue;
+    const pelaHeader = filaIdDoMessageId(meta.messageIdHeader);
+    const filaId = pelaHeader || porThread.get(meta.threadId) || null;
+    if (!filaId) {
+      if (pelaHeader === null && /@agente\.galeriaholding\.crm/i.test(meta.messageIdHeader)) {
+        if (await eventoGmailNovo(meta.id, 'sem_associacao', null, meta.threadId, { message_id: meta.messageIdHeader })) cont.sem_associacao++;
+      }
+      continue;   // e-mail pessoal ou de outra conversa: não é do agente, não é registrado
+    }
+    if (!(await eventoGmailNovo(meta.id, 'enviado', filaId, meta.threadId, { assunto: meta.assunto, data: meta.data, por: pelaHeader ? 'message-id' : 'conversa' }))) continue;
+    if (await registrarEnvioReal(gm, filaId, { messageId: meta.id, threadId: meta.threadId, enviadoEm: meta.data, assunto: meta.assunto, origem: 'history' })) cont.enviados_gmail++;
+  }
+}
+
+// Reconciliação completa: rascunho por rascunho (o que o histórico não cobre:
+// rascunho apagado, envio anterior ao cursor, duplicatas).
+async function reconciliarRascunhosGmail(gm, cont, agoraIso) {
+  const corte = new Date(Date.now() - 30 * 86400000).toISOString();
+  const itens = await sg(`crm_fila?origem=eq.sdr&canal=eq.email&status=in.(aprovado,enviado)&enviado_real_em=is.null&outlook_message_id=not.is.null&rascunho_criado_em=gte.${corte}&apagado_em=is.null&select=id,status,decisor_id,empresa_id,agencia_id,assunto,corpo,outlook_message_id,rascunho_criado_em,crm_decisores(email)&order=rascunho_criado_em.asc&limit=60`);
+  for (const it of (Array.isArray(itens) ? itens : [])) {
+    if (!ehRascunhoGmail(it.outlook_message_id)) continue;
+    const para = it.crm_decisores && it.crm_decisores.email;
+    if (!para) continue;
+    cont.verificados++;
+    // Duplicatas do mesmo item (mesmo Message-ID em mais de um rascunho): só registra.
+    try {
+      const l = await gmailReq('GET', '/drafts?maxResults=5&q=' + encodeURIComponent('rfc822msgid:fila-' + it.id + '@agente.galeriaholding.crm'), null, gm.token);
+      if (l && l.drafts && l.drafts.length > 1 && await eventoGmailNovo('dup:' + it.id, 'duplicado', it.id, null, { drafts: l.drafts.map(d => d.id) })) cont.duplicados++;
+    } catch (_) {}
+    const st = await estadoDoRascunhoGmail(gm.token, { draftId: it.outlook_message_id, para, desdeISO: it.rascunho_criado_em });
+    if (st.estado === 'enviado') {
+      if (await eventoGmailNovo(st.messageId, 'enviado', it.id, st.threadId, { assunto: st.assunto, data: st.enviadoEm, por: 'reconciliacao' })
+          && await registrarEnvioReal(gm, it.id, { messageId: st.messageId, threadId: st.threadId, enviadoEm: st.enviadoEm, assunto: st.assunto, origem: 'reconciliacao' })) cont.enviados_gmail++;
+    } else if (st.estado === 'apagado' && it.status === 'aprovado') {
+      const rows = await spPatchRet(`crm_fila?id=eq.${it.id}&status=eq.aprovado`, { status: 'pulado', motivo_pulo: 'rascunho apagado no Gmail' });
+      if (!rows.length) continue;
+      cont.apagados++;
+      await eventoGmailNovo(it.outlook_message_id, 'rascunho_apagado', it.id, null, null);
+      await sp(`crm_sdr_estado?fila_id=eq.${it.id}&etapa=eq.rascunho`, { etapa: 'avaliado', motivo: 'rascunho apagado pelo Pedro no Gmail (não enviado); o histórico fica', atualizado_em: agoraIso }, 'PATCH');
+    }
+  }
+}
+
+// ── sdr-aprendizado (diário): eventos → PROPOSTAS na memória comercial ────────
+// Nunca ativa nada: o que nasce aqui fica 'proposto' até o Pedro ativar. Se a
+// proposta já existe, só atualiza a contagem de evidências (status intocado).
+async function jobSdrAprendizado(req, res) {
+  const inicio = Date.now();
+  const desde = new Date(Date.now() - 180 * 86400000).toISOString();
+  const eventos = await sg(`crm_aprendizado_eventos?criado_em=gte.${desde}&select=tipo,motivo,diff,contexto,final&order=criado_em.desc&limit=5000`);
+  if (eventos === null) return erroLeitura('sdr-aprendizado', res, inicio, 'crm_aprendizado_eventos');
+  const desemp = await sg('crm_agente_desempenho_v?select=*&limit=1000');
+  const propostas = propostasDeAprendizado(eventos, { desempenho: Array.isArray(desemp) ? desemp : [] });
+  // Perfil de comunicação: só com amostra mínima de mensagens aprovadas/enviadas.
+  const finais = eventos.filter(e => (e.tipo === 'enviado_sem_alteracao' || e.tipo === 'enviado_com_alteracao') && e.final).map(e => e.final);
+  const perfil = perfilDeComunicacao(finais);
+  if (perfil.amostra_suficiente) {
+    propostas.push({ chave: 'perfil:estatistico', tipo: 'perfil', escopo: {}, evidencias: perfil.n, evidencia_detalhe: perfil,
+      texto: `E-mails que o Pedro enviou: mediana de ${perfil.palavras_mediana} palavras e ${perfil.frases_mediana} frases; assunto com ~${perfil.assunto_palavras_mediana} palavras; ${perfil.termina_com_pergunta_pct}% terminam com uma pergunta; tom ${perfil.formalidade}; ${perfil.adjetivos_por_email} adjetivos de efeito por e-mail.` });
+  }
+  let novas = 0, atualizadas = 0;
+  for (const p of propostas) {
+    const ja = await sg(`crm_memoria_comercial?chave=eq.${encodeURIComponent(p.chave)}&select=id,status,evidencias&limit=1`);
+    if (Array.isArray(ja) && ja[0]) {
+      if (ja[0].evidencias !== p.evidencias) { await sp(`crm_memoria_comercial?id=eq.${ja[0].id}`, { evidencias: p.evidencias, evidencia_detalhe: p.evidencia_detalhe, atualizado_em: new Date().toISOString() }, 'PATCH'); atualizadas++; }
+    } else if (await sp('crm_memoria_comercial', { chave: p.chave, tipo: p.tipo, texto: p.texto, escopo: p.escopo || {}, evidencias: p.evidencias, evidencia_detalhe: p.evidencia_detalhe, fonte: 'aprendizado', status: 'proposto' })) novas++;
+  }
+  const ctx = { eventos: eventos.length, propostas: propostas.length, novas, atualizadas, perfil_amostra: perfil.n, perfil_suficiente: perfil.amostra_suficiente, ms: Date.now() - inicio };
+  await logCron('sdr-aprendizado', 'info', novas ? `fim — ${novas} proposta(s) nova(s) para o Pedro revisar` : 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
 // PATCH que devolve as linhas alteradas: o filtro de status garante que só uma
 // execução registra o envio (idempotência entre o cron e o clique no app).
 async function spPatchRet(path, body) {
@@ -2171,30 +2343,31 @@ async function spPatchRet(path, body) {
 //     'rascunho': marca enviado e agenda o próximo passo da cadência.
 // Sem isso, nenhum follow-up nascia: só o envio automático (Piloto) os criava.
 async function sincronizarEnvios(gm) {
-  const cont = { verificados: 0, enviados_gmail: 0, apagados: 0, ciclos_fechados: 0, followups: 0 };
+  const cont = { modo: null, verificados: 0, enviados_gmail: 0, editados_gmail: 0, apagados: 0, duplicados: 0, sem_associacao: 0, ciclos_fechados: 0, followups: 0 };
   const agoraIso = new Date().toISOString();
   if (gm) {
-    const corte = new Date(Date.now() - 30 * 86400000).toISOString();
-    const itens = await sg(`crm_fila?origem=eq.sdr&canal=eq.email&status=eq.aprovado&outlook_message_id=not.is.null&rascunho_criado_em=gte.${corte}&apagado_em=is.null&select=id,decisor_id,empresa_id,agencia_id,assunto,corpo,outlook_message_id,rascunho_criado_em,crm_decisores(email)&order=rascunho_criado_em.asc&limit=40`);
-    for (const it of (Array.isArray(itens) ? itens : [])) {
-      if (!ehRascunhoGmail(it.outlook_message_id)) continue;
-      const para = it.crm_decisores && it.crm_decisores.email;
-      if (!para) continue;
-      cont.verificados++;
-      const st = await estadoDoRascunhoGmail(gm.token, { draftId: it.outlook_message_id, para, desdeISO: it.rascunho_criado_em });
-      if (st.estado === 'enviado') {
-        const rows = await spPatchRet(`crm_fila?id=eq.${it.id}&status=eq.aprovado`, { status: 'enviado', enviado_em: st.enviadoEm, thread_ref: st.threadId || null, rascunho_erro: null });
-        if (!rows.length) continue;   // outra execução já registrou
-        cont.enviados_gmail++;
-        await sp('crm_toques', { decisor_id: it.decisor_id, empresa_id: it.empresa_id, canal: 'email', direcao: 'enviado', assunto: String(st.assunto || it.assunto || '').slice(0, 500),
-          resumo: 'SDR: rascunho enviado pelo Gmail', texto_enviado: String(it.corpo || '').slice(0, 4000), data: st.enviadoEm, fonte: 'sistema', resultado: 'enviado', agencia_id: it.agencia_id ? String(it.agencia_id) : null });
-        await sp(`crm_decisores?id=eq.${it.decisor_id}`, { ultimo_toque_em: st.enviadoEm }, 'PATCH');
-      } else if (st.estado === 'apagado') {
-        const rows = await spPatchRet(`crm_fila?id=eq.${it.id}&status=eq.aprovado`, { status: 'pulado', motivo_pulo: 'rascunho apagado no Gmail' });
-        if (!rows.length) continue;
-        cont.apagados++;
-        await sp(`crm_sdr_estado?fila_id=eq.${it.id}&etapa=eq.rascunho`, { etapa: 'avaliado', motivo: 'rascunho apagado pelo Pedro no Gmail (não enviado)', atualizado_em: agoraIso }, 'PATCH');
+    // 1) Incremental pela History API. 2) Reconciliação completa se o histórico
+    //    expirou, se não há cursor ou uma vez por dia (pega o que escapou).
+    const cfgG = await sg('crm_configuracoes?chave=in.(gmail_history_id,gmail_reconciliado_em)&select=chave,valor');
+    const mg = {}; for (const r of (Array.isArray(cfgG) ? cfgG : [])) mg[r.chave] = r.valor;
+    const cursor = typeof mg.gmail_history_id === 'string' ? mg.gmail_history_id : null;
+    const ultimaRec = typeof mg.gmail_reconciliado_em === 'string' ? Date.parse(mg.gmail_reconciliado_em) : 0;
+    let precisaCompleta = !cursor || (Date.now() - ultimaRec > 20 * 3600000);
+    if (cursor) {
+      const h = await historicoGmail(gm.token, cursor);
+      if (h.expirado) { precisaCompleta = true; cont.historico_expirado = true; }
+      else {
+        cont.modo = 'incremental';
+        await aplicarHistoricoGmail(gm, h.registros, cont);
+        if (h.historyId) await spUpsert('crm_configuracoes', { chave: 'gmail_history_id', valor: h.historyId }, 'chave');
       }
+    }
+    if (precisaCompleta) {
+      const perfil = await perfilGmail(gm.token).catch(() => null);   // cursor novo ANTES de varrer: nada fica no vão
+      await reconciliarRascunhosGmail(gm, cont, agoraIso);
+      if (perfil && perfil.historyId) await spUpsert('crm_configuracoes', { chave: 'gmail_history_id', valor: perfil.historyId }, 'chave');
+      await spUpsert('crm_configuracoes', { chave: 'gmail_reconciliado_em', valor: agoraIso }, 'chave');
+      cont.modo = cont.modo ? cont.modo + '+completa' : 'completa';
     }
   }
   // Fecha o ciclo de quem já saiu (por qualquer caminho) e agenda o follow-up.
@@ -2313,6 +2486,7 @@ export default async function handler(req, res) {
     if (job === 'sdr-qualidade')         return await jobSdrQualidade(req, res);
     if (job === 'sdr-respostas')         return await jobSdrRespostas(req, res);
     if (job === 'sdr-vigia')             return await jobSdrVigia(req, res);
+    if (job === 'sdr-aprendizado')       return await jobSdrAprendizado(req, res);
     if (job === 'sdr-envios') {
       const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null);
       const ctx = await sincronizarEnvios(gm);
