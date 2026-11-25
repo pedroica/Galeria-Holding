@@ -60,7 +60,7 @@
   }
 
   // ── OportunidadeCard ────────────────────────────────────────────────────────
-  function OportunidadeCard({ op, agencias, meuPapel, minhaAgenciaId, onClick, onDragStart, isDragging, temPedido, empresaNome, dupCount, onMoverAgencia }) {
+  function OportunidadeCard({ op, agencias, meuPapel, minhaAgenciaId, onClick, onDragStart, isDragging, temPedido, empresaNome, dupCount, onMoverAgencia, gmail }) {
     const [showAgSelect, setShowAgSelect] = React.useState(false);
     const ag = agencias.find(a => a.id === op.agencia_id);
     const ehMinha = op.agencia_id === minhaAgenciaId || meuPapel === 'admin';
@@ -83,6 +83,10 @@
       }
     },
       temPedido && React.createElement('div', { style: { fontSize: 9, color: '#EF4444', marginBottom: 4, fontFamily: 'IBM Plex Mono,monospace' } }, '⚠ Pedido de atualização'),
+      gmail && gmail.ultima_mensagem_em && React.createElement('div', {
+        title: [gmail.resumo, gmail.proximo_passo ? 'Próximo passo: ' + gmail.proximo_passo : '', gmail.evidencia ? '"' + gmail.evidencia + '"' : ''].filter(Boolean).join('\n'),
+        style: { fontSize: 9, color: '#60A5FA', marginBottom: 4, fontFamily: 'IBM Plex Mono,monospace', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }
+      }, '✉ ' + (gmail.ultima_direcao === 'recebido' ? 'respondeu' : 'você escreveu') + ' há ' + Math.max(0, Math.floor((Date.now() - new Date(gmail.ultima_mensagem_em).getTime()) / 86400000)) + 'd' + (gmail.resumo ? ' · ' + gmail.resumo : '')),
       React.createElement('div', { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 4 } },
         React.createElement('div', { title: titulo, style: { fontFamily: 'IBM Plex Mono,monospace', fontSize: 11, color: '#eee', fontWeight: 700, lineHeight: '1.3', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 } }, titulo),
         dupCount > 1 && React.createElement('span', { title: dupCount + ' oportunidades para esta empresa', style: { fontSize: 8, background: '#2D2D44', color: '#FBBF24', borderRadius: 3, padding: '1px 4px', marginLeft: 4, flexShrink: 0, fontFamily: 'IBM Plex Mono,monospace' } }, 'x' + dupCount)
@@ -477,6 +481,7 @@
     const [oportunidades, setOportunidades] = useState([]);
     const [agencias, setAgencias] = useState([]);
     const [empresasMap, setEmpresasMap] = useState({});
+    const [gmailStatus, setGmailStatus] = useState({});   // status de cada prospecção lido do Gmail
     const [loading, setLoading] = useState(true);
     const [detalhe, setDetalhe] = useState(null);
     const [novaModal, setNovaModal] = useState(false);
@@ -503,6 +508,8 @@
       const empIds = [...new Set(opsArr.filter(o => o.empresa_id).map(o => o.empresa_id))];
       if (empIds.length > 0) {
         const emps = await supa('crm_empresas?id=in.(' + empIds.join(',') + ')&select=id,nome&limit=500');
+        const gs = await supa('crm_gmail_status?empresa_id=in.(' + empIds.join(',') + ')&select=*&limit=500');
+        if (Array.isArray(gs)) { const g = {}; gs.forEach(x => { g[x.empresa_id] = x; }); setGmailStatus(g); }
         if (Array.isArray(emps)) {
           const m = {};
           emps.forEach(e => { m[e.id] = e.nome; });
@@ -655,6 +662,7 @@
               colOps.length === 0
                 ? React.createElement('div', { style: { color: '#2D2D44', fontSize: 9, fontFamily: 'IBM Plex Mono,monospace', textAlign: 'center', padding: '20px 0', userSelect: 'none' } }, 'Nenhuma oportunidade')
                 : colOps.map(op => React.createElement(OportunidadeCard, {
+                    gmail: gmailStatus[op.empresa_id] || null,
                     key: op.id,
                     op, agencias,
                     meuPapel, minhaAgenciaId,

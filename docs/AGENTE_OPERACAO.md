@@ -142,3 +142,22 @@ São 8 fatores, cada um com os pontos e o motivo em português:
   - exige amostra mínima: 5 eventos e 40% das revisões para padrões de edição, 3 rejeições iguais, 10 envios para desempenho e 10 e-mails para o perfil;
   - desempenho é sempre registrado como correlação, e e-mail sem resposta não conta como abordagem ruim.
 - **Memória comercial:** só o que está **ativo** entra no estrategista e na redação, filtrado por setor e solução. Na tela você ativa, desativa, corrige, descarta (o histórico fica) e adiciona preferências. As 3 preferências que você já deu estão ativas.
+
+## O CRM se completa pelo Gmail (26/11) — `lib/gmail-crm.js`, job `gmail-crm`
+- **Quando roda:** a cada 15 min, das 07h às 22h. Na primeira vez, lê os últimos 45 dias em lotes de 60 e-mails. Depois, só o que é novo (History API).
+- **O que lê:** e-mails **enviados e recebidos** com contatos do CRM ou com pessoas de empresas do CRM (identificadas pelo domínio). Domínio genérico (gmail, hotmail…) não identifica empresa. E-mail pessoal ou automático é ignorado e **não fica guardado**.
+- **O que preenche sozinho:**
+  - toque no histórico de cada e-mail e último contato atualizado; quem respondeu fica marcado como "respondeu";
+  - pessoa nova de uma empresa conhecida vira contato (`fonte = gmail`), fora da cadência do agente, porque a conversa já é sua;
+  - status de cada empresa em `crm_gmail_status`: em que pé está, resumo, próximo passo e data. A leitura é feita pelo modelo, só com o que está escrito.
+- **Pipeline:**
+  - **Avanço claro, com confiança alta, é aplicado sozinho:** interesse → Contato direto; reunião marcada ou realizada → Primeira reunião; proposta ou negociação → Negociação. Conversa ativa sem oportunidade abre uma.
+  - **Nunca recua o funil.**
+  - **Perdido, Cliente ativo, Pausado, reabrir oportunidade perdida e qualquer coisa com confiança média ou baixa viram sugestão.**
+  - **Toda mudança vai para o histórico da oportunidade** (`autor = agente-gmail`). Na área Inteligência você **aceita, rejeita ou desfaz**.
+- **Onde ver:**
+  - card do Pipeline: "✉ respondeu há Xd · resumo";
+  - área Inteligência → Status pelo Gmail;
+  - tela Hoje → próximas ações.
+- **Custo:** teto de US$ 1 por dia (`gmail_crm_custo_dia_max_usd`), uma leitura por conversa com mensagem nova. Modelo configurável em `gmail_crm_modelo`.
+- **Limite:** só o Gmail conectado é lido. Conversas que acontecem só na caixa da Galeria (Outlook) não aparecem, a menos que o Outlook seja conectado.

@@ -3572,10 +3572,13 @@ function InteligenciaView(props) {
       supaFetch('/rest/v1/crm_memoria_comercial?status=neq.descartado&select=*&order=status.asc,evidencias.desc&limit=300'),
       supaFetch('/rest/v1/crm_agente_desempenho_v?select=*&limit=500'),
       supaFetch('/rest/v1/crm_sdr_respostas?recebido_em=gte.' + d30 + '&tipo=neq.auto_resposta&select=tipo&limit=1000'),
-      supaFetch('/rest/v1/crm_oportunidades?apagado_em=is.null&criado_em=gte.' + d30 + '&select=estagio,origem&limit=1000')
+      supaFetch('/rest/v1/crm_oportunidades?apagado_em=is.null&criado_em=gte.' + d30 + '&select=estagio,origem&limit=1000'),
+      supaFetch('/rest/v1/crm_gmail_sugestoes?criado_em=gte.' + d30 + '&select=*,crm_empresas:empresa_id(nome)&order=criado_em.desc&limit=200'),
+      supaFetch('/rest/v1/crm_gmail_status?ultima_mensagem_em=gte.' + d30 + '&select=*,crm_empresas:empresa_id(nome)&order=ultima_mensagem_em.desc&limit=60'),
+      supaFetch('/rest/v1/crm_logs?origem=eq.cron:gmail-crm&order=criado_em.desc&limit=1&select=criado_em,contexto')
     ]).then(function (r) {
       var cfg = {}; arr(r[4]).forEach(function (x) { cfg[x.chave] = x.valor; });
-      setD({ est: arr(r[0]), ops: arr(r[1]), gev: arr(r[2]), gerr: arr(r[3]), cfg: cfg, apr: arr(r[5]), mem: arr(r[6]), des: arr(r[7]), resp: arr(r[8]), opp: arr(r[9]) });
+      setD({ est: arr(r[0]), ops: arr(r[1]), gev: arr(r[2]), gerr: arr(r[3]), cfg: cfg, apr: arr(r[5]), mem: arr(r[6]), des: arr(r[7]), resp: arr(r[8]), opp: arr(r[9]), sug: arr(r[10]), gst: arr(r[11]), gcrm: arr(r[12])[0] || null });
     }).catch(function () { setD({ erro: true }); });
   }
   React.useEffect(function () { carregar(); }, []);
@@ -3590,6 +3593,12 @@ function InteligenciaView(props) {
     var email = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || null;
     supaFetch('/rest/v1/crm_memoria_comercial', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ tipo: nova.tipo, texto: nova.texto.trim(), fonte: 'manual', status: 'ativo', atualizado_por: email }) })
       .then(function (rows) { aviso(Array.isArray(rows) && rows.length ? 'Adicionado e ativo: entra nas próximas mensagens.' : 'Não deu para salvar.'); setNova({ tipo: nova.tipo, texto: '' }); carregar(); });
+  }
+  function decidirSug(id, acao) {
+    supaFetch('/rest/v1/rpc/gmail_decidir_sugestao', { method: 'POST', body: JSON.stringify({ p_id: id, p_acao: acao }) }).then(function (r) {
+      aviso(r && r.ok ? (acao === 'aceitar' ? 'Aplicado no pipeline (fica no histórico da oportunidade).' : acao === 'desfazer' ? 'Desfeito: o pipeline voltou ao estágio anterior.' : 'Sugestão descartada.') : 'Não deu: ' + ((r && (r.message || r.error)) || 'erro'));
+      carregar();
+    });
   }
   function recalcular() {
     supaFetch('/rest/v1/rpc/sdr_recalcular_aprendizado', { method: 'POST', body: '{}' }).then(function (r) {
@@ -3730,6 +3739,36 @@ function InteligenciaView(props) {
           ['preferencia', 'restricao', 'argumento_funciona', 'argumento_nao_funciona', 'case_por_segmento'].map(function (t) { return React.createElement("option", { key: t, value: t }, INT_TIPOS_MEM[t]); })),
         React.createElement("input", { value: nova.texto, placeholder: 'Ex.: Em franquias, abrir pelo problema de consistência entre lojas, não pela tecnologia.', onChange: function (e) { setNova({ tipo: nova.tipo, texto: e.target.value }); }, style: { flex: 1, minWidth: 240, background: '#060610', border: '.5px solid #2D2D44', borderRadius: 4, color: '#F5F5F5', fontSize: 12, padding: 6 } }),
         btn('Adicionar', '#34D399', criarMem))
+    ),
+
+    // STATUS PELO GMAIL
+    React.createElement("div", { style: box },
+      tit('Status pelo Gmail', 'O CRM se completa lendo seus e-mails com contatos e empresas do CRM (e-mail pessoal é ignorado). Avanço claro no funil é aplicado sozinho, com desfazer; Perdido, Cliente ativo e Pausado são só sugestão.' +
+        (d.gcrm ? ' Última leitura: ' + new Date(d.gcrm.criado_em).toLocaleString('pt-BR') + (d.gcrm.contexto && d.gcrm.contexto.modo === 'carga_inicial' ? ' (lendo os últimos 45 dias…)' : '') : ' Ainda não rodou.')),
+      (function () {
+        var pend = d.sug.filter(function (x) { return x.status === 'pendente'; });
+        var aplic = d.sug.filter(function (x) { return x.status === 'aplicada'; });
+        var linhaSug = function (x, botoes) {
+          return React.createElement("div", { key: x.id, style: { borderBottom: '.5px solid #1A1A2E', padding: '7px 0', display: 'flex', flexDirection: 'column', gap: 3 } },
+            React.createElement("div", { style: { fontSize: 12, color: '#F5F5F5' } }, React.createElement("b", null, (x.crm_empresas && x.crm_empresas.nome) || '—'), ' · ' + (x.estagio_de || 'sem oportunidade') + ' → ', React.createElement("b", { style: { color: x.estagio_para === 'Perdido' ? '#E24B4A' : '#34D399' } }, x.estagio_para)),
+            React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4' } }, (x.resumo || '') + (x.evidencia ? ' — "' + x.evidencia + '"' : '') + ' · confiança ' + (x.confianca || '?')),
+            React.createElement("div", { style: { display: 'flex', gap: 6 } }, botoes));
+        };
+        return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 8 } },
+          React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#FBBF24' } }, 'SUGESTÕES PARA VOCÊ DECIDIR (' + pend.length + ')'),
+          pend.length ? pend.map(function (x) { return linhaSug(x, [btn('Aceitar', '#34D399', function () { decidirSug(x.id, 'aceitar'); }), btn('Rejeitar', '#E24B4A', function () { decidirSug(x.id, 'rejeitar'); })]); })
+            : React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555' } }, 'Nenhuma.'),
+          React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#34D399', marginTop: 4 } }, 'ATUALIZADO SOZINHO NO PIPELINE (' + aplic.length + ')'),
+          aplic.length ? aplic.slice(0, 15).map(function (x) { return linhaSug(x, [btn('Desfazer', '#FBBF24', function () { decidirSug(x.id, 'desfazer'); })]); })
+            : React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555' } }, 'Nenhuma ainda.'),
+          React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4', marginTop: 4 } }, 'CONVERSAS RECENTES (' + d.gst.length + ')'),
+          d.gst.slice(0, 20).map(function (g) {
+            var dias = Math.max(0, Math.floor((Date.now() - new Date(g.ultima_mensagem_em).getTime()) / 86400000));
+            return React.createElement("div", { key: g.empresa_id, style: { display: 'grid', gridTemplateColumns: 'minmax(120px,180px) 1fr', gap: 8, padding: '5px 0', borderBottom: '.5px solid #1A1A2E', fontSize: 11 } },
+              React.createElement("div", { style: { color: '#F5F5F5', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis' } }, (g.crm_empresas && g.crm_empresas.nome) || '—'),
+              React.createElement("div", { style: { color: '#C9C9D6' } }, (g.ultima_direcao === 'recebido' ? '✉ respondeu' : '✉ você escreveu') + ' há ' + dias + 'd' + (g.sinal && g.sinal !== 'sem_sinal' ? ' · ' + g.sinal.replace(/_/g, ' ') : '') + (g.resumo ? ' · ' + g.resumo : '') + (g.proximo_passo ? ' · próximo: ' + g.proximo_passo + (g.proximo_passo_em ? ' (' + String(g.proximo_passo_em).split('-').reverse().join('/') + ')' : '') : '')));
+          }));
+      })()
     ),
 
     // 4. RESULTADOS
@@ -7673,9 +7712,10 @@ function PainelAgente(props) {
       supaFetch('/rest/v1/crm_logs?criado_em=gte.' + desde24 + '&or=(nivel.eq.error,and(origem.in.(%22cron:sdr-estrategia%22,%22cron:sdr-redacao%22,%22cron:sdr-qualidade%22),mensagem.eq.fim))&select=origem,nivel,mensagem,contexto,criado_em&order=criado_em.desc&limit=300'),
       supaFetch('/rest/v1/crm_configuracoes?chave=in.(sdr_meta_rascunhos_dia,sdr_relogio_ativo,sdr_piloto_automatico,sdr_custo_dia_max_usd,sdr_usd_brl)&select=chave,valor'),
       fetch('/api/enrich?provider=gmail-status', { headers: { Authorization: 'Bearer ' + jwt } }).then(function (r) { return r.json(); }).catch(function () { return { connected: false }; }),
-      supaFetch('/rest/v1/crm_agente_oportunidades_v?gerado_em=gte.' + new Date(Date.now() - 30 * 86400e3).toISOString() + '&select=canal,estado_decisao,estado_envio,estado_producao,enviado_estimado&limit=1000')
+      supaFetch('/rest/v1/crm_agente_oportunidades_v?gerado_em=gte.' + new Date(Date.now() - 30 * 86400e3).toISOString() + '&select=canal,estado_decisao,estado_envio,estado_producao,enviado_estimado&limit=1000'),
+      supaFetch('/rest/v1/crm_gmail_sugestoes?status=eq.pendente&select=id&limit=200')
     ]).then(function (r) {
-      var ops = arr(r[8]);
+      var ops = arr(r[8]); var sugGmail = arr(r[9]).length;
       var cfg = {}; arr(r[6]).forEach(function (x) { cfg[x.chave] = x.valor; });
       var hoje = arr(r[0]); var abertos = arr(r[1]); var est = arr(r[3]); var logs = arr(r[5]);
       var custo = 0; logs.forEach(function (l) { if (l.mensagem === 'fim' && l.criado_em >= ini && l.contexto && Number(l.contexto.custo_usd) > 0) custo += Number(l.contexto.custo_usd); });
@@ -7702,7 +7742,7 @@ function PainelAgente(props) {
         },
         erros: logs.filter(function (l) { return l.nivel === 'error'; }),
         custoUsd: Math.round(custo * 100) / 100,
-        gmail: r[7] || { connected: false },
+        gmail: r[7] || { connected: false }, sugGmail: sugGmail,
         ops: {
           aguardando: ops.filter(function (o) { return o.estado_decisao === 'aguardando' && o.estado_envio === 'nao_enviado' && o.estado_producao !== 'erro_gmail'; }).length,
           aprovados: ops.filter(function (o) { return o.estado_decisao === 'aprovado'; }).length,
@@ -7730,6 +7770,7 @@ function PainelAgente(props) {
   var acoes = [];
   if (!d.gmail.connected) acoes.push({ t: 'Conectar o Gmail: sem ele nenhum rascunho é criado', c: '#E24B4A', fn: nav('sdr') });
   if (d.respostas) acoes.push({ t: d.respostas + ' resposta(s) de prospect para ler', c: '#34D399', fn: nav('sdr') });
+  if (d.sugGmail) acoes.push({ t: d.sugGmail + ' mudança(s) de pipeline sugerida(s) pelo Gmail para você decidir', c: '#818CF8', fn: nav('inteligencia') });
   if (d.rascunhosAbertos) acoes.push({ t: 'Revisar e enviar ' + d.rascunhosAbertos + ' rascunho(s) na pasta Rascunhos do Gmail', c: '#60A5FA', href: 'https://mail.google.com/mail/' + (d.gmail.email ? '?authuser=' + encodeURIComponent(d.gmail.email) : 'u/0/') + '#drafts' });
   if (d.waProntos) acoes.push({ t: d.waProntos + ' WhatsApp pronto(s): abrir em sequência', c: '#34D399', fn: nav('fila', 'whatsapp') });
   if (d.erros.length) acoes.push({ t: d.erros.length + ' erro(s) nas últimas 24h: ver Atividade', c: '#E24B4A', fn: nav('atividade') });
