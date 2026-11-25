@@ -23,7 +23,8 @@ import { podeEnviar, slotsDoDia, proximoPasso, corpoFinal, htmlDeTexto, horaBRT,
 import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTemplate } from '../lib/canais-envio.js';
 import { obterTokenGraph } from '../lib/graph-token.js';
 import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail, gmailReq, consultaRascunho, filaIdDaFronteira } from '../lib/gmail-token.js';
-import { perfilGmail, historicoGmail, eventosDoHistorico, metadadosMensagem, corpoMensagem, filaIdDoMessageId } from '../lib/gmail-sync.js';
+import { perfilGmail, historicoGmail, eventosDoHistorico, metadadosMensagem, corpoMensagem, filaIdDoMessageId, textoDoPayload } from '../lib/gmail-sync.js';
+import { montarIndice, casarMensagem, decidirPipeline, construirPromptStatus, SCHEMA_STATUS, semCitacao } from '../lib/gmail-crm.js';
 import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
 import { tokenSdrValido } from '../lib/sdr-auth.js';
 import { crossSell, sinaisDeCompra } from '../lib/sdr-topo.js';
@@ -2345,6 +2346,181 @@ async function jobSdrAprendizado(req, res) {
   return res.status(200).json({ ok: true, ...ctx });
 }
 
+
+// ── gmail-crm: o CRM se completa pelo Gmail ───────────────────────────────────
+// A cada 15 min (07h-22h): lê os e-mails novos (enviados e recebidos), casa com
+// contatos/empresas do CRM, registra toques, descobre contatos novos de empresas
+// conhecidas, lê a conversa (modelo) e atualiza o status de cada prospecção.
+// Pipeline: avanço claro é aplicado (com desfazer); o resto vira sugestão.
+// Primeira execução: carga dos últimos 45 dias, em lotes. Depois: History API.
+// Só leitura no Gmail. E-mail sem relação com o CRM é ignorado e não é guardado.
+const GMAIL_API = 'https://gmail.googleapis.com/gmail/v1/users/me';
+async function gm_get(token, path) {
+  const r = await fetch(GMAIL_API + path, { headers: { Authorization: 'Bearer ' + token } });
+  if (!r.ok) { const e = new Error('gmail ' + r.status); e.status = r.status; throw e; }
+  return r.json();
+}
+const hdrV = (hs, n) => ((hs || []).find(x => String(x.name).toLowerCase() === n) || {}).value || '';
+
+async function jobGmailCrm(req, res) {
+  const inicio = Date.now(); const LIMITE = 48000;
+  const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null);
+  if (!gm) { await logCron('gmail-crm', 'aviso', 'fim — pulado', { motivo: 'Gmail não conectado' }); return res.status(200).json({ ok: true, pulado: true }); }
+  const cfgR = await sg('crm_configuracoes?chave=in.(gmail_crm_history_id,gmail_crm_backfill,gmail_crm_modelo,gmail_crm_custo_dia_max_usd,email_copia)&select=chave,valor');
+  const cfg = {}; for (const r of (Array.isArray(cfgR) ? cfgR : [])) cfg[r.chave] = r.valor;
+  const proprios = new Set([String(gm.email || '').toLowerCase(), typeof cfg.email_copia === 'string' ? cfg.email_copia.toLowerCase() : ''].filter(Boolean));
+
+  // Índice do CRM (contatos por e-mail; empresas por domínio).
+  const decs = await sg('crm_decisores?apagado_em=is.null&email=not.is.null&select=id,nome,email,empresa_id,ultimo_toque_em&limit=10000');
+  const emps = await sg('crm_empresas?apagado_em=is.null&or=(dominio.not.is.null,website.not.is.null)&select=id,nome,dominio,website&limit=5000');
+  if (decs === null || emps === null) return erroLeitura('gmail-crm', res, inicio, 'índice do CRM');
+  const indice = montarIndice({ decisores: decs, empresas: emps });
+  const nomeEmp = {}; for (const e of emps) nomeEmp[e.id] = e.nome;
+
+  // Mensagens a processar: carga inicial (lista paginada) ou histórico.
+  let ids = []; let modo; let novoCursor = null; let backfill = cfg.gmail_crm_backfill && typeof cfg.gmail_crm_backfill === 'object' ? cfg.gmail_crm_backfill : null;
+  const cursor = typeof cfg.gmail_crm_history_id === 'string' ? cfg.gmail_crm_history_id : null;
+  if (!cursor || (backfill && !backfill.fim)) {
+    modo = 'carga_inicial';
+    if (!backfill) { const p = await perfilGmail(gm.token); backfill = { inicio_history_id: p.historyId, pageToken: null, fim: false, lidas: 0 }; }
+    const q = 'newer_than:45d (in:inbox OR in:sent) -category:promotions -category:social -category:updates -category:forums';
+    backfill.paginaAtual = backfill.pageToken || null;   // para retomar a MESMA página se esta execução não terminar
+    const l = await gm_get(gm.token, '/messages?maxResults=60&q=' + encodeURIComponent(q) + (backfill.pageToken ? '&pageToken=' + encodeURIComponent(backfill.pageToken) : ''));
+    ids = (l.messages || []).map(m => m.id);
+    backfill.pageToken = l.nextPageToken || null;
+    if (!l.nextPageToken) { backfill.fim = true; novoCursor = backfill.inicio_history_id; }
+  } else {
+    modo = 'incremental';
+    const h = await historicoGmail(gm.token, cursor);
+    if (h.expirado) {   // muito tempo parado: recomeça a carga (eventos já vistos são ignorados)
+      await spUpsert('crm_configuracoes', { chave: 'gmail_crm_backfill', valor: null }, 'chave');
+      await spUpsert('crm_configuracoes', { chave: 'gmail_crm_history_id', valor: null }, 'chave');
+      await logCron('gmail-crm', 'aviso', 'fim — histórico expirado, recomeça a carga', null);
+      return res.status(200).json({ ok: true, historico_expirado: true });
+    }
+    const vistos = new Set();
+    for (const reg of h.registros) for (const x of (reg.messagesAdded || [])) {
+      const m = x.message || {}; const lb = m.labelIds || [];
+      if (lb.includes('DRAFT') || !(lb.includes('INBOX') || lb.includes('SENT'))) continue;
+      if (!vistos.has(m.id)) { vistos.add(m.id); ids.push(m.id); }
+    }
+    novoCursor = h.historyId;
+  }
+
+  // O que o fluxo do SDR já registra (não duplicar toque).
+  const sdrFila = await sg('crm_fila?origem=eq.sdr&thread_ref=not.is.null&select=thread_ref&limit=5000');
+  const threadsSdr = new Set((Array.isArray(sdrFila) ? sdrFila : []).map(r => r.thread_ref));
+  // Respostas de quem está no fluxo do SDR são registradas pelo leitor de respostas do SDR.
+  const noSdr = await sg('crm_sdr_estado?sombra=eq.false&select=decisor_id&limit=20000');
+  const decisoresSdr = new Set((Array.isArray(noSdr) ? noSdr : []).map(r => r.decisor_id));
+
+  const cont = { modo, mensagens: ids.length, do_crm: 0, toques: 0, contatos_novos: 0, conversas_lidas: 0, aplicadas: 0, sugeridas: 0, sem_mudanca: 0, custo_usd: 0 };
+  const conversas = new Map();   // empresa|thread → { empresa_id, threadId, ultima, direcao }
+  let completo = true;
+  for (const id of ids) {
+    if (Date.now() - inicio > LIMITE * 0.6) { completo = false; break; }
+    let d; try { d = await gm_get(gm.token, '/messages/' + id + '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Subject'); } catch (_) { continue; }
+    const hs = (d.payload && d.payload.headers) || [];
+    const meta = { labelIds: d.labelIds || [], de: hdrV(hs, 'from'), para: hdrV(hs, 'to'), cc: hdrV(hs, 'cc') };
+    if (meta.labelIds.includes('DRAFT')) continue;
+    const m = casarMensagem(meta, indice, proprios);
+    if (!m) continue;
+    if (!(await eventoGmailNovo(d.id, 'crm_msg', null, d.threadId, { direcao: m.direcao, empresas: m.empresaIds }))) continue;   // já processada
+    cont.do_crm++;
+    const data = new Date(Number(d.internalDate || Date.now())).toISOString();
+    const assunto = hdrV(hs, 'subject');
+    // Contato novo de empresa conhecida: entra no CRM (fora da cadência: a conversa já é do Pedro).
+    for (const nv of m.novos) {
+      if (indice.porEmail.has(nv.email)) { m.decisores.push(indice.porEmail.get(nv.email)); continue; }
+      const novo = await spRet('crm_decisores', { empresa_id: nv.empresa_id, nome: String(nv.nome || nv.email).slice(0, 120), email: nv.email, email_valido: true,
+        fonte: 'gmail', status: 'ativo', etapa_cadencia: 'off', observacoes: 'Descoberto no Gmail em ' + data.slice(0, 10) + ' (conversa com o Pedro)' });
+      if (novo) { indice.porEmail.set(nv.email, novo); m.decisores.push(novo); cont.contatos_novos++; }
+    }
+    const jaDoSdr = m.direcao === 'enviado' && threadsSdr.has(d.threadId);
+    for (const dc of m.decisores) {
+      if (jaDoSdr) continue;
+      if (m.direcao === 'recebido' && decisoresSdr.has(dc.id)) continue;   // o leitor de respostas do SDR registra
+      if (await sp('crm_toques', { decisor_id: dc.id, empresa_id: dc.empresa_id, canal: 'email', direcao: m.direcao, assunto: String(assunto).slice(0, 500),
+        resumo: ('Gmail: ' + String(d.snippet || '')).slice(0, 500), data, fonte: 'sistema', resultado: m.direcao === 'recebido' ? 'resposta' : 'enviado' })) cont.toques++;
+      await sp(`crm_decisores?id=eq.${dc.id}&or=(ultimo_toque_em.is.null,ultimo_toque_em.lt.${data})`, Object.assign({ ultimo_toque_em: data }, m.direcao === 'recebido' ? { respondeu: true } : {}), 'PATCH');
+    }
+    for (const empId of m.empresaIds) {
+      const k = empId + '|' + d.threadId; const atual = conversas.get(k);
+      if (!atual || atual.ultima < data) conversas.set(k, { empresa_id: empId, threadId: d.threadId, ultima: data, direcao: m.direcao });
+    }
+  }
+
+  // Status de cada prospecção: lê a conversa (só as que tiveram mensagem nova).
+  const tetoUsd = Number(cfg.gmail_crm_custo_dia_max_usd) || 1;
+  const logsHoje = await sg(`crm_logs?origem=eq.cron:gmail-crm&mensagem=like.fim*&criado_em=gte.${inicioDiaBRT()}&select=contexto&limit=500`);
+  let gastoHoje = gastoDosLogs(logsHoje);
+  const modelo = typeof cfg.gmail_crm_modelo === 'string' && cfg.gmail_crm_modelo ? cfg.gmail_crm_modelo : MODELO_SDR;
+  const temLLM = await temChaveLLM();
+  for (const c of conversas.values()) {
+    await spUpsert('crm_gmail_status', { empresa_id: c.empresa_id, ultima_mensagem_em: c.ultima, ultima_direcao: c.direcao, thread_id: c.threadId, atualizado_em: new Date().toISOString() }, 'empresa_id');
+    if (!temLLM || gastoHoje >= tetoUsd || Date.now() - inicio > LIMITE) { completo = completo && true; continue; }
+    let th; try { th = await gm_get(gm.token, '/threads/' + c.threadId + '?format=full'); } catch (_) { continue; }
+    const mensagens = (th.messages || []).filter(x => !(x.labelIds || []).includes('DRAFT')).map(x => {
+      const h2 = (x.payload && x.payload.headers) || [];
+      return { direcao: (x.labelIds || []).includes('SENT') ? 'enviado' : 'recebido', data: new Date(Number(x.internalDate || 0)).toISOString(), de: hdrV(h2, 'from'), assunto: hdrV(h2, 'subject'), texto: semCitacao(textoDoPayload(x.payload)) };
+    });
+    const ops = await sg(`crm_oportunidades?empresa_id=eq.${c.empresa_id}&apagado_em=is.null&select=id,estagio,proximo_passo&order=atualizado_em.desc.nullslast&limit=5`);
+    const abertas = (Array.isArray(ops) ? ops : []);
+    const op = abertas.find(o => !['Perdido', 'Cliente ativo', 'Pausado'].includes(o.estagio)) || abertas[0] || null;
+    const { system, user } = construirPromptStatus({ empresa: nomeEmp[c.empresa_id], estagioAtual: op ? op.estagio : null, mensagens, hoje: new Date().toISOString().slice(0, 10) });
+    const r = await gerarJSON({ system, user, schema: SCHEMA_STATUS, effort: 'low', model: modelo });
+    cont.custo_usd += r.custo || 0; gastoHoje += r.custo || 0;
+    if (!r.obj) continue;
+    cont.conversas_lidas++;
+    const st = r.obj;
+    const dataPP = /^\d{4}-\d{2}-\d{2}$/.test(st.data_proximo_passo || '') ? st.data_proximo_passo : null;
+    await spUpsert('crm_gmail_status', { empresa_id: c.empresa_id, sinal: st.sinal, confianca: st.confianca, resumo: String(st.resumo || '').slice(0, 400),
+      proximo_passo: String(st.proximo_passo || '').slice(0, 300), proximo_passo_em: dataPP, evidencia: String(st.evidencia || '').slice(0, 300),
+      thread_id: c.threadId, ultima_mensagem_em: c.ultima, ultima_direcao: c.direcao, atualizado_em: new Date().toISOString() }, 'empresa_id');
+    const dec = decidirPipeline({ sinal: st.sinal, confianca: st.confianca, estagioAtual: op ? op.estagio : null });
+    if (dec.acao === 'nada') { cont.sem_mudanca++; continue; }
+    const base = { empresa_id: c.empresa_id, thread_id: c.threadId, sinal: st.sinal, confianca: st.confianca, estagio_para: dec.para,
+      resumo: String(st.resumo || '').slice(0, 400), evidencia: String(st.evidencia || '').slice(0, 300), motivo: dec.motivo };
+    if (dec.acao === 'sugerir') {
+      if (await spUpsert('crm_gmail_sugestoes', Object.assign({ oportunidade_id: op ? op.id : null, estagio_de: op ? op.estagio : null, status: 'pendente' }, base), 'empresa_id,thread_id,sinal', true)) cont.sugeridas++;
+      continue;
+    }
+    // aplicar/criar: registra antes (índice único impede aplicar duas vezes o mesmo sinal da mesma conversa).
+    const reg = await fetch(SUPA_URL + '/rest/v1/crm_gmail_sugestoes?on_conflict=empresa_id,thread_id,sinal', { method: 'POST',
+      headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=representation' },
+      body: JSON.stringify(Object.assign({ oportunidade_id: op ? op.id : null, estagio_de: dec.acao === 'criar' ? null : op.estagio, status: 'aplicada', decidido_em: new Date().toISOString(), decidido_por: 'agente-gmail' }, base)) });
+    const regRows = reg.ok ? await reg.json().catch(() => []) : [];
+    if (!regRows.length) continue;
+    let opId = op ? op.id : null;
+    if (dec.acao === 'criar') {
+      const nova = await spRet('crm_oportunidades', { empresa_id: c.empresa_id, titulo: (nomeEmp[c.empresa_id] || 'Empresa') + ': conversa no Gmail', estagio: dec.para,
+        origem: 'abordagem_direta', proximo_passo: String(st.proximo_passo || st.resumo || '').slice(0, 300), proximo_passo_em: dataPP });
+      if (!nova) continue;
+      opId = nova.id;
+      await sp('crm_oportunidade_eventos', { oportunidade_id: opId, tipo: 'criada', para: dec.para, texto: ('Gmail: ' + st.resumo + (st.evidencia ? ' — "' + st.evidencia + '"' : '')).slice(0, 600), autor_email: 'agente-gmail' });
+      await sp(`crm_gmail_sugestoes?id=eq.${regRows[0].id}`, { oportunidade_id: opId }, 'PATCH');
+    } else {
+      await sp(`crm_oportunidades?id=eq.${opId}`, Object.assign({ estagio: dec.para, atualizado_em: new Date().toISOString() },
+        !op.proximo_passo && st.proximo_passo ? { proximo_passo: String(st.proximo_passo).slice(0, 300), proximo_passo_em: dataPP } : {}), 'PATCH');
+      await sp('crm_oportunidade_eventos', { oportunidade_id: opId, tipo: 'estagio', de: op.estagio, para: dec.para, texto: ('Gmail: ' + st.resumo + (st.evidencia ? ' — "' + st.evidencia + '"' : '')).slice(0, 600), autor_email: 'agente-gmail' });
+    }
+    cont.aplicadas++;
+  }
+
+  // Cursor só avança se tudo foi processado (senão a próxima execução retoma).
+  if (modo === 'carga_inicial') {
+    if (completo) backfill.lidas = (backfill.lidas || 0) + ids.length;
+    if (!completo) { backfill.fim = false; backfill.pageToken = backfill.paginaAtual; }   // eventos já vistos são pulados (dedup)
+    await spUpsert('crm_configuracoes', { chave: 'gmail_crm_backfill', valor: backfill }, 'chave');
+    if (backfill.fim && completo && novoCursor) await spUpsert('crm_configuracoes', { chave: 'gmail_crm_history_id', valor: novoCursor }, 'chave');
+  } else if (completo && novoCursor) {
+    await spUpsert('crm_configuracoes', { chave: 'gmail_crm_history_id', valor: novoCursor }, 'chave');
+  }
+  cont.custo_usd = Math.round(cont.custo_usd * 10000) / 10000; cont.completo = completo; cont.ms = Date.now() - inicio;
+  await logCron('gmail-crm', cont.aplicadas || cont.sugeridas ? 'aviso' : 'info', cont.aplicadas || cont.sugeridas ? `fim — ${cont.aplicadas} atualização(ões) no pipeline, ${cont.sugeridas} sugestão(ões)` : 'fim', cont);
+  return res.status(200).json({ ok: true, ...cont });
+}
+
 // PATCH que devolve as linhas alteradas: o filtro de status garante que só uma
 // execução registra o envio (idempotência entre o cron e o clique no app).
 async function spPatchRet(path, body) {
@@ -2504,6 +2680,7 @@ export default async function handler(req, res) {
     if (job === 'sdr-respostas')         return await jobSdrRespostas(req, res);
     if (job === 'sdr-vigia')             return await jobSdrVigia(req, res);
     if (job === 'sdr-aprendizado')       return await jobSdrAprendizado(req, res);
+    if (job === 'gmail-crm')             return await jobGmailCrm(req, res);
     if (job === 'sdr-envios') {
       const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null);
       const ctx = await sincronizarEnvios(gm);
