@@ -196,7 +196,7 @@
       const agora = new Date().toISOString();
       const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       await supa('crm_oportunidades?id=eq.' + op.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ apagado_em: agora }) });
-      await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'apagado', texto: 'Movido para lixeira' }) });
+      await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'nota', texto: 'Movido para lixeira' }) });
       await supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: op.id, campo: 'apagado_em', valor_de: null, valor_para: agora, usuario_email: userEmail }) });
       setSalvando(false);
       onAtualizar();

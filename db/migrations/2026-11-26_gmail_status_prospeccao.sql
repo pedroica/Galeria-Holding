@@ -79,7 +79,7 @@ BEGIN
     IF s.estagio_de IS NULL THEN
       UPDATE crm_oportunidades SET apagado_em = now() WHERE id = s.oportunidade_id;   -- foi criada pelo agente: vai para a lixeira
       INSERT INTO crm_oportunidade_eventos (oportunidade_id, tipo, de, texto, autor_email)
-      VALUES (s.oportunidade_id, 'apagado', v_atual, 'Desfeito pelo Pedro: oportunidade aberta pelo Gmail', v_email);
+      VALUES (s.oportunidade_id, 'nota', v_atual, 'Desfeito pelo Pedro: oportunidade aberta pelo Gmail foi para a lixeira', v_email);
     ELSE
       UPDATE crm_oportunidades SET estagio = s.estagio_de, atualizado_em = now() WHERE id = s.oportunidade_id;
       INSERT INTO crm_oportunidade_eventos (oportunidade_id, tipo, de, para, texto, autor_email)
