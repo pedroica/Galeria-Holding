@@ -5368,7 +5368,7 @@ function App() {
     setViewMode('hotpipeline');
   };
   // ── Fase B — navegação principal ──────────────────────────────
-  const [navSection, setNavSection] = useState('base'); // holding|agencia|aprovar|base|ferramentas
+  const [navSection, setNavSection] = useState('hoje'); // abre no painel do agente (Hoje)
   const [agenciaId, setAgenciaId] = useState('gaia');
   const [agenciaTab, setAgenciaTab] = useState('pipeline'); // pipeline|noticias|servicos|cases|credenciais|textos
   const ALL_AGENCIAS = [
@@ -5838,7 +5838,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, null)) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'sdr' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(SdrView, { navTo: navTo })) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'blocklist' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, typeof BlocklistView !== 'undefined' ? React.createElement(BlocklistView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Blocklist carregando...')) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, { navTo: navTo })) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'sdr' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(SdrView, { navTo: navTo })) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'blocklist' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, typeof BlocklistView !== 'undefined' ? React.createElement(BlocklistView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Blocklist carregando...')) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,
@@ -7187,7 +7187,159 @@ SdrView.placar = function (todas, cambio) {
 };
 
 // E1 — Tela Hoje: progresso diário, aprovações pendentes, reuniões do dia
-function TelaHoje() {
+// Painel do agente (topo da tela Hoje). Responde em segundos: o que o agente fez
+// esta noite, o que está pronto para você, o que deu errado e o próximo passo.
+// Tudo é leitura: nenhum botão daqui envia nada.
+// Proteção: se o painel falhar, a tela Hoje (inicial) continua de pé.
+class PainelAgenteSeguro extends React.Component {
+  constructor(p) { super(p); this.state = { erro: null }; }
+  static getDerivedStateFromError(e) { return { erro: e }; }
+  componentDidCatch(e) { try { console.error('[PainelAgente]', e); } catch (_) {} }
+  render() {
+    if (this.state.erro) return React.createElement("div", { style: { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, color: '#E24B4A' } }, 'O painel do agente falhou ao carregar. O resto da tela segue normal.');
+    return React.createElement(PainelAgente, this.props);
+  }
+}
+function PainelAgente(props) {
+  var mono = "'IBM Plex Mono',monospace";
+  var _d = React.useState(null); var d = _d[0]; var setD = _d[1];
+  var _v = React.useState(false); var verTodos = _v[0]; var setVerTodos = _v[1];
+  function arr(x) { return Array.isArray(x) ? x : []; }
+  function inicioBRT() { var b = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); return b + 'T03:00:00.000Z'; }
+  function carregar() {
+    var ini = inicioBRT(); var dia = ini.slice(0, 10);
+    var desde24 = new Date(Date.now() - 24 * 3600e3).toISOString();
+    var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
+    Promise.all([
+      supaFetch('/rest/v1/crm_fila?origem=eq.sdr&gerado_em=gte.' + ini + '&apagado_em=is.null&select=id,canal,status,outlook_message_id,outlook_draft_link,rascunho_erro,assunto,contexto_para_aprovacao,crm_decisores(nome,cargo),crm_empresas(nome)&order=gerado_em.desc&limit=100'),
+      supaFetch('/rest/v1/crm_fila?origem=eq.sdr&status=eq.aprovado&apagado_em=is.null&select=id,canal,outlook_message_id&limit=500'),
+      supaFetch('/rest/v1/crm_sdr_respostas?lida_pelo_pedro=eq.false&tipo=neq.auto_resposta&select=id&limit=100'),
+      supaFetch('/rest/v1/crm_sdr_estado?atualizado_em=gte.' + ini + '&sombra=eq.false&select=etapa,motivo,dia_cadencia&limit=2000'),
+      supaFetch('/rest/v1/crm_sdr_estado?etapa=eq.aguardando&status=eq.ativo&data_lote=lte.' + dia + '&select=id&limit=500'),
+      supaFetch('/rest/v1/crm_logs?criado_em=gte.' + desde24 + '&or=(nivel.eq.error,and(origem.in.(%22cron:sdr-estrategia%22,%22cron:sdr-redacao%22,%22cron:sdr-qualidade%22),mensagem.eq.fim))&select=origem,nivel,mensagem,contexto,criado_em&order=criado_em.desc&limit=300'),
+      supaFetch('/rest/v1/crm_configuracoes?chave=in.(sdr_meta_rascunhos_dia,sdr_relogio_ativo,sdr_piloto_automatico,sdr_custo_dia_max_usd,sdr_usd_brl)&select=chave,valor'),
+      fetch('/api/enrich?provider=gmail-status', { headers: { Authorization: 'Bearer ' + jwt } }).then(function (r) { return r.json(); }).catch(function () { return { connected: false }; })
+    ]).then(function (r) {
+      var cfg = {}; arr(r[6]).forEach(function (x) { cfg[x.chave] = x.valor; });
+      var hoje = arr(r[0]); var abertos = arr(r[1]); var est = arr(r[3]); var logs = arr(r[5]);
+      var custo = 0; logs.forEach(function (l) { if (l.mensagem === 'fim' && l.criado_em >= ini && l.contexto && Number(l.contexto.custo_usd) > 0) custo += Number(l.contexto.custo_usd); });
+      var conta = function (f) { return est.filter(f).length; };
+      setD({
+        meta: Number(cfg.sdr_meta_rascunhos_dia) || 20,
+        relogio: cfg.sdr_relogio_ativo === true || cfg.sdr_relogio_ativo === 'true',
+        piloto: cfg.sdr_piloto_automatico === true || cfg.sdr_piloto_automatico === 'true',
+        tetoUsd: Number(cfg.sdr_custo_dia_max_usd) || 5, cambio: Number(cfg.sdr_usd_brl) || 5.4,
+        emailsHoje: hoje.filter(function (x) { return x.canal === 'email'; }),
+        waHoje: hoje.filter(function (x) { return x.canal === 'whatsapp'; }),
+        rascunhosAbertos: abertos.filter(function (x) { return x.canal === 'email' && x.outlook_message_id; }).length,
+        semRascunho: abertos.filter(function (x) { return x.canal === 'email' && !x.outlook_message_id; }).length,
+        waProntos: abertos.filter(function (x) { return x.canal === 'whatsapp'; }).length,
+        respostas: arr(r[2]).length,
+        followups: arr(r[4]).length,
+        funil: {
+          avaliados: est.length,
+          semFato: conta(function (e) { return /sem sinal p[úu]blico/.test(e.motivo || ''); }),
+          vetados: conta(function (e) { return /estrategista: n[ãa]o abordar|encaixe \d+ </.test(e.motivo || ''); }),
+          retidos: conta(function (e) { return e.etapa === 'avaliado' && /< 8|risco|lastro|forma:|numeros|personaliza/.test(e.motivo || ''); }),
+          prontos: conta(function (e) { return ['rascunho', 'enviado'].indexOf(e.etapa) >= 0; }),
+          emCurso: conta(function (e) { return ['selecionado', 'dossie', 'estrategia', 'redigido'].indexOf(e.etapa) >= 0; })
+        },
+        erros: logs.filter(function (l) { return l.nivel === 'error'; }),
+        custoUsd: Math.round(custo * 100) / 100,
+        gmail: r[7] || { connected: false }
+      });
+    }).catch(function () { setD({ erroCarga: true }); });
+  }
+  React.useEffect(function () { carregar(); var t = setInterval(carregar, 120000); return function () { clearInterval(t); }; }, []);
+
+  var box = { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px' };
+  var rot = { fontFamily: mono, fontSize: 9, color: '#9B9BB4', letterSpacing: '.5px' };
+  if (!d) return React.createElement("div", { style: Object.assign({}, box, { fontFamily: mono, fontSize: 10, color: '#555' }) }, 'Carregando o agente…');
+  if (d.erroCarga) return React.createElement("div", { style: Object.assign({}, box, { fontFamily: mono, fontSize: 10, color: '#E24B4A' }) }, 'Não deu para ler o estado do agente. Recarregue a página.');
+
+  var nav = function (s, aba) { return function () { if (aba) { try { localStorage.setItem('gh_fila_tab', aba); } catch (_) {} } props.navTo && props.navTo(s); }; };
+  var feitos = d.emailsHoje.filter(function (x) { return x.outlook_message_id; }).length;
+  var pct = Math.min(100, Math.round(feitos / Math.max(1, d.meta) * 100));
+  var corMeta = feitos >= d.meta ? '#34D399' : feitos > 0 ? '#FF6B2B' : '#E24B4A';
+
+  // Próximas ações: só o que depende de você, na ordem em que vale fazer.
+  var acoes = [];
+  if (!d.gmail.connected) acoes.push({ t: 'Conectar o Gmail: sem ele nenhum rascunho é criado', c: '#E24B4A', fn: nav('sdr') });
+  if (d.respostas) acoes.push({ t: d.respostas + ' resposta(s) de prospect para ler', c: '#34D399', fn: nav('sdr') });
+  if (d.rascunhosAbertos) acoes.push({ t: 'Revisar e enviar ' + d.rascunhosAbertos + ' rascunho(s) na pasta Rascunhos do Gmail', c: '#60A5FA', href: 'https://mail.google.com/mail/' + (d.gmail.email ? '?authuser=' + encodeURIComponent(d.gmail.email) : 'u/0/') + '#drafts' });
+  if (d.waProntos) acoes.push({ t: d.waProntos + ' WhatsApp pronto(s): abrir em sequência', c: '#34D399', fn: nav('fila', 'whatsapp') });
+  if (d.erros.length) acoes.push({ t: d.erros.length + ' erro(s) nas últimas 24h: ver Atividade', c: '#E24B4A', fn: nav('atividade') });
+  if (!d.relogio) acoes.push({ t: 'O relógio do agente está desligado: nada roda de madrugada', c: '#FBBF24', fn: nav('sdr') });
+
+  var lista = verTodos ? d.emailsHoje : d.emailsHoje.slice(0, 6);
+  function linha(x) {
+    var nome = (x.crm_decisores && x.crm_decisores.nome) || '—';
+    var emp = (x.crm_empresas && x.crm_empresas.nome) || '';
+    var st = x.status === 'enviado' || x.status === 'respondido' ? ['enviado', '#34D399'] : x.status === 'pulado' ? ['descartado', '#555'] : x.outlook_message_id ? ['no Gmail', '#60A5FA'] : x.rascunho_erro ? ['erro', '#E24B4A'] : ['criando…', '#FBBF24'];
+    var semFato = / · contexto: /.test(x.contexto_para_aprovacao || '');
+    return React.createElement("div", { key: x.id, title: x.contexto_para_aprovacao || '', style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '.5px solid #1A1A2E', fontSize: 12 } },
+      React.createElement("span", { style: { fontFamily: mono, fontSize: 8, color: st[1], border: '.5px solid ' + st[1], borderRadius: 3, padding: '1px 5px', whiteSpace: 'nowrap' } }, st[0]),
+      React.createElement("span", { style: { color: '#F5F5F5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', minWidth: 0, flex: '0 1 auto' } }, nome + (emp ? ' · ' + emp : '')),
+      React.createElement("span", { style: { color: '#9B9BB4', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', flex: 1, minWidth: 0 } }, x.assunto || ''),
+      semFato && React.createElement("span", { title: 'Sem notícia: retoma um contexto real do CRM (conversa, oportunidade parada ou pedido de retomar)', style: { fontFamily: mono, fontSize: 8, color: '#818CF8' } }, 'retomada'),
+      x.outlook_draft_link && x.status === 'aprovado' && React.createElement("a", { href: x.outlook_draft_link, target: '_blank', rel: 'noopener noreferrer', style: { fontFamily: mono, fontSize: 9, color: '#60A5FA', textDecoration: 'none', whiteSpace: 'nowrap' } }, 'abrir →')
+    );
+  }
+  function num(v, l, c, fn) {
+    return React.createElement("div", { onClick: fn, style: { flex: 1, minWidth: 110, cursor: fn ? 'pointer' : 'default' } },
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 22, fontWeight: 700, color: c, lineHeight: 1 } }, v),
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555', marginTop: 4 } }, l));
+  }
+
+  return React.createElement("div", { style: Object.assign({}, box, { border: '1px solid #2D2D44', display: 'flex', flexDirection: 'column', gap: 14 }) },
+    React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+      React.createElement("span", { style: { fontFamily: "'Syne',sans-serif", fontSize: 15, fontWeight: 700, color: '#F5F5F5' } }, 'Agente · hoje'),
+      React.createElement("span", { style: { fontFamily: mono, fontSize: 9, color: '#555' } },
+        (d.gmail.connected ? '● Gmail ' + (d.gmail.email || 'conectado') : '○ Gmail desconectado') + ' · ' + (d.relogio ? 'relógio ligado' : 'relógio desligado') + ' · ' + (d.piloto ? 'PILOTO LIGADO' : 'nada é enviado sem você') +
+        ' · IA hoje US$ ' + d.custoUsd.toFixed(2) + ' de ' + d.tetoUsd.toFixed(2))
+    ),
+    // Meta de rascunhos
+    React.createElement("div", null,
+      React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 6 } },
+        React.createElement("span", { style: rot }, 'RASCUNHOS DE E-MAIL CRIADOS NO GMAIL HOJE'),
+        React.createElement("span", { style: { fontFamily: mono, fontSize: 15, fontWeight: 700, color: corMeta } }, feitos + '/' + d.meta)),
+      React.createElement("div", { style: { width: '100%', height: 6, background: '#1A1A2E', borderRadius: 3, overflow: 'hidden' } },
+        React.createElement("div", { style: { width: pct + '%', height: '100%', background: corMeta, transition: 'width .3s' } })),
+      feitos < d.meta && React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555', marginTop: 4 } },
+        d.funil.emCurso ? d.funil.emCurso + ' lead(s) ainda em preparo (o agente trabalha das 23h30 às 7h).' : 'Sem mais leads qualificados hoje: o agente não inventa destinatário; continua na próxima noite.')
+    ),
+    // Números que pedem ação
+    React.createElement("div", { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
+      num(d.rascunhosAbertos, 'rascunhos esperando você', '#60A5FA'),
+      num(d.waProntos, 'WhatsApp prontos', '#34D399', nav('fila', 'whatsapp')),
+      num(d.respostas, 'respostas para ler', d.respostas ? '#34D399' : '#555', nav('sdr')),
+      num(d.followups, 'follow-ups vencendo', '#818CF8'),
+      num(d.erros.length, 'erros (24h)', d.erros.length ? '#E24B4A' : '#555', nav('atividade'))
+    ),
+    // Próximas ações
+    acoes.length > 0 && React.createElement("div", null,
+      React.createElement("div", { style: Object.assign({}, rot, { marginBottom: 6 }) }, 'PRÓXIMAS AÇÕES'),
+      acoes.map(function (a, i) {
+        var st = { display: 'block', fontSize: 12, color: '#F5F5F5', padding: '5px 0 5px 10px', borderLeft: '2px solid ' + a.c, marginBottom: 4, cursor: 'pointer', textDecoration: 'none' };
+        return a.href ? React.createElement("a", { key: i, href: a.href, target: '_blank', rel: 'noopener noreferrer', style: st }, a.t + ' →')
+          : React.createElement("div", { key: i, onClick: a.fn, style: st }, a.t + ' →');
+      })
+    ),
+    // Lista do dia
+    d.emailsHoje.length > 0 && React.createElement("div", null,
+      React.createElement("div", { style: Object.assign({}, rot, { marginBottom: 4 }) }, 'E-MAILS PREPARADOS HOJE'),
+      lista.map(linha),
+      d.emailsHoje.length > 6 && React.createElement("div", { onClick: function () { setVerTodos(!verTodos); }, style: { fontFamily: mono, fontSize: 9, color: '#60A5FA', cursor: 'pointer', marginTop: 6 } }, verTodos ? 'mostrar menos' : 'ver todos os ' + d.emailsHoje.length)
+    ),
+    // Funil da noite
+    React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555', lineHeight: 1.6 } },
+      'Esta noite: ' + d.funil.avaliados + ' leads analisados · ' + d.funil.prontos + ' viraram mensagem · ' + d.funil.semFato + ' sem notícia nem contexto (não abordados) · ' +
+      d.funil.vetados + ' vetados pelo estrategista · ' + d.funil.retidos + ' retidos no controle de qualidade' +
+      (d.semRascunho ? ' · ' + d.semRascunho + ' e-mail(s) aguardando o Gmail' : '') + (d.waHoje.length ? ' · ' + d.waHoje.length + ' WhatsApp' : ''))
+  );
+}
+
+function TelaHoje(props) {
   var mono = "'IBM Plex Mono',monospace";
   var jwt = function() { return (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON; };
   function sj(path) {
@@ -7265,6 +7417,8 @@ function TelaHoje() {
         React.createElement("div", { style: { fontFamily: mono, fontSize: 8, color: '#555' } }, hBRT + 'h' + String(minBRT).padStart(2,'0') + ' BRT')
       )
     ),
+    // Agente: o que fez, o que está pendente e o que precisa de você
+    React.createElement(PainelAgenteSeguro, { navTo: props && props.navTo }),
     // Stats
     React.createElement("div", { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
       StatCard('Aprovações pendentes', stats ? stats.pending : '—', stats ? stats.emailPend + ' email · ' + stats.waPend + ' WA · ' + stats.liPend + ' LI' : null, stats && stats.pending > 0 ? '#FF6B2B' : '#34D399'),
