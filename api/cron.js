@@ -22,7 +22,7 @@ import { aplicarResposta } from '../lib/sdr-acoes.js';
 import { podeEnviar, slotsDoDia, proximoPasso, corpoFinal, htmlDeTexto, horaBRT, tetoEmailHoje } from '../lib/sdr-envio.js';
 import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTemplate } from '../lib/canais-envio.js';
 import { obterTokenGraph } from '../lib/graph-token.js';
-import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail, gmailReq } from '../lib/gmail-token.js';
+import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail, gmailReq, consultaRascunho, filaIdDaFronteira } from '../lib/gmail-token.js';
 import { perfilGmail, historicoGmail, eventosDoHistorico, metadadosMensagem, corpoMensagem, filaIdDoMessageId } from '../lib/gmail-sync.js';
 import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
 import { tokenSdrValido } from '../lib/sdr-auth.js';
@@ -2282,8 +2282,15 @@ async function reconciliarRascunhosGmail(gm, cont, agoraIso) {
     cont.verificados++;
     // Duplicatas do mesmo item (mesmo Message-ID em mais de um rascunho): só registra.
     try {
-      const l = await gmailReq('GET', '/drafts?maxResults=5&q=' + encodeURIComponent('rfc822msgid:fila-' + it.id + '@agente.galeriaholding.crm'), null, gm.token);
-      if (l && l.drafts && l.drafts.length > 1 && await eventoGmailNovo('dup:' + it.id, 'duplicado', it.id, null, { drafts: l.drafts.map(d => d.id) })) cont.duplicados++;
+      // Mesmo item em mais de um rascunho (boundary com o id da fila): só registra, não apaga.
+      const l = await gmailReq('GET', '/drafts?maxResults=10&q=' + encodeURIComponent(consultaRascunho(para, it.assunto)), null, gm.token);
+      const meus = [];
+      for (const d of ((l && l.drafts) || [])) {
+        const det = await gmailReq('GET', '/drafts/' + encodeURIComponent(d.id) + '?format=metadata&metadataHeaders=Content-Type', null, gm.token);
+        const ct = (((det.message && det.message.payload && det.message.payload.headers) || []).find(h => String(h.name).toLowerCase() === 'content-type') || {}).value || '';
+        if (filaIdDaFronteira(ct) === it.id) meus.push(d.id);
+      }
+      if (meus.length > 1 && await eventoGmailNovo('dup:' + it.id, 'duplicado', it.id, null, { drafts: meus, no_banco: it.outlook_message_id })) cont.duplicados++;
     } catch (_) {}
     const st = await estadoDoRascunhoGmail(gm.token, { draftId: it.outlook_message_id, para, desdeISO: it.rascunho_criado_em });
     if (st.estado === 'enviado') {

@@ -49,8 +49,8 @@ Depois disso o **estrategista** decide se vale abordar, com qual tese e qual ag�
 
   Criar o rascunho nunca conta como envio.
 - **Rascunho real e idempotente:**
-  - cada item da fila gera um rascunho com `Message-ID` próprio (`<fila-ID@agente.galeriaholding.crm>`), em texto e HTML;
-  - antes de criar, o agente procura por esse ID no Gmail e, se achar, adota o rascunho existente;
+  - cada item da fila gera um rascunho em texto e HTML com o **id da fila no boundary do MIME**. Teste real de 26/11: o Gmail troca o `Message-ID` dos rascunhos criados pela API, então ele não serve de chave;
+  - antes de criar, o agente busca em Rascunhos por destinatário e assunto e confirma pelo boundary; se achar, adota o rascunho existente;
   - só conta como produzido com o id devolvido pela API **e** gravado no banco;
   - erro 429/5xx tem uma nova tentativa; erro de autenticação não é repetido às cegas;
   - são até 3 tentativas por item, e cada uma fica registrada no `crm_logs`.
@@ -118,7 +118,7 @@ São 8 fatores, cada um com os pontos e o motivo em português:
 
 ### Gmail como fonte de verdade — `lib/gmail-sync.js`
 - **Incremental pela History API**, a cada 15 min, dentro do `sdr-respostas`:
-  - mensagem SENT associada ao agente pelo `Message-ID` (`<fila-ID@agente.galeriaholding.crm>`) ou pela conversa do rascunho vira envio **confirmado**;
+  - mensagem SENT na **conversa do rascunho** (`threadId` salvo na criação) vira envio **confirmado**. O `Message-ID` não serve, porque o Gmail troca;
   - mensagem DRAFT nova numa conversa do agente vira "editado no Gmail".
 - **Reconciliação completa:**
   - roda uma vez por dia, ou quando o `historyId` expira ou falta;
