@@ -7,7 +7,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { classificarResposta } from '../lib/sdr-respostas.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
-import { GMAIL_SCOPE, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, credenciaisGoogle, obterTokenGmail, gmailReq, criarRascunhoGmail, enviarRascunhoGmail } from '../lib/gmail-token.js';
+import { GMAIL_SCOPE, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, credenciaisGoogle, obterTokenGmail, gmailReq, criarRascunhoGmail, enviarRascunhoGmail, atualizarRascunhoGmail, ehRascunhoGmail } from '../lib/gmail-token.js';
 
 const HUNTER_KEY      = process.env.HUNTER_KEY;
 const LUSHA_KEY       = process.env.LUSHA_KEY;
@@ -678,9 +678,45 @@ export default async function handler(req, res) {
       }
       const now = new Date().toISOString();
       await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ status: 'enviado', enviado_em: now, rascunho_erro: null }) });
-      await supaReq('/rest/v1/crm_toques', { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ decisor_id, empresa_id, canal: 'email', direcao: 'enviado', assunto: (assunto || '').slice(0, 500), resumo: (contexto || '').slice(0, 500), data: now, fonte: 'gmail', resultado: 'sem_resposta' }) });
+      await supaReq('/rest/v1/crm_toques', { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ decisor_id, empresa_id, canal: 'email', direcao: 'enviado', assunto: (assunto || '').slice(0, 500), resumo: (contexto || '').slice(0, 500), data: now, fonte: 'sistema', resultado: 'enviado' }) });   // 'gmail' não é aceito pelo check de crm_toques.fonte: o toque se perdia
       if (decisor_id) await supaReq('/rest/v1/crm_decisores?id=eq.' + decisor_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ ultimo_toque_em: now }) });
       return res.status(200).json({ enviado: true, enviado_em: now });
+    }
+    // Edição: grava o texto novo no RASCUNHO REAL do Gmail (drafts.update) e só
+    // depois no CRM. Se o Gmail recusar, nada muda no CRM e o erro volta para a tela.
+    if (provider === 'gmail-draft-update') {
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : (req.body || {});
+      const { fila_id } = body;
+      const assunto = String(body.assunto || '').trim(), corpo = String(body.corpo || '').trim();
+      if (!fila_id || !corpo) return res.status(400).json({ error: 'fila_id e corpo obrigatórios' });
+      const rows = await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id + '&apagado_em=is.null&select=id,status,canal,outlook_message_id,crm_decisores(email)');
+      const it = rows && rows[0];
+      if (!it) return res.status(404).json({ error: 'item não encontrado' });
+      if (it.status === 'enviado' || it.status === 'respondido') return res.status(409).json({ error: 'já foi enviado: não dá para editar o rascunho' });
+      const agoraIso = new Date().toISOString();
+      if (it.canal !== 'email' || !it.outlook_message_id) {
+        await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ assunto, corpo }) });
+        return res.status(200).json({ ok: true, gmail: false, motivo: it.canal !== 'email' ? 'WhatsApp não tem rascunho no Gmail' : 'rascunho ainda não criado: o agente cria com o texto novo' });
+      }
+      if (!ehRascunhoGmail(it.outlook_message_id)) return res.status(409).json({ error: 'este rascunho é do Outlook; edite por lá' });
+      const t = await obterTokenGmail(ctxG);
+      if (!t) return res.status(503).json({ error: 'Gmail não conectado' });
+      const cfgC = await supaReq('/rest/v1/crm_configuracoes?chave=in.(email_copia,email_copia_tipo)&select=chave,valor');
+      const mc = {}; for (const r of (Array.isArray(cfgC) ? cfgC : [])) mc[r.chave] = r.valor;
+      const copia = typeof mc.email_copia === 'string' && mc.email_copia.includes('@') ? mc.email_copia : null;
+      try {
+        const d = await atualizarRascunhoGmail(t.token, it.outlook_message_id, {
+          conta: t.email, para: it.crm_decisores && it.crm_decisores.email, assunto, corpo, filaId: fila_id,
+          cco: copia && mc.email_copia_tipo !== 'cc' ? copia : null, cc: copia && mc.email_copia_tipo === 'cc' ? copia : null
+        });
+        await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ assunto, corpo, outlook_draft_link: d.link, rascunho_atualizado_em: agoraIso, rascunho_erro: null }) });
+        await supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ origem: 'gmail-draft-update', nivel: 'info', mensagem: 'rascunho atualizado', contexto: { fila_id, draft_id: d.id } }) });
+        return res.status(200).json({ ok: true, gmail: true, link: d.link, atualizado_em: agoraIso });
+      } catch (e) {
+        const msg = e.status === 404 ? 'o rascunho não existe mais no Gmail (enviado ou apagado)' : String(e.message || e).slice(0, 200);
+        await supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ origem: 'gmail-draft-update', nivel: 'error', mensagem: 'falha ao atualizar rascunho', contexto: { fila_id, status: e.status || null, erro: msg } }) });
+        return res.status(e.status === 404 ? 410 : 502).json({ error: msg });
+      }
     }
     return res.status(400).json({ error: 'provider gmail desconhecido' });
   }

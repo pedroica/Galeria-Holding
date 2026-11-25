@@ -32,6 +32,29 @@ Depois disso o **estrategista** decide se vale abordar, com qual tese e qual ag�
 - **cadastrar cases** das agências que não têm nenhum (Caramelo, Catalyst, Mantiqueira, GUX);
 - **registrar no CRM** reuniões e conversas que acontecem fora do e-mail, porque elas viram contexto.
 
+
+## Produzir agora, fila e decisões (25/11)
+- **Botão "PRODUZIR RASCUNHOS AGORA" (tela Hoje):** chama a mesma RPC do relógio (`sdr_preparar_agora`), que abre uma janela de 45 min no mesmo pipeline. Não existe um segundo mecanismo. O progresso exibido é lido do banco (estado de cada lead, fila e logs): iniciando, pesquisando, elaborando, revisando, criando no Gmail, concluída. Falhas aparecem com a etapa e o erro. Se a meta do dia já foi batida, o botão avisa e não roda.
+- **Meta diária e produção automática:** ficam editáveis na tela Hoje (admin). Elas mexem em `sdr_meta_rascunhos_dia` e `sdr_relogio_ativo`.
+- **Fila → Oportunidades (aba padrão):** empresa, contato, cargo, e-mail, motivo, prioridade, assunto, situação no Gmail, datas e link do rascunho. Ações:
+  - **Aprovar:** entra na cadência. Não envia nada.
+  - **Rejeitar:** pede o motivo, encerra os follow-ups daquela pessoa e não apaga nada, nem o rascunho no Gmail. A pessoa não volta na seleção.
+  - **Editar:** grava no rascunho real do Gmail (`drafts.update`). Se o Gmail recusar, nada muda no CRM.
+  - **Abrir no Gmail.**
+  - **Marquei como enviado:** registra a data, com a opção "aproximada". O follow-up é agendado em até 15 min.
+- **Três eixos que não se misturam** (view `crm_agente_oportunidades_v`):
+  - produção: rascunho no Gmail, criando ou erro;
+  - decisão: aguardando, aprovado ou rejeitado;
+  - envio: não enviado, enviado (confirmado ou estimado), follow-up agendado ou concluído.
+
+  Criar o rascunho nunca conta como envio.
+- **Rascunho real e idempotente:**
+  - cada item da fila gera um rascunho com `Message-ID` próprio (`<fila-ID@agente.galeriaholding.crm>`), em texto e HTML;
+  - antes de criar, o agente procura por esse ID no Gmail e, se achar, adota o rascunho existente;
+  - só conta como produzido com o id devolvido pela API **e** gravado no banco;
+  - erro 429/5xx tem uma nova tentativa; erro de autenticação não é repetido às cegas;
+  - são até 3 tentativas por item, e cada uma fica registrada no `crm_logs`.
+
 ## Proteções
 - **Duplicidade:** a mesma pessoa não volta por 14 dias, a mesma empresa recebe só 1 primeiro contato por semana, e empresa tocada por qualquer agência nos últimos 30 dias fica de fora. O rascunho nunca é criado duas vezes (confere `outlook_message_id`), e o registro de envio usa filtro de status (idempotente).
 - **Follow-up (novo):** quando você envia o rascunho pelo próprio Gmail, o agente percebe em até 15 min, registra o toque e agenda o próximo passo da cadência (D3 WhatsApp, D7 e D14 e-mail). Se você apagar o rascunho sem enviar, o item sai da fila. "Enviei" no WhatsApp também agenda o próximo passo.
