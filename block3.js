@@ -3545,6 +3545,204 @@ function HistoricoView() {
   );
 }
 
+// ── INTELIGÊNCIA COMERCIAL ─────────────────────────────────────────────────────
+// Painel executivo: priorização (score), Gmail (fonte de verdade), aprendizado
+// (memória comercial controlada pelo Pedro) e resultados. Métrica sem amostra
+// mínima aparece como "sem amostra", nunca como número.
+var INT_MIN_AMOSTRA = 10;
+var INT_TIPOS_MEM = { preferencia: 'Preferência', restricao: 'Restrição', perfil: 'Perfil de comunicação', argumento_funciona: 'Argumento que funciona', argumento_nao_funciona: 'Argumento que não funciona', case_por_segmento: 'Case por segmento', aprendizado: 'Aprendizado' };
+var INT_PADROES = { encurtou: 'encurtou o e-mail', alongou: 'acrescentou contexto', introducao: 'trocou a abertura', cta: 'trocou o pedido final (CTA)', adjetivos: 'cortou adjetivos', linguagem_artificial: 'tirou linguagem artificial', solucao: 'trocou a solução', reescrita: 'reescreveu quase tudo', assunto: 'trocou o assunto' };
+function InteligenciaView(props) {
+  var mono = "'IBM Plex Mono',monospace";
+  var _d = React.useState(null); var d = _d[0]; var setD = _d[1];
+  var _ed = React.useState(null); var ed = _ed[0]; var setEd = _ed[1];       // {id, texto}
+  var _nv = React.useState({ tipo: 'preferencia', texto: '' }); var nova = _nv[0]; var setNova = _nv[1];
+  var _m = React.useState(''); var msg = _m[0]; var setMsg = _m[1];
+  var _ab = React.useState(null); var aberto = _ab[0]; var setAberto = _ab[1];
+  function arr(x) { return Array.isArray(x) ? x : []; }
+  function carregar() {
+    var d7 = new Date(Date.now() - 7 * 86400e3).toISOString(), d30 = new Date(Date.now() - 30 * 86400e3).toISOString();
+    Promise.all([
+      supaFetch('/rest/v1/crm_sdr_estado?atualizado_em=gte.' + d7 + '&sombra=eq.false&score=not.is.null&select=id,etapa,status,score,solucao,score_detalhe,motivo,crm_decisores:decisor_id(nome,cargo),crm_empresas:empresa_id(nome,setor,setor_sugerido)&order=score.desc&limit=600'),
+      supaFetch('/rest/v1/crm_agente_oportunidades_v?gerado_em=gte.' + d30 + '&canal=eq.email&select=id,draft_id,status,estado_envio,enviado_real_em,rascunho_erro,estado_decisao&limit=1000'),
+      supaFetch('/rest/v1/crm_gmail_eventos?criado_em=gte.' + d30 + '&select=tipo,criado_em&limit=2000'),
+      supaFetch('/rest/v1/crm_logs?criado_em=gte.' + d7 + '&nivel=eq.error&origem=in.(%22cron:sdr-respostas%22,%22cron:gmail-sync%22,%22cron:rascunhos-matinais%22,%22gmail-draft-update%22)&select=origem,mensagem,criado_em&order=criado_em.desc&limit=50'),
+      supaFetch('/rest/v1/crm_configuracoes?chave=in.(gmail_history_id,gmail_reconciliado_em,sdr_inbox_cursor_gmail)&select=chave,valor'),
+      supaFetch('/rest/v1/crm_aprendizado_eventos?criado_em=gte.' + new Date(Date.now() - 180 * 86400e3).toISOString() + '&select=tipo,diff,criado_em&limit=5000'),
+      supaFetch('/rest/v1/crm_memoria_comercial?status=neq.descartado&select=*&order=status.asc,evidencias.desc&limit=300'),
+      supaFetch('/rest/v1/crm_agente_desempenho_v?select=*&limit=500'),
+      supaFetch('/rest/v1/crm_sdr_respostas?recebido_em=gte.' + d30 + '&tipo=neq.auto_resposta&select=tipo&limit=1000'),
+      supaFetch('/rest/v1/crm_oportunidades?apagado_em=is.null&criado_em=gte.' + d30 + '&select=estagio,origem&limit=1000')
+    ]).then(function (r) {
+      var cfg = {}; arr(r[4]).forEach(function (x) { cfg[x.chave] = x.valor; });
+      setD({ est: arr(r[0]), ops: arr(r[1]), gev: arr(r[2]), gerr: arr(r[3]), cfg: cfg, apr: arr(r[5]), mem: arr(r[6]), des: arr(r[7]), resp: arr(r[8]), opp: arr(r[9]) });
+    }).catch(function () { setD({ erro: true }); });
+  }
+  React.useEffect(function () { carregar(); }, []);
+  function aviso(t) { setMsg(t); setTimeout(function () { setMsg(''); }, 5000); }
+  function salvarMem(id, campos, txt) {
+    var email = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || null;
+    supaFetch('/rest/v1/crm_memoria_comercial?id=eq.' + id, { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify(Object.assign({ atualizado_em: new Date().toISOString(), atualizado_por: email }, campos)) })
+      .then(function (rows) { aviso(Array.isArray(rows) && rows.length ? txt : 'Não deu para salvar.'); setEd(null); carregar(); });
+  }
+  function criarMem() {
+    if (!nova.texto.trim()) return;
+    var email = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || null;
+    supaFetch('/rest/v1/crm_memoria_comercial', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ tipo: nova.tipo, texto: nova.texto.trim(), fonte: 'manual', status: 'ativo', atualizado_por: email }) })
+      .then(function (rows) { aviso(Array.isArray(rows) && rows.length ? 'Adicionado e ativo: entra nas próximas mensagens.' : 'Não deu para salvar.'); setNova({ tipo: nova.tipo, texto: '' }); carregar(); });
+  }
+  function recalcular() {
+    supaFetch('/rest/v1/rpc/sdr_recalcular_aprendizado', { method: 'POST', body: '{}' }).then(function (r) {
+      aviso(r && r.ok ? 'Recalculando: as propostas aparecem em até 1 minuto.' : 'Não deu: ' + ((r && (r.message || r.error)) || 'erro'));
+      setTimeout(carregar, 15000);
+    });
+  }
+  if (!d) return React.createElement("div", { style: { padding: 24, fontFamily: mono, fontSize: 10, color: '#555' } }, 'Carregando inteligência…');
+  if (d.erro) return React.createElement("div", { style: { padding: 24, fontFamily: mono, fontSize: 10, color: '#E24B4A' } }, 'Não deu para carregar. Recarregue a página.');
+
+  var box = { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px', display: 'flex', flexDirection: 'column', gap: 10 };
+  var tit = function (t, sub) { return React.createElement("div", null, React.createElement("div", { style: { fontFamily: "'Syne',sans-serif", fontSize: 14, fontWeight: 700, color: '#F5F5F5', letterSpacing: '.5px' } }, t), sub && React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555', marginTop: 2 } }, sub)); };
+  var kpi = function (v, l, c, semAmostra) { return React.createElement("div", { style: { flex: 1, minWidth: 120 } },
+    React.createElement("div", { style: { fontFamily: mono, fontSize: semAmostra ? 11 : 22, fontWeight: 700, color: semAmostra ? '#555' : (c || '#F5F5F5'), lineHeight: 1.2 } }, semAmostra ? 'sem amostra' : v),
+    React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555', marginTop: 3 } }, l + (semAmostra ? ' (' + semAmostra + ')' : ''))); };
+  var linhaKpi = function (xs) { return React.createElement("div", { style: { display: 'flex', gap: 12, flexWrap: 'wrap' } }, xs); };
+  var btn = function (t, cor, fn) { return React.createElement("button", { onClick: fn, style: { fontFamily: mono, fontSize: 9, padding: '3px 9px', borderRadius: 4, border: '.5px solid ' + cor, background: 'transparent', color: cor, cursor: 'pointer' } }, t); };
+
+  // INTELIGÊNCIA
+  var est = d.est;
+  var identificadas = est.filter(function (e) { return ['estrategia', 'redigido', 'rascunho', 'enviado', 'agendado'].indexOf(e.etapa) >= 0; });
+  var scoreMedio = est.length ? Math.round(est.reduce(function (a, e) { return a + (e.score || 0); }, 0) / est.length) : null;
+  var porSol = {}; est.forEach(function (e) { var k = (e.score_detalhe && e.score_detalhe.solucao_nome) || e.solucao || 'não definida'; porSol[k] = (porSol[k] || 0) + 1; });
+  var top = est.filter(function (e) { return e.status === 'ativo' && e.etapa !== 'avaliado'; }).slice(0, 12);
+  if (top.length < 6) top = est.slice(0, 12);
+
+  // GMAIL
+  var ops = d.ops;
+  var criados = ops.filter(function (o) { return o.draft_id; }).length;
+  var pendentes = ops.filter(function (o) { return o.draft_id && o.estado_envio === 'nao_enviado'; }).length;
+  var confirmados = ops.filter(function (o) { return o.enviado_real_em; }).length;
+  var autoDet = d.gev.filter(function (e) { return e.tipo === 'enviado'; }).length;
+  var falhas = d.gerr.length + ops.filter(function (o) { return !o.draft_id && o.rascunho_erro; }).length;
+  var ultSync = d.cfg.gmail_reconciliado_em || null;
+
+  // APRENDIZADO
+  var apr = d.apr;
+  var semAlt = apr.filter(function (e) { return e.tipo === 'enviado_sem_alteracao'; }).length;
+  var editados = apr.filter(function (e) { return e.tipo === 'editado' || e.tipo === 'enviado_com_alteracao'; });
+  var revisados = semAlt + apr.filter(function (e) { return e.tipo === 'enviado_com_alteracao'; }).length;
+  var padroes = {}; editados.forEach(function (e) { ((e.diff && e.diff.categorias) || []).forEach(function (c) { padroes[c] = (padroes[c] || 0) + 1; }); });
+  var padroesOrd = Object.keys(padroes).sort(function (a, b) { return padroes[b] - padroes[a]; });
+  // Evolução: % enviado sem alteração por mês (só meses com 5+ envios revisados).
+  var porMes = {}; apr.forEach(function (e) { if (e.tipo !== 'enviado_sem_alteracao' && e.tipo !== 'enviado_com_alteracao') return; var m = String(e.criado_em).slice(0, 7); porMes[m] = porMes[m] || { s: 0, n: 0 }; porMes[m].n++; if (e.tipo === 'enviado_sem_alteracao') porMes[m].s++; });
+  var meses = Object.keys(porMes).sort().filter(function (m) { return porMes[m].n >= 5; });
+  var desOrd = d.des.filter(function (x) { return Number(x.enviados) >= INT_MIN_AMOSTRA; }).sort(function (a, b) { return (b.respostas_positivas / b.enviados) - (a.respostas_positivas / a.enviados); });
+  var perfil = d.mem.find(function (m) { return m.tipo === 'perfil' && m.fonte === 'aprendizado'; });
+
+  // RESULTADOS
+  var totEnv = d.des.reduce(function (a, x) { return a + Number(x.enviados || 0); }, 0);
+  var sum = function (k) { return d.des.reduce(function (a, x) { return a + Number(x[k] || 0); }, 0); };
+  var amostraRes = totEnv < INT_MIN_AMOSTRA ? totEnv + ' de ' + INT_MIN_AMOSTRA + ' envios mínimos' : null;
+  var respostas30 = d.resp.length;
+  var oppAbertas = d.opp.filter(function (o) { return ['Perdido', 'Cliente ativo'].indexOf(o.estagio) < 0; }).length;
+  var conv = d.opp.filter(function (o) { return o.estagio === 'Cliente ativo'; }).length;
+
+  var memPorStatus = { proposto: [], ativo: [], desativado: [] };
+  d.mem.forEach(function (m) { (memPorStatus[m.status] || (memPorStatus[m.status] = [])).push(m); });
+  var memLinha = function (m) {
+    var emEd = ed && ed.id === m.id;
+    return React.createElement("div", { key: m.id, style: { borderBottom: '.5px solid #1A1A2E', padding: '8px 0', display: 'flex', flexDirection: 'column', gap: 4 } },
+      React.createElement("div", { style: { display: 'flex', gap: 8, alignItems: 'baseline', flexWrap: 'wrap' } },
+        React.createElement("span", { style: { fontFamily: mono, fontSize: 8, color: '#818CF8', border: '.5px solid #818CF8', borderRadius: 3, padding: '1px 5px' } }, INT_TIPOS_MEM[m.tipo] || m.tipo),
+        React.createElement("span", { style: { fontFamily: mono, fontSize: 8, color: '#555' } }, (m.fonte === 'manual' ? 'escrito por você' : 'deduzido de ' + m.evidencias + ' evento(s)') + (m.escopo && (m.escopo.setor || m.escopo.solucao) ? ' · vale para ' + [m.escopo.solucao, m.escopo.setor].filter(Boolean).join(' / ') : ' · vale para tudo'))),
+      emEd ? React.createElement("textarea", { value: ed.texto, rows: 3, onChange: function (e) { setEd({ id: m.id, texto: e.target.value }); }, style: { background: '#060610', border: '.5px solid #2D2D44', borderRadius: 4, color: '#F5F5F5', fontSize: 12, padding: 6 } })
+        : React.createElement("div", { style: { fontSize: 12, color: m.status === 'desativado' ? '#555' : '#F5F5F5' } }, m.texto),
+      React.createElement("div", { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
+        emEd ? [btn('Salvar', '#34D399', function () { salvarMem(m.id, { texto: ed.texto }, 'Texto corrigido.'); }), btn('Cancelar', '#555', function () { setEd(null); })]
+          : [m.status !== 'ativo' && btn(m.status === 'proposto' ? 'Ativar (passa a valer)' : 'Reativar', '#34D399', function () { salvarMem(m.id, { status: 'ativo' }, 'Ativo: entra nas próximas mensagens.'); }),
+             m.status === 'ativo' && btn('Desativar', '#FBBF24', function () { salvarMem(m.id, { status: 'desativado' }, 'Desativado: deixa de ser usado.'); }),
+             btn('Corrigir', '#60A5FA', function () { setEd({ id: m.id, texto: m.texto }); }),
+             btn(m.fonte === 'aprendizado' ? 'Descartar (resetar)' : 'Remover', '#E24B4A', function () { salvarMem(m.id, { status: 'descartado' }, 'Descartado (fica no histórico, fora do uso).'); }),
+             m.evidencia_detalhe && btn(aberto === m.id ? 'ocultar evidência' : 'ver evidência', '#9B9BB4', function () { setAberto(aberto === m.id ? null : m.id); })]),
+      aberto === m.id && React.createElement("pre", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4', whiteSpace: 'pre-wrap', margin: 0 } }, JSON.stringify(m.evidencia_detalhe, null, 1).slice(0, 1200))
+    );
+  };
+
+  return React.createElement("div", { style: { padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16, background: '#060610', minHeight: '100%' } },
+    React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center' } },
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 11, color: '#FF6B2B', letterSpacing: '.5px' } }, 'INTELIGÊNCIA COMERCIAL'),
+      msg && React.createElement("span", { style: { fontFamily: mono, fontSize: 10, color: '#F5F5F5' } }, msg)),
+
+    // 1. INTELIGÊNCIA
+    React.createElement("div", { style: box },
+      tit('Inteligência', 'Score de oportunidade 0-100 (últimos 7 dias). Passe o mouse no score para ver cada fator.'),
+      linhaKpi([kpi(est.length, 'leads analisados'), kpi(identificadas.length, 'oportunidades identificadas (seguiram para mensagem)', '#34D399'),
+        kpi(scoreMedio == null ? '—' : scoreMedio, 'score médio', '#FBBF24', est.length ? null : 'nenhum lead pontuado ainda')]),
+      Object.keys(porSol).length > 0 && React.createElement("div", { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
+        Object.keys(porSol).sort(function (a, b) { return porSol[b] - porSol[a]; }).map(function (k) {
+          return React.createElement("span", { key: k, style: { fontFamily: mono, fontSize: 9, color: '#C9C9D6', background: '#1A1A2E', borderRadius: 10, padding: '3px 9px' } }, k + ': ' + porSol[k]); })),
+      top.length > 0 && React.createElement("div", null,
+        React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4', margin: '4px 0' } }, 'MELHORES OPORTUNIDADES'),
+        top.map(function (e) {
+          var sd = e.score_detalhe || {}; var g = sd.gatilho;
+          return React.createElement("div", { key: e.id, style: { display: 'grid', gridTemplateColumns: '44px 1fr', gap: 8, padding: '7px 0', borderBottom: '.5px solid #1A1A2E' } },
+            React.createElement("div", { title: (sd.fatores || []).map(function (f) { return f.fator + ': ' + f.pontos + '/' + f.max + ' — ' + f.motivo; }).join('\n'), style: { fontFamily: mono, fontSize: 18, fontWeight: 700, color: e.score >= 75 ? '#34D399' : e.score >= 55 ? '#FBBF24' : '#F5F5F5', cursor: 'help' } }, e.score),
+            React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 2, minWidth: 0 } },
+              React.createElement("div", { style: { fontSize: 12, color: '#F5F5F5' } }, React.createElement("b", null, (e.crm_empresas && e.crm_empresas.nome) || '—'), ' · ' + ((e.crm_decisores && e.crm_decisores.nome) || '') + (e.crm_decisores && e.crm_decisores.cargo ? ', ' + e.crm_decisores.cargo : '')),
+              React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4' } }, 'Solução: ' + (sd.solucao_nome || e.solucao || '—') + ' · Motivo: ' + (sd.motivo || '—')),
+              g ? React.createElement("a", { href: g.url, target: '_blank', rel: 'noopener noreferrer', style: { fontFamily: mono, fontSize: 9, color: '#60A5FA', textDecoration: 'none' } }, 'Gatilho: ' + String(g.tipo).replace(/_/g, ' ') + ' — ' + String(g.fato || '').slice(0, 90) + ' (' + (g.fonte || 'fonte') + ', ' + String(g.data || 's/data').slice(0, 10) + ') →')
+                : React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555' } }, 'Sem gatilho público com fonte'),
+              React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#C9C9D6' } }, 'Próxima ação: ' + (sd.proxima_acao || '—') + ' · situação: ' + e.etapa + (e.status !== 'ativo' ? ' (' + e.status + ')' : ''))));
+        }))
+    ),
+
+    // 2. GMAIL
+    React.createElement("div", { style: box },
+      tit('Gmail', 'Fonte de verdade dos envios. Sincroniza a cada 15 min (History API) e reconcilia tudo 1 vez por dia. Últimos 30 dias.'),
+      linhaKpi([kpi(criados, 'rascunhos criados', '#60A5FA'), kpi(pendentes, 'rascunhos pendentes', '#FBBF24'), kpi(confirmados, 'enviados e confirmados pela API', '#34D399'),
+        kpi(autoDet, 'envios identificados automaticamente', '#34D399'), kpi(falhas, 'falhas de sincronização/criação (7d)', falhas ? '#E24B4A' : '#555')]),
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555' } }, 'Última reconciliação completa: ' + (ultSync ? new Date(ultSync).toLocaleString('pt-BR') : 'ainda não houve') + (d.gerr.length ? ' · última falha: ' + d.gerr[0].origem.replace('cron:', '') + ' — ' + String(d.gerr[0].mensagem).slice(0, 80) : ''))
+    ),
+
+    // 3. APRENDIZADO
+    React.createElement("div", { style: box },
+      React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 8 } },
+        tit('Aprendizado', 'O agente aprende com suas decisões, edições e envios. Nada passa a valer sem você ativar.'),
+        btn('Recalcular aprendizados', '#818CF8', recalcular)),
+      linhaKpi([kpi(semAlt, 'enviados sem alteração', '#34D399', revisados < 5 ? revisados + ' envios revisados; mínimo 5' : null),
+        kpi(editados.length, 'e-mails editados por você', '#FBBF24'),
+        kpi(revisados ? Math.round(semAlt / revisados * 100) + '%' : '—', 'aprovados como o agente escreveu', '#34D399', revisados < 5 ? 'mínimo 5 envios' : null)]),
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 10, color: '#C9C9D6' } }, React.createElement("b", null, 'Padrões das suas edições: '),
+        editados.length < 5 ? 'sem amostra (' + editados.length + ' edições; mínimo 5)' : padroesOrd.slice(0, 5).map(function (c) { return (INT_PADROES[c] || c) + ' (' + padroes[c] + ')'; }).join(' · ')),
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 10, color: '#C9C9D6' } }, React.createElement("b", null, 'Evolução da qualidade (% enviado sem alteração por mês): '),
+        meses.length < 2 ? 'sem amostra (precisa de 2 meses com 5+ envios revisados)' : meses.map(function (m) { return m + ': ' + Math.round(porMes[m].s / porMes[m].n * 100) + '% (' + porMes[m].n + ')'; }).join(' · ')),
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 10, color: '#C9C9D6' } }, React.createElement("b", null, 'Argumentos com melhor desempenho (correlação, não causa): '),
+        desOrd.length ? desOrd.slice(0, 4).map(function (x) { return x.solucao + ' em ' + x.setor + ' para ' + x.nivel_cargo + ': ' + x.respostas_positivas + ' positivas / ' + x.enviados; }).join(' · ')
+          : 'sem amostra (nenhuma combinação com ' + INT_MIN_AMOSTRA + '+ envios; e-mail sem resposta não prova que a abordagem é ruim)'),
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 10, color: '#C9C9D6' } }, React.createElement("b", null, 'Perfil de comunicação: '),
+        perfil ? perfil.texto + (perfil.status !== 'ativo' ? ' [proposto: ative abaixo para valer]' : '') : 'sem amostra (precisa de 10 e-mails enviados pelo Gmail com confirmação)'),
+      // Memória comercial
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4', marginTop: 6 } }, 'MEMÓRIA COMERCIAL (o que entra nas próximas mensagens)'),
+      memPorStatus.proposto.length > 0 && React.createElement("div", null, React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#FBBF24' } }, 'PROPOSTAS PARA VOCÊ REVISAR (' + memPorStatus.proposto.length + ')'), memPorStatus.proposto.map(memLinha)),
+      React.createElement("div", null, React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#34D399' } }, 'ATIVAS (' + memPorStatus.ativo.length + ')'), memPorStatus.ativo.map(memLinha)),
+      memPorStatus.desativado.length > 0 && React.createElement("div", null, React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555' } }, 'DESATIVADAS (' + memPorStatus.desativado.length + ')'), memPorStatus.desativado.map(memLinha)),
+      React.createElement("div", { style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+        React.createElement("select", { value: nova.tipo, onChange: function (e) { setNova({ tipo: e.target.value, texto: nova.texto }); }, style: { background: '#060610', border: '.5px solid #2D2D44', borderRadius: 4, color: '#F5F5F5', fontFamily: mono, fontSize: 10, padding: 4 } },
+          ['preferencia', 'restricao', 'argumento_funciona', 'argumento_nao_funciona', 'case_por_segmento'].map(function (t) { return React.createElement("option", { key: t, value: t }, INT_TIPOS_MEM[t]); })),
+        React.createElement("input", { value: nova.texto, placeholder: 'Ex.: Em franquias, abrir pelo problema de consistência entre lojas, não pela tecnologia.', onChange: function (e) { setNova({ tipo: nova.tipo, texto: e.target.value }); }, style: { flex: 1, minWidth: 240, background: '#060610', border: '.5px solid #2D2D44', borderRadius: 4, color: '#F5F5F5', fontSize: 12, padding: 6 } }),
+        btn('Adicionar', '#34D399', criarMem))
+    ),
+
+    // 4. RESULTADOS
+    React.createElement("div", { style: box },
+      tit('Resultados comerciais', 'Envios do agente e o que aconteceu depois (últimos 30 dias para respostas e oportunidades).'),
+      linhaKpi([kpi(totEnv, 'e-mails do agente enviados'), kpi(respostas30, 'respostas de prospects (30d)', '#34D399'),
+        kpi(sum('reunioes'), 'reuniões vindas dos envios', '#34D399', amostraRes), kpi(oppAbertas, 'oportunidades abertas (30d)', '#FBBF24'),
+        kpi(conv, 'conversões em cliente (30d)', '#34D399')]),
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#555' } }, 'Taxas por abordagem só aparecem com ' + INT_MIN_AMOSTRA + '+ envios na mesma combinação. Sem resposta não é sinal de abordagem ruim.')
+    )
+  );
+}
+
 // Fila de oportunidades do agente (aba padrão da Fila). Três eixos separados,
 // calculados no banco (view crm_agente_oportunidades_v): produção (rascunho no
 // Gmail), decisão do Pedro (aprovar/rejeitar) e envio. Aprovar NÃO envia; rejeitar
@@ -3593,7 +3791,9 @@ function FilaAgente() {
     var it = (lista || []).find(function (x) { return x.id === env.id; }); if (!it) return;
     var quando = new Date(env.data + 'T12:00:00-03:00').toISOString();
     setBusy(env.id);
-    supaFetch('/rest/v1/crm_fila?id=eq.' + it.id + '&status=in.(aprovado,rascunho)', { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ status: 'enviado', enviado_em: quando, enviado_estimado: !!env.estimado }) })
+    // Envio informado à mão = data ESTIMADA (sem confirmação da API). Nunca mexe
+    // em item com data real confirmada; a sincronização do Gmail troca pela real se achar.
+    supaFetch('/rest/v1/crm_fila?id=eq.' + it.id + '&status=in.(aprovado,rascunho)&enviado_real_em=is.null', { method: 'PATCH', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ status: 'enviado', enviado_em: quando, enviado_estimado: true, enviado_estimado_em: quando, enviado_obs: 'informado pelo Pedro' + (env.estimado ? ' (data aproximada)' : '') + ', sem confirmação da API do Gmail' }) })
       .then(function (rows) {
         if (!Array.isArray(rows) || !rows.length) throw new Error('item já estava marcado');
         return supaFetch('/rest/v1/crm_toques', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ decisor_id: it.decisor_id, empresa_id: it.empresa_id, canal: it.canal === 'whatsapp' ? 'whatsapp' : 'email', direcao: 'enviado', assunto: (it.assunto || '').slice(0, 500), resumo: 'SDR: marcado como enviado pelo Pedro' + (env.estimado ? ' (data aproximada)' : ''), texto_enviado: (it.corpo || '').slice(0, 4000), data: quando, fonte: 'manual', resultado: 'enviado' }) })
@@ -3643,7 +3843,14 @@ function FilaAgente() {
         React.createElement('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap' } },
           chip(FA_PROD[x.estado_producao] || [x.estado_producao, '#555'], x.estado_producao === 'erro_gmail' && x.rascunho_erro ? ': ' + String(x.rascunho_erro).slice(0, 60) : ''),
           chip(FA_DEC[x.estado_decisao] || [x.estado_decisao, '#555'], x.decisao_motivo ? ': ' + x.decisao_motivo : ''),
-          chip(FA_ENV[x.estado_envio] || [x.estado_envio, '#555'], (x.enviado_em && enviado ? ' em ' + dt(x.enviado_em) + (x.enviado_estimado ? ' (estimado)' : '') : '') + (x.followup_em ? ' · próximo ' + String(x.followup_em).split('-').reverse().join('/') : ''))
+          chip(FA_ENV[x.estado_envio] || [x.estado_envio, '#555'], (enviado ? (x.enviado_real_em ? ' em ' + dt(x.enviado_real_em) + ' (confirmado no Gmail)' : x.enviado_estimado_em ? ' em ' + dt(x.enviado_estimado_em) + ' (estimado)' : x.enviado_em ? ' em ' + dt(x.enviado_em) : '') : '') + (x.followup_em ? ' · próximo ' + String(x.followup_em).split('-').reverse().join('/') : '')),
+          x.editado_no_gmail_em && !enviado && chip(['Editado no Gmail', '#818CF8'], ' ' + dt(x.editado_no_gmail_em))
+        ),
+        (x.score != null || x.solucao) && React.createElement('div', { style: { display: 'flex', gap: 10, flexWrap: 'wrap', fontFamily: mono, fontSize: 9, color: '#9B9BB4' } },
+          x.score != null && React.createElement('span', { title: ((x.score_detalhe && x.score_detalhe.fatores) || []).map(function (f) { return f.fator + ': ' + f.pontos + '/' + f.max + ' — ' + f.motivo; }).join('\n') }, 'Score ', React.createElement('b', { style: { color: x.score >= 75 ? '#34D399' : x.score >= 55 ? '#FBBF24' : '#F5F5F5' } }, x.score), '/100 ⓘ'),
+          (x.score_detalhe && x.score_detalhe.solucao_nome) && React.createElement('span', null, 'Solução: ', React.createElement('b', { style: { color: '#F5F5F5' } }, x.score_detalhe.solucao_nome)),
+          (x.score_detalhe && x.score_detalhe.gatilho) && React.createElement('a', { href: x.score_detalhe.gatilho.url, target: '_blank', rel: 'noopener noreferrer', style: { color: '#60A5FA', textDecoration: 'none' } }, 'Gatilho: ' + String(x.score_detalhe.gatilho.tipo).replace(/_/g, ' ') + ' (' + (x.score_detalhe.gatilho.fonte || 'fonte') + ') →'),
+          (x.score_detalhe && x.score_detalhe.proxima_acao) && React.createElement('span', null, 'Próxima ação: ' + x.score_detalhe.proxima_acao)
         ),
         x.motivo_abordagem && React.createElement('div', { style: { fontSize: 11, color: '#9B9BB4', lineHeight: 1.5 } }, React.createElement('b', { style: { color: '#C9C9D6' } }, 'Por que agora: '), String(x.motivo_abordagem).slice(0, 400)),
         !emEdicao && React.createElement('div', { style: { fontSize: 12, color: '#F5F5F5' } }, React.createElement('b', null, 'Assunto: '), x.assunto || (x.canal === 'email' ? '—' : '(WhatsApp)')),
@@ -5940,7 +6147,7 @@ function App() {
     }
   }, "GALERIA HOLDING")),
   React.createElement("div", { className:"tb-nav", style:{ display:'flex', alignItems:'stretch', flex:1 } },
-    [['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['sdr','SDR'],['fila','Fila'],['base','Base'],['blocklist','Blocklist'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['pipeline','Pipeline'],['admin','Admin'],['ferramentas','Ferramentas']].map(([s, l]) =>
+    [['hoje','Hoje'],['inteligencia','Inteligência'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['sdr','SDR'],['fila','Fila'],['base','Base'],['blocklist','Blocklist'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['pipeline','Pipeline'],['admin','Admin'],['ferramentas','Ferramentas']].map(([s, l]) =>
       React.createElement("div", {
         key: s,
         onClick: () => { if (s === 'ferramentas') { setToolsOpen(true); } else { navTo(s, null, null); } },
@@ -5976,7 +6183,7 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, { navTo: navTo, meuPapel: meuPapel })) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'sdr' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(SdrView, { navTo: navTo })) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'blocklist' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, typeof BlocklistView !== 'undefined' ? React.createElement(BlocklistView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Blocklist carregando...')) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
+  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, { navTo: navTo, meuPapel: meuPapel })) : navSection === 'inteligencia' ? React.createElement("div", { style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'} }, React.createElement(InteligenciaView, { navTo: navTo, meuPapel: meuPapel })) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'sdr' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(SdrView, { navTo: navTo })) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'blocklist' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, typeof BlocklistView !== 'undefined' ? React.createElement(BlocklistView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Blocklist carregando...')) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : viewMode === "outbound" ? /*#__PURE__*/React.createElement("div", {
     className: "ws",
     style: {
       flex: 1,

@@ -17,6 +17,7 @@ const FILA = {
 };
 const ESTADO = [{ id: 's1', decisor_id: 'd1', empresa_id: 'e1', agencia_id: 'a1', dossie_id: null, dia_cadencia: 0, fila_id: 'f1', etapa: 'rascunho' }];
 const escritas = [];
+globalThis.__evs = new Set();
 globalThis.fetch = async (url, opts = {}) => {
   const u = decodeURIComponent(String(url)); const metodo = (opts.method || 'GET').toUpperCase();
   const body = opts.body && typeof opts.body === 'string' && opts.body.startsWith('{') ? JSON.parse(opts.body) : null;
@@ -27,10 +28,13 @@ globalThis.fetch = async (url, opts = {}) => {
     if (u.includes('/drafts/r-333')) return json({ id: 'r-333' });                                                          // ainda é rascunho
     if (u.includes('/messages?') && u.includes('to:ana@acme.com')) return json({ messages: [{ id: 'm1' }] });
     if (u.includes('/messages?')) return json({});
+    if (u.includes('/profile')) return json({ historyId: '500', emailAddress: 'pedro@gmail.com' });
+    if (u.includes('/messages/m1?format=full')) return json({ payload: { parts: [{ mimeType: 'text/plain', body: { data: Buffer.from('Ana, ...').toString('base64') } }] } });
     if (u.includes('/messages/m1')) return json({ id: 'm1', threadId: 'th1', internalDate: String(Date.parse('2026-11-24T13:00:00Z')), payload: { headers: [{ name: 'Subject', value: 'Acme editado' }] } });
     return json({}, 404);
   }
   if (u.includes('crm_logs')) return json([]);
+  if (u.includes('crm_gmail_eventos') && metodo === 'POST') { const k = body.gmail_id + '|' + body.tipo; if (globalThis.__evs.has(k)) return json([], 201); globalThis.__evs.add(k); return json([body], 201); }
   if (u.includes('crm_configuracoes')) return json([{ chave: 'sdr_cadencia', valor: [{ dia: 0, canal: 'email' }, { dia: 3, canal: 'whatsapp' }, { dia: 7, canal: 'email' }] }, { chave: 'sdr_feriados', valor: [] }]);
   if (u.includes('crm_sdr_estado') && metodo === 'GET') {
     return json(ESTADO.filter(e => e.etapa === 'rascunho').map(e => Object.assign({}, e, { crm_fila: { status: FILA[e.fila_id].status, enviado_em: FILA[e.fila_id].enviado_em } })));
@@ -40,7 +44,11 @@ globalThis.fetch = async (url, opts = {}) => {
     if (!e || (u.includes('etapa=eq.rascunho') && e.etapa !== 'rascunho')) return json([]);
     Object.assign(e, body); return json([e]);
   }
-  if (u.includes('crm_fila') && metodo === 'GET') return json(Object.values(FILA).filter(f => f.status === 'aprovado'));
+  if (u.includes('crm_fila') && metodo === 'GET') {
+    const id = (u.match(/[?&]id=eq\.(\w+)/) || [])[1];
+    if (id) return json(FILA[id] ? [FILA[id]] : []);   // busca do item pelo id (registro do envio real)
+    return json(Object.values(FILA).filter(f => f.status === 'aprovado' && !f.enviado_real_em));
+  }
   if (u.includes('crm_fila') && metodo === 'PATCH') {
     const id = (u.match(/id=eq\.(\w+)/) || [])[1]; const f = FILA[id];
     if (!f || (u.includes('status=eq.aprovado') && f.status !== 'aprovado')) return json([]);

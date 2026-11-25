@@ -7,6 +7,7 @@ import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { classificarResposta } from '../lib/sdr-respostas.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
+import { analisarEdicao } from '../lib/sdr-aprendizado.js';
 import { GMAIL_SCOPE, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, credenciaisGoogle, obterTokenGmail, gmailReq, criarRascunhoGmail, enviarRascunhoGmail, atualizarRascunhoGmail, ehRascunhoGmail } from '../lib/gmail-token.js';
 
 const HUNTER_KEY      = process.env.HUNTER_KEY;
@@ -671,13 +672,16 @@ export default async function handler(req, res) {
       if (!item || !item[0] || item[0].status !== 'aprovado' || item[0].outlook_message_id !== outlook_message_id) return res.status(400).json({ error: 'Item não está aprovado ou o rascunho não confere' });
       const t = await obterTokenGmail(ctxG);
       if (!t) return res.status(503).json({ error: 'Gmail não conectado' });
-      try { await enviarRascunhoGmail(t.token, outlook_message_id); }
+      let enviadoMsg = null;
+      try { enviadoMsg = await enviarRascunhoGmail(t.token, outlook_message_id); }
       catch (e) {
         await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ rascunho_erro: String(e.message).slice(0, 300) }) });
         return res.status(502).json({ error: e.message });
       }
       const now = new Date().toISOString();
-      await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ status: 'enviado', enviado_em: now, rascunho_erro: null }) });
+      // Enviado pela API do Gmail (clique do Pedro): data REAL e id da mensagem.
+      await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify(Object.assign({ status: 'enviado', enviado_em: now, enviado_real_em: now, enviado_obs: 'enviado pelo botão do CRM (API do Gmail)', rascunho_erro: null },
+        enviadoMsg && enviadoMsg.id ? { gmail_message_id: enviadoMsg.id } : {}, enviadoMsg && enviadoMsg.threadId ? { thread_ref: enviadoMsg.threadId } : {})) });
       await supaReq('/rest/v1/crm_toques', { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ decisor_id, empresa_id, canal: 'email', direcao: 'enviado', assunto: (assunto || '').slice(0, 500), resumo: (contexto || '').slice(0, 500), data: now, fonte: 'sistema', resultado: 'enviado' }) });   // 'gmail' não é aceito pelo check de crm_toques.fonte: o toque se perdia
       if (decisor_id) await supaReq('/rest/v1/crm_decisores?id=eq.' + decisor_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ ultimo_toque_em: now }) });
       return res.status(200).json({ enviado: true, enviado_em: now });
@@ -689,7 +693,7 @@ export default async function handler(req, res) {
       const { fila_id } = body;
       const assunto = String(body.assunto || '').trim(), corpo = String(body.corpo || '').trim();
       if (!fila_id || !corpo) return res.status(400).json({ error: 'fila_id e corpo obrigatórios' });
-      const rows = await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id + '&apagado_em=is.null&select=id,status,canal,outlook_message_id,crm_decisores(email)');
+      const rows = await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id + '&apagado_em=is.null&select=id,status,canal,outlook_message_id,assunto,corpo,assunto_original,corpo_original,decisor_id,empresa_id,solucao,crm_decisores(email,cargo),crm_empresas(setor,setor_sugerido)');
       const it = rows && rows[0];
       if (!it) return res.status(404).json({ error: 'item não encontrado' });
       if (it.status === 'enviado' || it.status === 'respondido') return res.status(409).json({ error: 'já foi enviado: não dá para editar o rascunho' });
@@ -711,6 +715,14 @@ export default async function handler(req, res) {
         });
         await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ assunto, corpo, outlook_draft_link: d.link, rascunho_atualizado_em: agoraIso, rascunho_erro: null }) });
         await supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ origem: 'gmail-draft-update', nivel: 'info', mensagem: 'rascunho atualizado', contexto: { fila_id, draft_id: d.id } }) });
+        // Aprendizado: versão do agente x versão do Pedro (a original nunca é sobrescrita).
+        try {
+          const orig = { assunto: it.assunto_original || it.assunto || '', corpo: it.corpo_original || it.corpo || '' };
+          const diff = analisarEdicao(orig, { assunto, corpo });
+          if (!diff.sem_alteracao) await supaReq('/rest/v1/crm_aprendizado_eventos', { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({
+            fila_id, decisor_id: it.decisor_id, empresa_id: it.empresa_id, tipo: 'editado', original: orig, final: { assunto, corpo }, diff,
+            contexto: { solucao: it.solucao || null, setor: (it.crm_empresas && (it.crm_empresas.setor || it.crm_empresas.setor_sugerido)) || null, cargo: it.crm_decisores && it.crm_decisores.cargo } }) });
+        } catch (_) {}
         return res.status(200).json({ ok: true, gmail: true, link: d.link, atualizado_em: agoraIso });
       } catch (e) {
         const msg = e.status === 404 ? 'o rascunho não existe mais no Gmail (enviado ou apagado)' : String(e.message || e).slice(0, 200);
