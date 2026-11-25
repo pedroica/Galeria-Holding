@@ -6,7 +6,7 @@ process.env.SUPA_CRM_URL = 'https://fake.supabase.co';
 process.env.CRON_SECRET = 'cron-vercel';
 process.env.ANTHROPIC_API_KEY = 'sk-fake';
 
-import { parseEnderecos, montarIndice, casarMensagem, decidirPipeline, semCitacao, construirPromptStatus, respostaReal } from '../lib/gmail-crm.js';
+import { parseEnderecos, montarIndice, casarMensagem, decidirPipeline, semCitacao, construirPromptStatus, respostaReal, nomeDoEmail } from '../lib/gmail-crm.js';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log((c ? '  ✓ ' : '  ✗ FALHOU: ') + m); };
@@ -51,6 +51,7 @@ ok(!respostaReal([{ direcao: 'recebido', de: 'Felipe <felipe@petz.com.br>', assu
 ok(!respostaReal([{ direcao: 'recebido', de: 'Ana <ana@empresa.com.br>', assunto: 'Resposta automática: Conversa rápida' }], eu), 'resposta automática de ausência não é resposta');
 ok(!respostaReal([{ direcao: 'recebido', de: 'dono@exemplo.test', assunto: 'Re: Conversa rápida' }], eu), 'mensagem do próprio Pedro não é resposta');
 ok(respostaReal([{ direcao: 'enviado', de: 'dono@exemplo.test', assunto: 'Conversa rápida' }, { direcao: 'recebido', de: 'Ana <ana@empresa.com.br>', assunto: 'Re: Conversa rápida' }], eu), 'resposta de pessoa da empresa conta');
+ok(nomeDoEmail('daniel.galhardo') === 'Daniel Galhardo' && nomeDoEmail('ana_souza2') === 'Ana Souza2' && nomeDoEmail('joao') === 'Joao', 'nome legível a partir do e-mail');
 
 console.log('Texto da conversa');
 ok(semCitacao('Pode ser quinta 10h.\n\nEm seg., 24 de nov. de 2026 às 10:00, Pedro <p@x.com> escreveu:\n> texto antigo') === 'Pode ser quinta 10h.', 'tira a citação da mensagem anterior');
