@@ -51,6 +51,8 @@ const fin = { assunto: 'Acme: 40 lojas novas', corpo: 'Ana, vi que a Acme abriu 
 const df = analisarEdicao(orig, fin);
 ok(!df.sem_alteracao && ['assunto', 'encurtou', 'introducao', 'cta', 'adjetivos', 'linguagem_artificial'].every(c => df.categorias.includes(c)), 'detecta assunto, encurtou, abertura, CTA, adjetivos e linguagem artificial (' + df.categorias.join(',') + ')');
 ok(analisarEdicao(orig, { assunto: orig.assunto, corpo: orig.corpo.replace('\n\nPedro Ica', '\n\nAbraço,\nPedro Ica') }).sem_alteracao, 'só a assinatura mudou = sem alteração');
+ok(!analisarEdicao({ assunto: 'a', corpo: 'Contato, para nos ajudar no teste do agente.' }, { assunto: 'a', corpo: 'Contato, versão editada curta.' }).categorias.includes('solucao'), '"nos" comum não é a solução NOS (falso positivo do teste real)');
+ok(analisarEdicao({ assunto: 'a', corpo: 'Ana, o BrandSync resolve.' }, { assunto: 'a', corpo: 'Ana, o CR.IA resolve.' }).categorias.includes('solucao'), 'troca real de solução continua detectada');
 
 console.log('Propostas: nada com pouca amostra; nada ativo sozinho');
 const poucos = [{ tipo: 'editado', diff: { categorias: ['encurtou'] } }, { tipo: 'editado', diff: { categorias: ['encurtou'] } }];
