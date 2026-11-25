@@ -53,6 +53,10 @@ d = await atualizarRascunhoGmail('tok', 'r-100', { para: 'ana@acme.com', assunto
 const put = chamadas.find(c => c.m === 'PUT');
 ok(put && /\/drafts\/r-100$/.test(put.u) && /Novo assunto|=\?UTF-8/.test(dec(put.body.message.raw)) && d.id === 'r-100', 'edição usa drafts.update no mesmo rascunho');
 
+const d2 = await atualizarRascunhoGmail('tok', 'r-100', { para: 'ana@acme.com', assunto: 'X', corpo: 'Y', conta: 'p@gmail.com', filaId: 'aaaaaaaa-0000-4000-8000-000000000001', threadId: 't100' });
+const put2 = chamadas.filter(c => c.m === 'PUT').pop();
+ok(put2.body.message.threadId === 't100' && d2.threadId, 'edição mantém a conversa do rascunho (sem isso o Gmail cria conversa nova e o envio não é detectado)');
+
 console.log('seleção respeita rejeição');
 const rs = selecionarLote({ candidatos: [{ id: 'd1', empresa_id: 'e1', email: 'a@x.com', empresa: { id: 'e1', nome: 'X' } }], rejeitados: new Set(['d1']), config: { lote_max: 5 }, agora: Date.now() });
 ok(rs.lote.length === 0 && rs.excluidos[0].motivo === 'rejeitado_pelo_pedro', 'rejeitado pelo Pedro não volta para a seleção');

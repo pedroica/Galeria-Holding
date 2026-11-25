@@ -2274,7 +2274,7 @@ async function aplicarHistoricoGmail(gm, registros, cont) {
 // rascunho apagado, envio anterior ao cursor, duplicatas).
 async function reconciliarRascunhosGmail(gm, cont, agoraIso) {
   const corte = new Date(Date.now() - 30 * 86400000).toISOString();
-  const itens = await sg(`crm_fila?origem=eq.sdr&canal=eq.email&status=in.(aprovado,enviado)&enviado_real_em=is.null&outlook_message_id=not.is.null&rascunho_criado_em=gte.${corte}&apagado_em=is.null&select=id,status,decisor_id,empresa_id,agencia_id,assunto,corpo,outlook_message_id,rascunho_criado_em,crm_decisores(email)&order=rascunho_criado_em.asc&limit=60`);
+  const itens = await sg(`crm_fila?origem=eq.sdr&canal=eq.email&status=in.(aprovado,enviado)&enviado_real_em=is.null&outlook_message_id=not.is.null&rascunho_criado_em=gte.${corte}&apagado_em=is.null&select=id,status,decisor_id,empresa_id,agencia_id,assunto,corpo,outlook_message_id,thread_ref,rascunho_criado_em,crm_decisores(email)&order=rascunho_criado_em.asc&limit=60`);
   for (const it of (Array.isArray(itens) ? itens : [])) {
     if (!ehRascunhoGmail(it.outlook_message_id)) continue;
     const para = it.crm_decisores && it.crm_decisores.email;
@@ -2293,6 +2293,10 @@ async function reconciliarRascunhosGmail(gm, cont, agoraIso) {
       if (meus.length > 1 && await eventoGmailNovo('dup:' + it.id, 'duplicado', it.id, null, { drafts: meus, no_banco: it.outlook_message_id })) cont.duplicados++;
     } catch (_) {}
     const st = await estadoDoRascunhoGmail(gm.token, { draftId: it.outlook_message_id, para, desdeISO: it.rascunho_criado_em });
+    // Conversa do rascunho pode mudar (edição): mantém thread_ref certo para o incremental.
+    if (st.estado === 'rascunho' && st.threadId && st.threadId !== it.thread_ref) {
+      await sp(`crm_fila?id=eq.${it.id}`, { thread_ref: st.threadId }, 'PATCH'); cont.conversas_corrigidas = (cont.conversas_corrigidas || 0) + 1;
+    }
     if (st.estado === 'enviado') {
       if (await eventoGmailNovo(st.messageId, 'enviado', it.id, st.threadId, { assunto: st.assunto, data: st.enviadoEm, por: 'reconciliacao' })
           && await registrarEnvioReal(gm, it.id, { messageId: st.messageId, threadId: st.threadId, enviadoEm: st.enviadoEm, assunto: st.assunto, origem: 'reconciliacao' })) cont.enviados_gmail++;
