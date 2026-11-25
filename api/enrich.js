@@ -693,7 +693,7 @@ export default async function handler(req, res) {
       const { fila_id } = body;
       const assunto = String(body.assunto || '').trim(), corpo = String(body.corpo || '').trim();
       if (!fila_id || !corpo) return res.status(400).json({ error: 'fila_id e corpo obrigatórios' });
-      const rows = await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id + '&apagado_em=is.null&select=id,status,canal,outlook_message_id,assunto,corpo,assunto_original,corpo_original,decisor_id,empresa_id,solucao,crm_decisores(email,cargo),crm_empresas(setor,setor_sugerido)');
+      const rows = await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id + '&apagado_em=is.null&select=id,status,canal,outlook_message_id,thread_ref,assunto,corpo,assunto_original,corpo_original,decisor_id,empresa_id,solucao,crm_decisores(email,cargo),crm_empresas(setor,setor_sugerido)');
       const it = rows && rows[0];
       if (!it) return res.status(404).json({ error: 'item não encontrado' });
       if (it.status === 'enviado' || it.status === 'respondido') return res.status(409).json({ error: 'já foi enviado: não dá para editar o rascunho' });
@@ -710,10 +710,10 @@ export default async function handler(req, res) {
       const copia = typeof mc.email_copia === 'string' && mc.email_copia.includes('@') ? mc.email_copia : null;
       try {
         const d = await atualizarRascunhoGmail(t.token, it.outlook_message_id, {
-          conta: t.email, para: it.crm_decisores && it.crm_decisores.email, assunto, corpo, filaId: fila_id,
+          conta: t.email, para: it.crm_decisores && it.crm_decisores.email, assunto, corpo, filaId: fila_id, threadId: it.thread_ref || null,
           cco: copia && mc.email_copia_tipo !== 'cc' ? copia : null, cc: copia && mc.email_copia_tipo === 'cc' ? copia : null
         });
-        await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ assunto, corpo, outlook_draft_link: d.link, rascunho_atualizado_em: agoraIso, rascunho_erro: null }) });
+        await supaReq('/rest/v1/crm_fila?id=eq.' + fila_id, { method: 'PATCH', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify(Object.assign({ assunto, corpo, outlook_draft_link: d.link, rascunho_atualizado_em: agoraIso, rascunho_erro: null }, d.threadId ? { thread_ref: d.threadId } : {})) });
         await supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { 'Prefer': 'return=minimal' }, body: JSON.stringify({ origem: 'gmail-draft-update', nivel: 'info', mensagem: 'rascunho atualizado', contexto: { fila_id, draft_id: d.id } }) });
         // Aprendizado: versão do agente x versão do Pedro (a original nunca é sobrescrita).
         try {

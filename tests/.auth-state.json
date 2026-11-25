@@ -1,0 +1,22 @@
+{
+  "cookies": [],
+  "origins": [
+    {
+      "origin": "https://galeria-holding-sage.vercel.app",
+      "localStorage": [
+        {
+          "name": "sb-uetltlnjmobeiunxfsqi-auth-token",
+          "value": "{\"access_token\":\"eyJhbGciOiJFUzI1NiIsImtpZCI6ImEwMTk0MDE0LTlhYmUtNDc1Ni05Mzk2LTgxY2EyYjA3M2U0NCIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJodHRwczovL3VldGx0bG5qbW9iZWl1bnhmc3FpLnN1cGFiYXNlLmNvL2F1dGgvdjEiLCJzdWIiOiJmNGZmN2NkNy1jZTc1LTRhOTQtOTk3MS1iZGVlNDlkMDI1ZDgiLCJhdWQiOiJhdXRoZW50aWNhdGVkIiwiZXhwIjoxNzkxNDc1MjMzLCJpYXQiOjE3OTE0NzE2MzMsImVtYWlsIjoicGxheXdyaWdodC10ZXN0QGdhbGVyaWEuaW50ZXJuYWwiLCJwaG9uZSI6IiIsImFwcF9tZXRhZGF0YSI6eyJwcm92aWRlciI6ImVtYWlsIiwicHJvdmlkZXJzIjpbImVtYWlsIl19LCJ1c2VyX21ldGFkYXRhIjp7ImVtYWlsX3ZlcmlmaWVkIjp0cnVlLCJuYW1lIjoiUGxheXdyaWdodCBUZXN0In0sInJvbGUiOiJhdXRoZW50aWNhdGVkIiwiYWFsIjoiYWFsMSIsImFtciI6W3sibWV0aG9kIjoicGFzc3dvcmQiLCJ0aW1lc3RhbXAiOjE3OTE0NzE2MzN9XSwic2Vzc2lvbl9pZCI6IjRjNjk0NjU5LTVmMDgtNGRhOC04ZjZkLTJjMTI1ZDU3MjNjZCIsImlzX2Fub255bW91cyI6ZmFsc2V9.IwdOJl6yzXlb5TJgoFRS3UjzGXjmf6GcN9ZRdETvvwVBEAbC6Ck9iECnt7FbKlvqDO9aSa6gh1WoPUPe6dNAJg\",\"token_type\":\"bearer\",\"expires_in\":3600,\"expires_at\":1791475233,\"refresh_token\":\"dmmxekl3pq32\",\"user\":{\"id\":\"f4ff7cd7-ce75-4a94-9971-bdee49d025d8\",\"aud\":\"authenticated\",\"role\":\"authenticated\",\"email\":\"playwright-test@galeria.internal\",\"email_confirmed_at\":\"2026-09-24T13:54:26.545962Z\",\"phone\":\"\",\"confirmed_at\":\"2026-09-24T13:54:26.545962Z\",\"last_sign_in_at\":\"2026-10-08T15:00:32.998898058Z\",\"app_metadata\":{\"provider\":\"email\",\"providers\":[\"email\"]},\"user_metadata\":{\"email_verified\":true,\"name\":\"Playwright Test\"},\"identities\":[{\"identity_id\":\"db228edd-b19a-4362-a736-6707d8479c2c\",\"id\":\"f4ff7cd7-ce75-4a94-9971-bdee49d025d8\",\"user_id\":\"f4ff7cd7-ce75-4a94-9971-bdee49d025d8\",\"identity_data\":{\"email\":\"playwright-test@galeria.internal\",\"email_verified\":false,\"phone_verified\":false,\"sub\":\"f4ff7cd7-ce75-4a94-9971-bdee49d025d8\"},\"provider\":\"email\",\"last_sign_in_at\":\"2026-09-24T13:54:26.543155Z\",\"created_at\":\"2026-09-24T13:54:26.543223Z\",\"updated_at\":\"2026-09-24T13:54:26.543223Z\",\"email\":\"playwright-test@galeria.internal\"}],\"created_at\":\"2026-09-24T13:54:26.537604Z\",\"updated_at\":\"2026-10-08T15:00:33.001421Z\",\"is_anonymous\":false},\"weak_password\":null}"
+        },
+        {
+          "name": "ghub_cfg_shown",
+          "value": "true"
+        },
+        {
+          "name": "ghub_claude_key",
+          "value": "playwright-test-placeholder"
+        }
+      ]
+    }
+  ]
+}
