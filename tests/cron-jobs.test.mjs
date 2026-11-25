@@ -203,7 +203,7 @@ const errPatch = esc().find(e => e.tabela === 'crm_fila' && e.method === 'PATCH'
 ok(!!errPatch, 'grava rascunho_erro na linha da fila');
 ok(/Chrome indispon/.test(errPatch?.body?.rascunho_erro || ''), 'guarda o erro real, não um genérico');
 const logM = CHAMADAS.filter(c => c.url.includes('crm_logs') && c.body?.mensagem?.startsWith('fim')).pop();
-ok(logM?.body?.nivel === 'aviso', '0 rascunhos criados registra aviso, não info');
+ok(logM?.body?.nivel === 'error', 'rascunho que falhou registra error (não info nem aviso)');
 globalThis.__draftFalha = false;
 
 // ── T11 · oportunidades paradas ────────────────────────────────────────────

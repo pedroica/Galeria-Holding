@@ -990,19 +990,30 @@ async function jobRascunhosMatinais(req, res) {
     return res.status(200).json({ ok: true, ...ctx });
   }
 
-  let criados = 0, pulados = 0;
+  let criados = 0, pulados = 0, adotados = 0;
   const LIMITE_MS = 45000;
   for (const item of lista) {
     if (Date.now() - inicio > LIMITE_MS) break;
     const tentativa = (Number(item.rascunho_tentativas) || 0) + 1;
     if (gmail) {
       try {
-        const d = await criarRascunhoGmail(gmail.token, {
-          conta: gmail.email, para: item.crm_decisores.email, assunto: item.assunto || '', corpo: item.corpo || '',
+        const args = {
+          conta: gmail.email, para: item.crm_decisores.email, assunto: item.assunto || '', corpo: item.corpo || '', filaId: item.id,
           cco: copia && copia.tipo === 'bcc' ? copia.email : null, cc: copia && copia.tipo === 'cc' ? copia.email : null
-        });
-        await sp('crm_fila?id=eq.' + item.id + '&outlook_message_id=is.null', { outlook_message_id: d.id, rascunho_criado_em: new Date().toISOString(), outlook_draft_link: d.link, rascunho_erro: null }, 'PATCH');
-        criados++;
+        };
+        // Retry controlado: 1 nova tentativa só para limite de taxa (429) ou erro do
+        // Google (5xx). Erro de autenticação ou de dado não é repetido aqui.
+        let d;
+        try { d = await criarRascunhoGmail(gmail.token, args); }
+        catch (e1) {
+          if (!(e1.status === 429 || e1.status >= 500)) throw e1;
+          await new Promise(r => setTimeout(r, 1500));
+          d = await criarRascunhoGmail(gmail.token, args);   // idempotente: adota se o 1º chegou a criar
+        }
+        // Sucesso = id devolvido pela API E gravado no banco. Sem as duas coisas, não conta.
+        const gravou = await sp('crm_fila?id=eq.' + item.id + '&outlook_message_id=is.null', { outlook_message_id: d.id, rascunho_criado_em: new Date().toISOString(), outlook_draft_link: d.link, rascunho_erro: null }, 'PATCH');
+        if (!gravou) throw new Error('rascunho criado no Gmail (' + d.id + '), mas o banco não gravou o id; a próxima rodada adota o mesmo rascunho');
+        if (d.adotado) adotados++; else criados++;
       } catch (e) {
         falhas.push({ fila_id: item.id, erro: String(e.message).slice(0, 200) });
         await sp('crm_fila?id=eq.' + item.id, { rascunho_erro: ('gmail: ' + String(e.message)).slice(0, 500), rascunho_tentativas: tentativa }, 'PATCH');
@@ -1038,11 +1049,11 @@ async function jobRascunhosMatinais(req, res) {
   }
 
   const ctx = {
-    provedor: gmail ? 'gmail' : 'outlook', criados, pulados, candidatos: lista.length, pausado, teto,
+    provedor: gmail ? 'gmail' : 'outlook', criados, adotados, pulados, candidatos: lista.length, pausado, teto,
     falhas: falhas.slice(0, 10), ms: Date.now()-inicio
   };
   console.log('[cron:rascunhos-matinais]', criados, 'rascunhos de', lista.length, 'candidatos');
-  await logCron('rascunhos-matinais', nivelTrabalho(criados), 'fim', ctx);
+  await logCron('rascunhos-matinais', falhas.length ? 'error' : nivelTrabalho(criados + adotados), 'fim', ctx);
   return res.status(200).json({ ok: true, ...ctx });
 }
 
@@ -1224,9 +1235,13 @@ async function jobSdrSelecao(req, res) {
     for (const d of (Array.isArray(extra) ? extra : [])) candidatos.push({ ...d, empresa: d.crm_empresas || {} });
   }
 
+  // Rejeitado pelo Pedro não volta para a seleção.
+  const rej = await sg('crm_fila?decisao=eq.rejeitado&select=decisor_id&limit=5000');
+  const rejeitados = new Set((Array.isArray(rej) ? rej : []).map(r => r.decisor_id).filter(Boolean));
+
   const sombra = await modoSombra();
   const { lote, upsell, excluidos, total_elegiveis } = selecionarLote({
-    contexto: { ultimaConversa, empresasOppParada },
+    contexto: { ultimaConversa, empresasOppParada }, rejeitados,
     candidatos, estrelas, blocklist, toquesEmpresa30d, dossies, agencias, topoAceitos, emCurso,
     primeirosContatoSemana, config: { lote_max: loteMax }, agora: Date.now()
   });
@@ -2183,7 +2198,7 @@ async function sincronizarEnvios(gm) {
     }
   }
   // Fecha o ciclo de quem já saiu (por qualquer caminho) e agenda o follow-up.
-  const abertos = await sg('crm_sdr_estado?etapa=eq.rascunho&status=eq.ativo&sombra=eq.false&fila_id=not.is.null&select=id,decisor_id,empresa_id,agencia_id,agencia_motivo,dossie_id,dia_cadencia,fila_id,crm_fila:fila_id(status,enviado_em)&limit=200');
+  const abertos = await sg('crm_sdr_estado?etapa=eq.rascunho&status=eq.ativo&sombra=eq.false&fila_id=not.is.null&select=id,decisor_id,empresa_id,agencia_id,agencia_motivo,dossie_id,dia_cadencia,fila_id,crm_fila:fila_id(status,enviado_em,decisao)&limit=200');
   const cfg = (Array.isArray(abertos) && abertos.length) ? await cfgEnvio() : null;
   for (const e of (Array.isArray(abertos) ? abertos : [])) {
     const f = e.crm_fila || {};
@@ -2192,6 +2207,7 @@ async function sincronizarEnvios(gm) {
     if (!rows.length) continue;
     cont.ciclos_fechados++;
     if (f.status !== 'enviado' || !cfg) continue;   // respondeu: a cadência para
+    if (f.decisao === 'rejeitado') continue;          // rejeitado pelo Pedro: sem follow-up automático
     const prox = proximoPasso({ cadencia: cfg.cadencia, diaAtual: e.dia_cadencia || 0, dataEnvioISO: horaBRT(new Date(f.enviado_em)).data, feriados: cfg.feriados });
     if (prox && await spUpsert('crm_sdr_estado', { decisor_id: e.decisor_id, empresa_id: e.empresa_id, agencia_id: e.agencia_id, agencia_motivo: e.agencia_motivo,
       dossie_id: e.dossie_id, dia_cadencia: prox.dia, data_lote: prox.data, etapa: 'aguardando', status: 'ativo' }, 'decisor_id,data_lote,dia_cadencia', true)) cont.followups++;

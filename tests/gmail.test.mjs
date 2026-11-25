@@ -93,7 +93,9 @@ const draft = gmailCalls.find(c => c.u.endsWith('/drafts') && c.m === 'POST');
 const mime = draft ? dec(draft.body.message.raw) : '';
 ok(r.status === 200 && r.body.provedor === 'gmail' && r.body.criados === 1, 'cria o rascunho no Gmail (' + JSON.stringify(r.body) + ')');
 ok(new RegExp('^Bcc: ' + COPIA, 'm').test(mime), 'rascunho com Cco para o endereço configurado');
-const corpoHtml = mime ? Buffer.from(mime.split('\r\n\r\n')[1].replace(/\r\n/g, ''), 'base64').toString('utf8') : '';
+// Agora é multipart/alternative (texto + HTML): pega a parte HTML.
+const mHtml = mime.match(/Content-Type: text\/html; charset="UTF-8"\r\nContent-Transfer-Encoding: base64\r\n\r\n([\s\S]*?)\r\n--/);
+const corpoHtml = mHtml ? Buffer.from(mHtml[1].replace(/\r\n/g, ''), 'base64').toString('utf8') : '';
 ok(/sig\.png/.test(corpoHtml) && !/Pedro Ica/.test(corpoHtml), 'assinatura do Gmail no fim e sem "Pedro Ica" duplicado');
 ok(escritas.some(e => e.u.includes('crm_fila?id=eq.f1&outlook_message_id=is.null') && e.body.outlook_message_id === 'dr1'), 'grava o id do rascunho (nunca cria duas vezes)');
 ok(!gmailCalls.some(c => c.u.includes('/drafts/send')), 'madrugada não envia nada');
@@ -107,7 +109,7 @@ r = await chamar(enrich, { method: 'POST', query: { provider: 'gmail-send' }, he
 ok(r.status === 401 && !gmailCalls.some(c => c.u.includes('/drafts/send')), 'o segredo do cron NÃO consegue enviar');
 r = await chamar(enrich, { method: 'POST', query: { provider: 'gmail-send' }, headers: { authorization: 'Bearer jwt-ok' }, body: { fila_id: 'f1', outlook_message_id: 'dr1', decisor_id: 'd1', empresa_id: 'e1', assunto: 'Acme' } });
 ok(r.status === 200 && r.body.enviado && gmailCalls.some(c => c.u.endsWith('/drafts/send') && c.body.id === 'dr1'), 'com o login do Pedro, envia o rascunho');
-ok(escritas.some(e => e.u.includes('crm_toques') && e.body.fonte === 'gmail') && escritas.some(e => e.u.includes('crm_fila?id=eq.f1') && e.body.status === 'enviado'), 'registra o toque e marca enviado');
+ok(escritas.some(e => e.u.includes('crm_toques') && e.body.fonte === 'sistema' && e.body.resultado === 'enviado') && escritas.some(e => e.u.includes('crm_fila?id=eq.f1') && e.body.status === 'enviado'), 'registra o toque e marca enviado');
 reset(); db.filaItem = { status: 'rascunho', outlook_message_id: 'dr1' };
 r = await chamar(enrich, { method: 'POST', query: { provider: 'gmail-send' }, headers: { authorization: 'Bearer jwt-ok' }, body: { fila_id: 'f1', outlook_message_id: 'dr1' } });
 ok(r.status === 400 && !gmailCalls.some(c => c.u.includes('/drafts/send')), 'item não aprovado não é enviado');
