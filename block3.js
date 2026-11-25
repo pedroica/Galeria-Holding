@@ -7190,6 +7190,16 @@ SdrView.placar = function (todas, cambio) {
 // Painel do agente (topo da tela Hoje). Responde em segundos: o que o agente fez
 // esta noite, o que está pronto para você, o que deu errado e o próximo passo.
 // Tudo é leitura: nenhum botão daqui envia nada.
+// Proteção: se o painel falhar, a tela Hoje (inicial) continua de pé.
+class PainelAgenteSeguro extends React.Component {
+  constructor(p) { super(p); this.state = { erro: null }; }
+  static getDerivedStateFromError(e) { return { erro: e }; }
+  componentDidCatch(e) { try { console.error('[PainelAgente]', e); } catch (_) {} }
+  render() {
+    if (this.state.erro) return React.createElement("div", { style: { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px', fontFamily: "'IBM Plex Mono',monospace", fontSize: 10, color: '#E24B4A' } }, 'O painel do agente falhou ao carregar. O resto da tela segue normal.');
+    return React.createElement(PainelAgente, this.props);
+  }
+}
 function PainelAgente(props) {
   var mono = "'IBM Plex Mono',monospace";
   var _d = React.useState(null); var d = _d[0]; var setD = _d[1];
@@ -7408,7 +7418,7 @@ function TelaHoje(props) {
       )
     ),
     // Agente: o que fez, o que está pendente e o que precisa de você
-    React.createElement(PainelAgente, { navTo: props && props.navTo }),
+    React.createElement(PainelAgenteSeguro, { navTo: props && props.navTo }),
     // Stats
     React.createElement("div", { style: { display: 'flex', gap: 10, flexWrap: 'wrap' } },
       StatCard('Aprovações pendentes', stats ? stats.pending : '—', stats ? stats.emailPend + ' email · ' + stats.waPend + ' WA · ' + stats.liPend + ' LI' : null, stats && stats.pending > 0 ? '#FF6B2B' : '#34D399'),
