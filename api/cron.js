@@ -2241,16 +2241,22 @@ async function registrarEnvioReal(gm, filaId, { messageId, threadId, enviadoEm, 
 
 async function aplicarHistoricoGmail(gm, registros, cont) {
   // Conversas rastreadas: rascunhos do agente ainda não confirmados.
-  const ab = await sg('crm_fila?origem=eq.sdr&canal=eq.email&outlook_message_id=not.is.null&thread_ref=not.is.null&enviado_real_em=is.null&apagado_em=is.null&select=id,thread_ref&limit=1000');
+  const ab = await sg('crm_fila?origem=eq.sdr&canal=eq.email&outlook_message_id=not.is.null&thread_ref=not.is.null&enviado_real_em=is.null&apagado_em=is.null&select=id,thread_ref,rascunho_criado_em,rascunho_atualizado_em&limit=1000');
   const porThread = new Map((Array.isArray(ab) ? ab : []).map(r => [r.thread_ref, r.id]));
+  // Última gravação do PRÓPRIO agente no rascunho (criação ou edição pelo CRM).
+  const gravouEm = new Map((Array.isArray(ab) ? ab : []).map(r => [r.id, Math.max(Date.parse(r.rascunho_criado_em || 0) || 0, Date.parse(r.rascunho_atualizado_em || 0) || 0)]));
   const evs = eventosDoHistorico(registros, porThread);
   for (const ev of evs) {
     cont.verificados++;
     if (ev.tipo === 'rascunho_editado') {
       const filaId = porThread.get(ev.threadId);
-      if (await eventoGmailNovo(ev.messageId, 'rascunho_editado', filaId, ev.threadId, null)) {
+      // Teste real (26/11): a criação/edição feita pelo próprio agente aparece no
+      // histórico como DRAFT novo. Só é edição do Pedro se for depois disso.
+      const metaD = await metadadosMensagem(gm.token, ev.messageId).catch(() => null);
+      if (!metaD || Date.parse(metaD.data) <= (gravouEm.get(filaId) || 0) + 90000) continue;
+      if (await eventoGmailNovo(ev.messageId, 'rascunho_editado', filaId, ev.threadId, { em: metaD.data })) {
         cont.editados_gmail++;
-        await sp(`crm_fila?id=eq.${filaId}`, { editado_no_gmail_em: new Date().toISOString() }, 'PATCH');
+        await sp(`crm_fila?id=eq.${filaId}`, { editado_no_gmail_em: metaD.data }, 'PATCH');
       }
       continue;
     }

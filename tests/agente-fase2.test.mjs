@@ -163,5 +163,23 @@ historicoExpirado = true;
 rr = await chamar('sdr-envios');
 ok(/completa/.test(rr.body.modo) && rr.body.historico_expirado && cfg.gmail_history_id === '300', 'histórico expirado: reconciliação completa e cursor novo do perfil');
 
+// Rascunho DRAFT na conversa: criação do agente não é edição; edição depois é.
+console.log('Rascunho editado no Gmail x gravação do agente');
+historicoExpirado = false; cfg.gmail_reconciliado_em = new Date().toISOString(); cfg.gmail_history_id = '400';
+const C = { id: 'cccccccc-3333-4333-8333-333333333333', status: 'aprovado', enviado_real_em: null, outlook_message_id: 'r-3', thread_ref: 't3', rascunho_criado_em: '2026-11-26T10:00:00Z', rascunho_atualizado_em: null };
+FILA[C.id] = C;
+historico = [{ messagesAdded: [{ message: { id: 'dCriacao', threadId: 't3', labelIds: ['DRAFT'] } }] }, { messagesAdded: [{ message: { id: 'dPedro', threadId: 't3', labelIds: ['DRAFT'] } }] }];
+const fetchAnt = globalThis.fetch;
+globalThis.fetch = async (url, opts) => {
+  const u = decodeURIComponent(String(url));
+  if (u.includes('/messages/dCriacao?format=metadata')) return json({ id: 'dCriacao', threadId: 't3', labelIds: ['DRAFT'], internalDate: String(Date.parse('2026-11-26T10:00:20Z')), payload: { headers: [] } });
+  if (u.includes('/messages/dPedro?format=metadata')) return json({ id: 'dPedro', threadId: 't3', labelIds: ['DRAFT'], internalDate: String(Date.parse('2026-11-26T11:30:00Z')), payload: { headers: [] } });
+  if (u.includes('crm_fila') && u.includes('thread_ref=not.is.null')) return json([{ id: C.id, thread_ref: 't3', rascunho_criado_em: C.rascunho_criado_em, rascunho_atualizado_em: null }]);
+  return fetchAnt(url, opts);
+};
+rr = await chamar('sdr-envios');
+ok(rr.body.editados_gmail === 1 && C.editado_no_gmail_em === '2026-11-26T11:30:00.000Z', 'a criação do agente (20s depois) não conta; a edição das 11h30 conta, com a hora real (' + JSON.stringify({ e: rr.body.editados_gmail, em: C.editado_no_gmail_em }) + ')');
+globalThis.fetch = fetchAnt;
+
 console.log(`\n${pass} ok, ${fail} falha(s)`);
 process.exit(fail ? 1 : 0);
