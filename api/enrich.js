@@ -10,6 +10,7 @@ import { SCHEMA_CAPTURA, promptCaptura, casarEmpresa, casarPessoa, normalizarCel
 import { pessoaLusha, saldoDoDia } from '../lib/lusha.js';
 import { gerarJSON as gerarJSONllm, gerarComBusca } from '../lib/llm.js';
 import { promptWhatsappPipeline, lerResposta, checarWhatsapp, escolherContato, numeroWa, linkWhatsapp } from '../lib/wa-pipeline.js';
+import { chaveTelefone, telefoneDoJid, tipoConversa, midiaDoTipo, emailCorporativo, categoriaContato, empresaDoContato, indicePessoas, acharPessoa, celularPrincipal, nomeCompleto } from '../lib/mac-sync.js';
 import { linhasEstiloAprendido, autoresDaConversa, falasDoAutor, amostrasColadas } from '../lib/estilo-aprendido.js';
 import { dominioDaEmpresa, dominiosDaEmpresa, contatosDoGmail, lerEnderecos, buscaGmail, linkLinkedin, textoDoPayload } from '../lib/contatos-conta.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
@@ -345,6 +346,107 @@ export default async function handler(req, res) {
   // captura-gravar: cria/atualiza empresa e pessoa (só campos vazios) e enriquece no
   // Lusha dentro do teto diário (crm_configuracoes.lusha_daily_limit; uso do dia em
   // lusha_creditos_dia, o mesmo do enriquecimento diário). Só usuário do CRM.
+  // ── Depósito do Mac do Pedro: WhatsApp + Contatos (provider mac-sync) ───────
+  // Quem chama é o programa agente-mac/sync-mac.mjs, com o token do aparelho (hash em
+  // crm_configuracoes.mac_sync_token_hash). Só lê do Mac; nada sai pelo WhatsApp.
+  // acao: contatos | conversas | mensagens | fim
+  if (provider === 'mac-sync') {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+    const tokenMac = String(req.headers['x-sync-token'] || '').trim();
+    const hashCfg = await supaReq('/rest/v1/crm_configuracoes?chave=eq.mac_sync_token_hash&select=valor&limit=1');
+    const esperado = Array.isArray(hashCfg) && hashCfg[0] ? String(hashCfg[0].valor || '') : '';
+    const recebido = tokenMac ? createHash('sha256').update(tokenMac).digest('hex') : '';
+    if (!esperado || !recebido || esperado.length !== recebido.length || !timingSafeEqual(Buffer.from(esperado), Buffer.from(recebido))) return res.status(401).json({ error: 'token do Mac inválido' });
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const acaoM = String(body.acao || '');
+    try {
+    const agoraM = new Date().toISOString();
+    const upsert = (tabela, linhas, conflito, ignorar) => supaReq('/rest/v1/' + tabela + '?on_conflict=' + conflito, { method: 'POST', headers: { Prefer: (ignorar ? 'resolution=ignore-duplicates' : 'resolution=merge-duplicates') + ',return=minimal' }, body: JSON.stringify(linhas) });
+    const todas = async (path) => { const out = []; for (let off = 0; off < 60000; off += 1000) { const r = await supaReq(path + '&limit=1000&offset=' + off); if (!Array.isArray(r) || !r.length) break; out.push(...r); if (r.length < 1000) break; } return out; };
+
+    if (acaoM === 'mensagens') {
+      const linhas = (Array.isArray(body.mensagens) ? body.mensagens : []).slice(0, 3000).filter(m => m.jid && m.stanza && m.enviada_em).map(m => ({
+        jid: String(m.jid).slice(0, 120), stanza: String(m.stanza).slice(0, 120), de_mim: !!m.de_mim, autor_nome: m.autor_nome ? String(m.autor_nome).slice(0, 200) : null,
+        autor_telefone: m.autor_telefone ? String(m.autor_telefone).slice(0, 30) : null, texto: m.texto ? String(m.texto).slice(0, 8000) : null,
+        tipo: Number.isFinite(m.tipo) ? m.tipo : null, midia: midiaDoTipo(m.tipo, m.texto), enviada_em: m.enviada_em }));
+      if (linhas.length) await upsert('crm_wa_mensagens', linhas, 'jid,stanza', true);
+      return res.status(200).json({ ok: true, recebidas: linhas.length });
+    }
+
+    if (acaoM === 'contatos' || acaoM === 'conversas') {
+      const [empresas, decisores] = await Promise.all([
+        todas('/rest/v1/crm_empresas?apagado_em=is.null&select=id,nome,dominio,website,site&order=id'),
+        todas('/rest/v1/crm_decisores?apagado_em=is.null&select=id,nome,email,wa,cargo,empresa_id,status&order=id')
+      ]);
+      const idx = indicePessoas(decisores);
+      if (acaoM === 'contatos') {
+        const lista = (Array.isArray(body.contatos) ? body.contatos : []).slice(0, 600);
+        const cont = { recebidos: lista.length, trabalho: 0, interno: 0, pessoal: 0, pessoas_novas: 0, pessoas_completadas: 0, empresas_novas: 0 };
+        const agenda = [];
+        for (const c of lista) {
+          const nome = nomeCompleto(c);
+          const emails = (c.emails || []).map(e => String(e).toLowerCase().trim()).filter(e => /@/.test(e));
+          const telefones = (c.telefones || []).map(t => String(t).trim()).filter(Boolean);
+          const cc = { empresa: c.empresa, emails, telefones };
+          const categoria = categoriaContato(cc); cont[categoria]++;
+          let dec = acharPessoa(cc, idx); let emp = null;
+          if (dec) {
+            const patch = {};
+            const cel = celularPrincipal(telefones);
+            if (!dec.wa && cel) patch.wa = cel;
+            if (!dec.email && emails.length) patch.email = emails.find(emailCorporativo) || emails[0];
+            if (!dec.cargo && c.cargo) patch.cargo = String(c.cargo).slice(0, 200);
+            if (Object.keys(patch).length) { await supaReq('/rest/v1/crm_decisores?id=eq.' + dec.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(Object.assign({ atualizado_em: agoraM }, patch)) }); Object.assign(dec, patch); cont.pessoas_completadas++; }
+          } else if (categoria === 'trabalho' && nome) {
+            emp = empresaDoContato(cc, empresas);
+            if (!emp && String(c.empresa || '').trim().length >= 2) {
+              const nova = await supaReq('/rest/v1/crm_empresas', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome: String(c.empresa).trim().slice(0, 200), fonte: 'agenda' }) });
+              emp = Array.isArray(nova) ? nova[0] : null; if (emp) { empresas.push(emp); cont.empresas_novas++; }
+            }
+            if (emp) {
+              const novo = await supaReq('/rest/v1/crm_decisores', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
+                nome: nome.slice(0, 200), cargo: c.cargo ? String(c.cargo).slice(0, 200) : null, email: emails.find(emailCorporativo) || emails[0] || null,
+                wa: celularPrincipal(telefones), empresa_id: emp.id, fonte: 'agenda', status: 'sugerido', etapa_cadencia: 'off', observacoes: 'Veio dos contatos do celular do Pedro (' + agoraM.slice(0, 10) + ').' }) });
+              dec = Array.isArray(novo) ? novo[0] : null;
+              if (dec) { decisores.push(dec); const k = chaveTelefone(dec.wa); if (k) idx.porTel.set(k, dec); if (dec.email) idx.porEmail.set(dec.email, dec); cont.pessoas_novas++; }
+            }
+          }
+          agenda.push({ origem_id: String(c.id).slice(0, 200), nome, empresa_texto: c.empresa || null, cargo: c.cargo || null, telefones, emails, categoria,
+            decisor_id: dec ? dec.id : null, empresa_id: dec ? (dec.empresa_id || null) : (emp ? emp.id : null), atualizado_em: agoraM });
+        }
+        for (let i = 0; i < agenda.length; i += 300) await upsert('crm_contatos_agenda', agenda.slice(i, i + 300), 'origem_id');
+        return res.status(200).json(Object.assign({ ok: true }, cont));
+      }
+      // conversas
+      const ag = await todas('/rest/v1/crm_contatos_agenda?apagado_em=is.null&select=telefones,categoria,decisor_id,empresa_id,nome&order=id');
+      const agPorTel = new Map(); for (const a of ag) for (const t of (a.telefones || [])) { const k = chaveTelefone(t); if (k && !agPorTel.has(k)) agPorTel.set(k, a); }
+      const decPorId = new Map(decisores.map(d => [d.id, d]));
+      const lista = (Array.isArray(body.conversas) ? body.conversas : []).slice(0, 3000);
+      const linhas = lista.filter(c => c.jid).map(c => {
+        const tipo = tipoConversa(c.jid, c.sessao);
+        const tel = c.telefone || telefoneDoJid(c.jid);
+        const k = chaveTelefone(tel);
+        const a = k ? agPorTel.get(k) : null;
+        const d = (k && idx.porTel.get(k)) || (a && a.decisor_id && decPorId.get(a.decisor_id)) || null;
+        const categoria = tipo !== 'pessoa' ? 'pessoal' : (a ? a.categoria : (d ? 'trabalho' : 'pessoal'));
+        return { jid: String(c.jid).slice(0, 120), tipo, nome: c.nome ? String(c.nome).slice(0, 200) : (a && a.nome) || null, telefone: tel ? String(tel).replace(/\D/g, '').slice(0, 20) : null,
+          decisor_id: tipo === 'pessoa' && d && categoria !== 'interno' ? d.id : null, empresa_id: tipo === 'pessoa' && d && categoria !== 'interno' ? (d.empresa_id || null) : null,
+          categoria: d && categoria === 'pessoal' ? 'trabalho' : categoria, arquivada: !!c.arquivada, ultima_em: c.ultima_em || null, mensagens: Number(c.mensagens) || 0, atualizado_em: agoraM };
+      });
+      for (let i = 0; i < linhas.length; i += 500) await upsert('crm_wa_conversas', linhas.slice(i, i + 500), 'jid');
+      return res.status(200).json({ ok: true, conversas: linhas.length, ligadas: linhas.filter(l => l.decisor_id).length, trabalho: linhas.filter(l => l.categoria === 'trabalho').length });
+    }
+
+    if (acaoM === 'fim') {
+      const n = await supaReq('/rest/v1/rpc/wa_gerar_toques', { method: 'POST', body: '{}' });
+      await supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ origem: 'mac-sync', nivel: 'info', mensagem: 'fim', contexto: Object.assign({ toques_novos: typeof n === 'number' ? n : null }, body.resumo || {}) }) }).catch(() => {});
+      await upsert('crm_configuracoes', [{ chave: 'mac_sync_ultima', valor: { em: agoraM, resumo: body.resumo || {}, toques_novos: typeof n === 'number' ? n : null } }], 'chave');
+      return res.status(200).json({ ok: true, toques_novos: n });
+    }
+    } catch (e) { return res.status(500).json({ error: 'mac-sync: ' + String((e && (e.message || e.msg || e.details)) || JSON.stringify(e)).slice(0, 300) }); }
+    return res.status(400).json({ error: 'ação inválida' });
+  }
+
   // ── Meu jeito de escrever (Admin) ─────────────────────────────────────────
   // POST {acao}: ver | autores {texto} | adicionar {texto, tipo:'whatsapp'|'colado', autor?} | aprender.
   // Exemplos ficam em crm_configuracoes.estilo_amostras_manuais; o perfil é do job aprender-estilo.
@@ -582,7 +684,17 @@ export default async function handler(req, res) {
     ]);
     const contato = escolherContato(contatos, limpaId(body.decisor_id), canal);
     const estiloAprendido = linhasEstiloAprendido(Array.isArray(est) && est[0] ? est[0].valor : null, canal);
-    const pr = promptWhatsappPipeline({ op, empresa, contato, toques: Array.isArray(toques) ? toques : [], eventos: Array.isArray(eventos) ? eventos : [], instrucao: body.instrucao, agencia: Array.isArray(ags) && ags[0] ? ags[0].nome : '', hoje: hojeStr, canal, estiloAprendido });
+    // Conversa do WhatsApp (depósito do Mac) com essa pessoa: as 20 últimas mensagens.
+    let conversaWa = [];
+    if (contato) {
+      const cv = await supaReq('/rest/v1/crm_wa_conversas?decisor_id=eq.' + contato.id + '&select=jid&limit=3').catch(() => null);
+      const jids = (Array.isArray(cv) ? cv : []).map(c => c.jid);
+      if (jids.length) {
+        const ms = await supaReq('/rest/v1/crm_wa_mensagens?jid=in.(' + jids.map(j => '"' + j + '"').join(',') + ')&select=de_mim,texto,midia,enviada_em&order=enviada_em.desc&limit=20').catch(() => null);
+        conversaWa = (Array.isArray(ms) ? ms : []).reverse();
+      }
+    }
+    const pr = promptWhatsappPipeline({ op, empresa, contato, toques: Array.isArray(toques) ? toques : [], eventos: Array.isArray(eventos) ? eventos : [], instrucao: body.instrucao, agencia: Array.isArray(ags) && ags[0] ? ags[0].nome : '', hoje: hojeStr, canal, estiloAprendido, conversaWa });
     const g = await gerarComBusca({ system: pr.system, content: pr.user, supaUrl: SUPA_URL, serviceKey: SUPA_SVC, envKey: ANTHROPIC_KEY });
     const r = lerResposta(g.texto);
     if (!r) return res.status(502).json({ error: 'A IA não devolveu a mensagem. Tente de novo.' + (g.erro ? ' (' + g.erro + ')' : '') });

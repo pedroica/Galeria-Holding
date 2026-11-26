@@ -150,6 +150,8 @@
     const [aviso, setAviso] = useState(null);         // {tipo:'ok'|'erro', texto}
     const [enviando, setEnviando] = useState(false);
     const [enviados, setEnviados] = useState({});
+    const [conversaWa, setConversaWa] = useState(null);   // depósito do Mac (só admin vê)
+    const [verConversa, setVerConversa] = useState(false);
 
     async function chamar(payload) {
       const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 90000);
@@ -181,6 +183,17 @@
       setCarregando(false);
     }
     useEffect(() => { carregar(); }, [op.id]);
+    // WhatsApp da conta: conversas ligadas à empresa da oportunidade.
+    useEffect(() => {
+      if (!op.empresa_id) return;
+      (async () => {
+        const cv = await supa('crm_wa_conversas?empresa_id=eq.' + op.empresa_id + '&select=jid,nome,decisor_id,ultima_em,mensagens&order=ultima_em.desc.nullslast&limit=10');
+        if (!Array.isArray(cv) || !cv.length) { setConversaWa([]); return; }
+        const ms = await supa('crm_wa_mensagens?jid=in.(' + cv.map(c => '"' + c.jid + '"').join(',') + ')&select=jid,de_mim,texto,midia,enviada_em,autor_nome&order=enviada_em.desc&limit=60');
+        const nomes = {}; cv.forEach(c => { nomes[c.jid] = c.nome; });
+        setConversaWa((Array.isArray(ms) ? ms : []).reverse().map(m => Object.assign(m, { conversa: nomes[m.jid] })));
+      })();
+    }, [op.id]);
 
     async function gerar(c, contatoId, instr) {
       const k = chave(c, contatoId);
@@ -304,6 +317,16 @@
             React.createElement('button', { onClick: () => gravar(Object.assign({ origem: 'manual' }, form)), disabled: !!buscando || !(form.nome || '').trim(), style: btn({ background: '#34D399', color: '#060606', border: 'none', fontWeight: 700 }) }, 'Salvar contato'),
             React.createElement('button', { onClick: () => setForm(null), style: btn({ color: '#777' }) }, 'Cancelar')
           )
+        )
+      ),
+
+      conversaWa && conversaWa.length > 0 && React.createElement('div', { style: { background: '#1A1A2E', border: '1px solid #2D2D44', borderRadius: 8, padding: 10, marginBottom: 10 } },
+        React.createElement('div', { onClick: () => setVerConversa(v => !v), style: Object.assign({}, rot, { cursor: 'pointer', marginBottom: verConversa ? 6 : 0 }) }, (verConversa ? '▾ ' : '▸ ') + 'WHATSAPP COM A CONTA (' + conversaWa.length + ' mensagens recentes · última em ' + new Date(conversaWa[conversaWa.length - 1].enviada_em).toLocaleDateString('pt-BR') + ')'),
+        verConversa && React.createElement('div', { style: { maxHeight: 260, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 4 } },
+          conversaWa.map((m, i) => React.createElement('div', { key: i, style: { alignSelf: m.de_mim ? 'flex-end' : 'flex-start', maxWidth: '85%', background: m.de_mim ? 'rgba(37,211,102,.12)' : '#0d0d1a', border: '1px solid ' + (m.de_mim ? '#1f6f45' : '#2D2D44'), borderRadius: 6, padding: '4px 8px' } },
+            React.createElement('div', { style: Object.assign({ fontSize: 8, color: '#777' }, s) }, (m.de_mim ? 'Você' : (m.autor_nome || m.conversa || '')) + ' · ' + new Date(m.enviada_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })),
+            React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#ddd', whiteSpace: 'pre-wrap' }, s) }, m.texto || m.midia || '')
+          ))
         )
       ),
 
