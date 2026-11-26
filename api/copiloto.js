@@ -490,6 +490,20 @@ export default async function handler(req, res) {
 // pipeline sem a confirmação que só a tela oferece.
 const WA_BLOQUEADAS = ['gerar_fila', 'abordar', 'criar_oportunidade', 'mover_estagio', 'atribuir_dono'];
 
+// Chave da Anthropic: a da Vercel; se faltar ou for recusada (401), a do Vault
+// (RPC sdr_anthropic_key, só service key) — o mesmo caminho do resto do CRM.
+let _chaveVault = { v: null, ate: 0 }; let _envRecusada = false;
+async function chaveIA(forcarVault) {
+  if (ANTHROPIC_KEY && !_envRecusada && !forcarVault) return ANTHROPIC_KEY;
+  if (_chaveVault.ate > Date.now() && _chaveVault.v) return _chaveVault.v;
+  try {
+    const r = await fetch(SUPA_URL + '/rest/v1/rpc/sdr_anthropic_key', { method: 'POST', headers: { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json' }, body: '{}' });
+    const j = r.ok ? await r.json().catch(() => null) : null;
+    _chaveVault = { v: typeof j === 'string' && j.length > 20 ? j : null, ate: Date.now() + 10 * 60000 };
+  } catch (_) {}
+  return _chaveVault.v || ANTHROPIC_KEY;
+}
+
 const WA_TOOL_DEFS = TOOL_DEFS.filter(t => !WA_BLOQUEADAS.includes(t.name)).concat(AMIGO_TOOL_DEFS);
 export const MODELO_WA = 'claude-sonnet-5-5';
 
@@ -536,9 +550,7 @@ async function execToolWa(name, input, ctx) {
  * @returns {Promise<{ texto: string, historico: Array, tokIn: number, tokOut: number, ferramentas: string[] }>}
  */
 export async function responderWhatsApp({ texto, historico = [] }) {
-  if (!ANTHROPIC_KEY) throw new Error('ANTHROPIC_API_KEY não configurada');
-
-  const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
+  let anthropic = new Anthropic({ apiKey: await chaveIA() });
   const system = buildSystemWa();
   const ferramentas = [];
   const ctx = ctxAmigo();
@@ -554,13 +566,20 @@ export async function responderWhatsApp({ texto, historico = [] }) {
   let resposta = '';
 
   while (true) {
-    const msg = await anthropic.messages.create({
+    const pedir = () => anthropic.messages.create({
       model: MODELO_WA,
       max_tokens: 1500,
       system,
       tools: WA_TOOL_DEFS,
       messages: apiMsgs,
     });
+    let msg;
+    try { msg = await pedir(); }
+    catch (e) {
+      if (!(e && e.status === 401)) throw e;
+      _envRecusada = true; anthropic = new Anthropic({ apiKey: await chaveIA(true) });
+      msg = await pedir();
+    }
     tokIn  += msg.usage?.input_tokens  || 0;
     tokOut += msg.usage?.output_tokens || 0;
 
