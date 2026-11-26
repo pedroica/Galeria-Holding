@@ -2579,28 +2579,40 @@ async function jobGmailCrm(req, res) {
 // o que o setor antigo já diz (de graça); o resto vai para a IA em lotes de 60.
 // Idempotente: só pega quem ainda não tem setor_canonico. Não mexe no setor original.
 async function jobClassificarSetores(req, res) {
-  const inicio = Date.now(); const LIMITE = 45000;
+  const inicio = Date.now(); const LIMITE = 38000;
   const cont = { pelo_setor_antigo: 0, pela_ia: 0, lotes: 0, custo_usd: 0, restantes: null };
-  const rows = await sg('crm_empresas?setor_canonico=is.null&apagado_em=is.null&select=id,nome,setor,segmento_detalhe,dominio,website,site&order=criado_em.desc&limit=600');
-  if (rows === null) return erroLeitura('classificar-setores', res, inicio, 'crm_empresas');
   const agora = new Date().toISOString();
-  const paraIA = [];
-  for (const e of rows) {
-    const antigo = setorDoAntigo(e.setor);
-    if (antigo) { if (await sp(`crm_empresas?id=eq.${e.id}`, { setor_canonico: antigo, setor_confianca: 'alta', setor_fonte: 'setor_existente', classificado_em: agora }, 'PATCH')) cont.pelo_setor_antigo++; }
-    else paraIA.push({ id: e.id, nome: e.nome, setor: e.setor, segmento_detalhe: e.segmento_detalhe, site: e.dominio || e.website || e.site });
-  }
+  // 1) Setor antigo que já diz algo: uma gravação por setor (não por empresa).
+  const antigos = await sg('crm_empresas?setor_canonico=is.null&apagado_em=is.null&setor=not.is.null&select=setor&limit=5000');
+  if (antigos === null) return erroLeitura('classificar-setores', res, inicio, 'crm_empresas');
+  const grupos = {};
+  for (const r of antigos) { const c = setorDoAntigo(r.setor); if (c) (grupos[c] = grupos[c] || new Set()).add(r.setor); }
+  await Promise.all(Object.entries(grupos).map(async ([canon, vals]) => {
+    const lista = [...vals].map(v => '"' + String(v).replace(/"/g, '\\"') + '"').join(',');
+    const out = await spPatchRet(`crm_empresas?setor_canonico=is.null&apagado_em=is.null&setor=in.(${encodeURIComponent(lista)})`,
+      { setor_canonico: canon, setor_confianca: 'alta', setor_fonte: 'setor_existente', classificado_em: agora });
+    cont.pelo_setor_antigo += out.length;
+  }));
+  // 2) O resto pela IA: lotes de 40, três em paralelo por rodada, até o tempo acabar.
+  const rows = await sg('crm_empresas?setor_canonico=is.null&apagado_em=is.null&select=id,nome,setor,segmento_detalhe,dominio,website,site&order=criado_em.desc&limit=360');
+  const paraIA = (Array.isArray(rows) ? rows : []).map(e => ({ id: e.id, nome: e.nome, setor: e.setor, segmento_detalhe: e.segmento_detalhe, site: e.dominio || e.website || e.site }));
   const modelo = 'claude-sonnet-5-5';
-  for (let i = 0; i < paraIA.length && Date.now() - inicio < LIMITE; i += 60) {
-    const lote = paraIA.slice(i, i + 60);
-    const { system, user } = promptSetores(lote);
-    const r = await gerarJSON({ system, user, schema: SCHEMA_SETORES, effort: 'low', model: modelo });
-    cont.lotes++; cont.custo_usd += r.custo || 0;
-    const ids = new Set(lote.map(x => x.id));
-    for (const it of ((r.obj && r.obj.itens) || [])) {
-      const setor = setorValido(it.setor);
-      if (!setor || !ids.has(it.id)) continue;
-      if (await sp(`crm_empresas?id=eq.${it.id}`, { setor_canonico: setor, setor_confianca: it.confianca, setor_fonte: 'ia', classificado_em: new Date().toISOString() }, 'PATCH')) cont.pela_ia++;
+  const lotes = []; for (let i = 0; i < paraIA.length; i += 40) lotes.push(paraIA.slice(i, i + 40));
+  for (let i = 0; i < lotes.length && Date.now() - inicio < LIMITE - 20000; i += 3) {
+    const rodada = lotes.slice(i, i + 3);
+    const resps = await Promise.all(rodada.map(lote => { const { system, user } = promptSetores(lote); return gerarJSON({ system, user, schema: SCHEMA_SETORES, effort: 'low', model: modelo }); }));
+    const grav = [];
+    resps.forEach((r, k) => {
+      cont.lotes++; cont.custo_usd += r.custo || 0;
+      const ids = new Set(rodada[k].map(x => x.id));
+      for (const it of ((r.obj && r.obj.itens) || [])) {
+        const setor = setorValido(it.setor);
+        if (setor && ids.has(it.id)) grav.push({ id: it.id, setor, confianca: it.confianca });
+      }
+    });
+    for (let j = 0; j < grav.length; j += 20) {
+      const ok = await Promise.all(grav.slice(j, j + 20).map(g => sp(`crm_empresas?id=eq.${g.id}`, { setor_canonico: g.setor, setor_confianca: g.confianca, setor_fonte: 'ia', classificado_em: new Date().toISOString() }, 'PATCH')));
+      cont.pela_ia += ok.filter(Boolean).length;
     }
   }
   const resto = await sg('crm_empresas?setor_canonico=is.null&apagado_em=is.null&select=id&limit=3000');
