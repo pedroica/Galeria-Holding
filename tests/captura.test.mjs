@@ -43,6 +43,11 @@ const parcialDepoisCompleto = async () => { nCons++; return new Response(JSON.st
   : { contact: { isCreditCharged: true, data: { emailAddresses: [{ address: 'bruna@alura.com.br' }], phoneNumbers: [], jobTitle: { title: 'CMO' } } } }), { status: 200 }); };
 const pp = await pessoaLusha({ fetchFn: parcialDepoisCompleto, chave: 'k', nome: 'Bruna Maggion', empresa: 'Alura' });
 ok(nCons === 2 && pp.email === 'bruna@alura.com.br' && pp.linkedin.includes('bruna') && pp.creditos === 1, 'perfil parcial na 1ª consulta: consulta de novo e traz o e-mail (mantém o LinkedIn)');
+const urls = []; const porLinkedinSemEmail = async (u) => { urls.push(u); return new Response(JSON.stringify(/linkedinUrl/.test(u)
+  ? { contact: { isCreditCharged: true, data: { emailAddresses: [], phoneNumbers: [], socialLinks: { linkedin: 'x' } } } }
+  : { contact: { isCreditCharged: true, data: { emailAddresses: [{ address: 'b@alura.com.br' }], phoneNumbers: [] } } }), { status: 200 }); };
+const pl = await pessoaLusha({ fetchFn: porLinkedinSemEmail, chave: 'k', nome: 'Bruna Maggion', empresa: 'Alura', linkedin: 'https://linkedin.com/in/bruna' });
+ok(/firstName=Bruna/.test(urls[0]) && urls.length === 1 && pl.email === 'b@alura.com.br', 'com nome, empresa e LinkedIn: busca primeiro por nome + empresa (é a que traz e-mail)');
 const f403 = async () => new Response('{}', { status: 403 });
 ok(/plano/.test((await pessoaLusha({ fetchFn: f403, chave: 'k', nome: 'A B', empresa: 'X' })).erro), '403 do plano vira mensagem clara');
 

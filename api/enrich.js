@@ -447,6 +447,7 @@ export default async function handler(req, res) {
               await supaReq('/rest/v1/crm_decisores?id=eq.' + dec.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(Object.assign({ atualizado_em: agora() }, patch)) });
               if (p.site && vazio(emp.dominio) && vazio(emp.website) && vazio(emp.site)) await supaReq('/rest/v1/crm_empresas?id=eq.' + emp.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ website: p.site, enriquecido_em: agora() }) });
               r.enriquecido = { email: !!patch.email, celular: !!patch.wa, cargo: !!patch.cargo, linkedin: !!patch.linkedin_url };
+              if (!patch.email && !patch.wa && !patch.cargo && !patch.linkedin_url) r.erro = 'Lusha não tinha dados novos' + (vazio(dec.email) ? ' (sem e-mail para esta pessoa)' : '');
             }
           }
         }
