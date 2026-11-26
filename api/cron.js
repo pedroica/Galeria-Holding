@@ -1383,7 +1383,8 @@ async function contextoDosLeads(estados, cfg) {
       pausaAteEm: d.pausa_ate_em || null,
       observacoes: d.observacoes || null, sinalRecenteEm: d.sinal_recente_em || null,
       listas: (Array.isArray(li) ? li : []).filter(x => x.decisor_id === e.decisor_id).map(x => x.crm_listas && x.crm_listas.nome).filter(Boolean),
-      estrelas: estrelasPor[e.empresa_id] || 0
+      estrelas: estrelasPor[e.empresa_id] || 0,
+      cargo: d.cargo || null
     });
   }
   return out;

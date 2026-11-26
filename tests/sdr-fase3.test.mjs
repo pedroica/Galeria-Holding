@@ -98,7 +98,7 @@ const CFG = (extra) => [
 
 console.log('\nJob sdr-estrategia');
 cfgRows = CFG(); escritas = []; modelos.length = 0;
-db = { dossie: [estadoBase(1), estadoBase(2, { crm_dossies: { sinais: [] } })] };
+db = { dossie: [estadoBase(1), estadoBase(2, { crm_dossies: { sinais: [] }, crm_decisores: { id: 'd2', nome: 'Rui', cargo: 'Gerente Financeiro', email: 'rui@acme.com', wa: null } })] };
 let r = await chamar('sdr-estrategia');
 ok(r.status === 200 && r.body.seguem === 1 && r.body.sem_sinal === 1, 'com fato: tese; sem fato: não gasta modelo (' + JSON.stringify(r.body) + ')');
 ok(modelos.filter(x => x.tipo === 'estrategia').length === 1, 'uma chamada ao estrategista');
