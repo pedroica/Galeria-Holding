@@ -27,6 +27,7 @@ const resp = { contact: { isCreditCharged: true, data: { emailAddresses: [{ addr
 const lido = lerPessoaV2(resp);
 ok(lido.achou && lido.email === 'joao@lopes.com.br' && lido.celular === '5511998765432' && lido.cargo === 'CMO' && lido.linkedin.includes('joao') && lido.site === 'lopes.com.br', 'lê a resposta do Lusha');
 ok(lerPessoaV2({ contact: { error: { code: 3, message: 'Could not find requested data.' } } }).achou === false, 'não achou');
+ok(lerPessoaV2({ contact: { error: { name: 'EMPTY_DATA', code: 3 }, isCreditCharged: false, data: {} } }).achou === false, 'EMPTY_DATA com data vazia = não achou (formato real do Lusha)');
 
 let urlChamada = '';
 const fakeFetch = async (u) => { urlChamada = u; return new Response(JSON.stringify({ contact: { isCreditCharged: true, data: { emailAddresses: [{ address: 'joao@lopes.com.br' }], phoneNumbers: [], jobTitle: { title: 'CMO' } } } }), { status: 200 }); };
