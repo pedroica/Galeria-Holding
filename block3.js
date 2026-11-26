@@ -4006,6 +4006,7 @@ function TelaHoje(props) {
     // Missão: reuniões e prazos primeiro
     React.createElement(PainelReunioes, { linhas: kanban }),
     React.createElement(PainelPrazos, { navTo: props && props.navTo, meuPapel: props && props.meuPapel }),
+    typeof PainelMovimentacoes !== 'undefined' && React.createElement(PainelMovimentacoes, { navTo: props && props.navTo }),
     // Agente: o que fez, o que está pendente e o que precisa de você
     React.createElement(PainelAgenteSeguro, { navTo: props && props.navTo, meuPapel: props && props.meuPapel }),
     // Stats

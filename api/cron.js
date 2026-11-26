@@ -25,6 +25,8 @@ import { obterTokenGraph } from '../lib/graph-token.js';
 import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail, gmailReq, consultaRascunho, filaIdDaFronteira } from '../lib/gmail-token.js';
 import { perfilGmail, historicoGmail, eventosDoHistorico, metadadosMensagem, corpoMensagem, filaIdDoMessageId, textoDoPayload } from '../lib/gmail-sync.js';
 import { pessoaLusha, saldoDoDia } from '../lib/lusha.js';
+import { CONSULTAS_IMPRENSA, urlImprensa, lerRss, juntarItens, ehCargoAlvo, chaveMovimento, ehAgencia, SCHEMA_EXTRACAO, promptExtracao, SCHEMA_PARABENS, promptParabens, checarParabens } from '../lib/movimentacoes.js';
+import { casarEmpresa, casarPessoa, normalizarEmpresa } from '../lib/captura.js';
 import { construirPromptBlitz, checarMensagem, casesDoSetor, SCHEMA_BLITZ } from '../lib/blitz.js';
 import { SETORES, setorDoAntigo, setorValido, SCHEMA_SETORES, promptSetores } from '../lib/setores.js';
 import { montarIndice, casarMensagem, decidirPipeline, construirPromptStatus, SCHEMA_STATUS, semCitacao, respostaReal, substituiSugestao, aplicarPrazoDoEmail } from '../lib/gmail-crm.js';
@@ -489,7 +491,7 @@ async function jobEnriquecimento(req, res) {
   const est = await sg('crm_empresa_agencia_estrelas?apagado_em=is.null&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=50000');
   const estrelas = {}; for (const e of (Array.isArray(est) ? est : [])) { const v = Number(e.estrelas_manual ?? e.estrelas_calculadas) || 0; if (v > (estrelas[e.empresa_id] || 0)) estrelas[e.empresa_id] = v; }
   const cands = decs.filter(d => d.crm_empresas && !d.crm_empresas.apagado_em && String(d.nome || '').trim().split(/\s+/).length >= 2)
-    .map(d => ({ d, prio: (emLista.has(d.id) ? 100 : 0) + (d.fonte === 'captura' ? 50 : 0) + (estrelas[d.empresa_id] || 0) * 5 }))
+    .map(d => ({ d, prio: (emLista.has(d.id) ? 100 : 0) + (d.fonte === 'captura' ? 50 : 0) + (d.fonte === 'movimentacao' ? 80 : 0) + (estrelas[d.empresa_id] || 0) * 5 }))
     .sort((x, y) => y.prio - x.prio);
   cont.candidatos = cands.length;
   for (const { d } of cands) {
@@ -851,7 +853,7 @@ async function jobRascunhosMatinais(req, res) {
     // (dossiê + estrategista + QC) é o que o Pedro pediu para receber todo dia, e
     // criar rascunho não envia nada: o envio continua sendo o clique dele.
     // Blitz também passa: é o Pedro que montou a lista e aprovou cada mensagem.
-    if (pausado && Number(it.etapa_cadencia || 1) <= 1 && it.origem !== 'sdr' && it.origem !== 'blitz') return false;
+    if (pausado && Number(it.etapa_cadencia || 1) <= 1 && !['sdr', 'blitz', 'movimentacao'].includes(it.origem)) return false;
     return true;
   });
 
@@ -2575,6 +2577,163 @@ async function jobBlitzRedacao(req, res) {
   return res.status(200).json({ ok: true, ...cont });
 }
 
+// ── job: movimentacoes / movimentacoes-lusha ─────────────────────────────────
+// Quem assumiu como CMO / diretor(a) de marketing no Brasil. 'imprensa' (todo dia):
+// Google News RSS; 'lusha' (segunda): sinais de promoção/troca de empresa. Cada
+// movimentação nova vira contato e, com e-mail, RASCUNHO de parabéns no Gmail no
+// estilo do Pedro (lib/estilo.js). Nada é enviado. Roda em várias passadas de até
+// 45 s: a 1ª do dia busca as fontes; as seguintes processam o que ficou pendente.
+async function jobMovimentacoes(req, res, modo) {
+  const inicio = Date.now(); const LIMITE = 45000;
+  const cont = { modo, itens: 0, extraidos: 0, novas: 0, processadas: 0, rascunhos: 0, sem_email: 0, descartadas: 0, lusha_creditos: 0, custo_usd: 0, erros: [] };
+  const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const cfgR = await sg('crm_configuracoes?chave=in.(movimentacoes_ultima_busca,movimentacoes_lusha_ultima,movimentacoes_vistos,lusha_daily_limit,lusha_creditos_dia)&select=chave,valor');
+  const cfg = {}; for (const r of (Array.isArray(cfgR) ? cfgR : [])) cfg[r.chave] = r.valor;
+
+  // 1) Buscar fontes (uma vez por dia na imprensa; uma vez por semana no Lusha).
+  const novas = [];
+  if (modo === 'imprensa' && cfg.movimentacoes_ultima_busca !== hojeStr) {
+    const listas = await Promise.all(CONSULTAS_IMPRENSA.map(q => fetch(urlImprensa(q), { headers: { 'User-Agent': 'Mozilla/5.0' }, signal: AbortSignal.timeout(6000) })
+      .then(r => r.ok ? r.text() : '').then(lerRss).catch(() => [])));
+    const vistos = new Set(Array.isArray(cfg.movimentacoes_vistos) ? cfg.movimentacoes_vistos : []);
+    const chaveT = (t) => String(t).toLowerCase().replace(/\s+-\s+[^-]+$/, '').slice(0, 90);
+    const itens = juntarItens(listas).filter(i => !vistos.has(chaveT(i.titulo))).slice(0, 120);
+    cont.itens = itens.length;
+    for (let i = 0; i < itens.length; i += 60) {
+      const lote = itens.slice(i, i + 60);
+      const { system, user } = promptExtracao(lote);
+      const r = await gerarJSON({ system, user, schema: SCHEMA_EXTRACAO, effort: 'low', model: 'claude-sonnet-5-5' });
+      cont.custo_usd += r.custo || 0;
+      for (const m of ((r.obj && r.obj.movimentos) || [])) {
+        const it = lote[m.item] || {};
+        novas.push(Object.assign({}, m, { fonte: 'imprensa', veiculo: it.fonte || '', titulo: it.titulo || '', url: it.url || '', publicado_em: it.data ? new Date(it.data).toISOString() : null }));
+      }
+    }
+    const todos = [...vistos, ...itens.map(i => chaveT(i.titulo))].slice(-800);
+    await upsertConfig('movimentacoes_vistos', todos);
+    await upsertConfig('movimentacoes_ultima_busca', hojeStr);
+  }
+  if (modo === 'lusha' && cfg.movimentacoes_lusha_ultima !== hojeStr && LUSHA_KEY) {
+    const desde = new Date(Date.now() - 8 * 864e5).toISOString().slice(0, 10);
+    const cargos = ['CMO', 'Chief Marketing Officer', 'Diretor de Marketing', 'Diretora de Marketing', 'Marketing Director', 'Head de Marketing', 'Head of Marketing', 'VP de Marketing', 'Diretor de Marca'];
+    const corpos = [
+      { filters: { contacts: { include: { jobTitles: cargos, locations: [{ country: 'Brazil' }], signals: { types: ['promotion', 'companyChange'], startDate: desde } } } }, pagination: { page: 0, size: 25 } },
+      { filters: { contacts: { include: { jobTitles: cargos, countries: ['BR'], signals: { names: ['promotion', 'companyChange'], startDate: desde } } } }, pagination: { page: 0, size: 25 } }
+    ];
+    let contatos = null;
+    for (const corpo of corpos) {
+      const r = await fetch('https://api.lusha.com/v3/contacts/prospecting', { method: 'POST', headers: { api_key: LUSHA_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify(corpo) }).catch(e => ({ ok: false, status: 0, text: async () => e.message }));
+      if (r.ok) { const j = await r.json().catch(() => ({})); contatos = j.contacts || j.data || j.results || []; cont.lusha_creditos += (j.billing && j.billing.creditsCharged) || 0; break; }
+      cont.erros.push('lusha ' + r.status + ': ' + String(await r.text()).slice(0, 160));
+    }
+    for (const c of (contatos || [])) {
+      const pessoa = [c.firstName, c.lastName].filter(Boolean).join(' ');
+      novas.push({ pessoa, cargo: (c.jobTitle && c.jobTitle.title) || '', empresa: (c.company && c.company.name) || '', cargo_anterior: '', empresa_anterior: '',
+        trajetoria: '', feitos: '', fonte: 'lusha', veiculo: 'Lusha (sinal: ' + ((c.signalTypes || []).join(', ') || 'troca de cargo') + ')', titulo: '', url: (c.socialLinks && c.socialLinks.linkedin) || '',
+        dominio: c.company && c.company.domain ? String(c.company.domain).replace(/^www\./, '') : null, linkedin: (c.socialLinks && c.socialLinks.linkedin) || null });
+    }
+    if (contatos) await upsertConfig('movimentacoes_lusha_ultima', hojeStr);
+    if (cont.lusha_creditos) { const sd = saldoDoDia(cfg.lusha_creditos_dia, hojeStr, 0); await upsertConfig('lusha_creditos_dia', { data: hojeStr, usados: sd.usados + cont.lusha_creditos }); }
+  }
+  cont.extraidos = novas.length;
+  // Grava as movimentações novas (a chave única impede repetir a mesma pessoa+empresa).
+  for (const m of novas) {
+    if (!m.pessoa || String(m.pessoa).trim().split(/\s+/).length < 2 || !m.empresa || !ehCargoAlvo(m.cargo) || ehAgencia(m.empresa)) continue;
+    const linha = { chave: chaveMovimento(m.pessoa, m.empresa), pessoa: m.pessoa.trim(), cargo: m.cargo, empresa: m.empresa, cargo_anterior: m.cargo_anterior || null, empresa_anterior: m.empresa_anterior || null,
+      trajetoria: m.trajetoria || null, feitos: m.feitos || null, fonte: m.fonte, veiculo: m.veiculo || null, titulo: m.titulo || null, url: m.url || null, publicado_em: m.publicado_em || null,
+      motivo: m.linkedin ? 'linkedin:' + m.linkedin + (m.dominio ? ' dominio:' + m.dominio : '') : null };
+    const r = await fetch(SUPA_URL + '/rest/v1/crm_movimentacoes?on_conflict=chave', { method: 'POST', headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=representation' }, body: JSON.stringify(linha) });
+    const rows = r.ok ? await r.json().catch(() => []) : []; if (rows.length) cont.novas++;
+  }
+
+  // 2) Processar pendentes: 'nova' e 'sem_email' cujo contato ganhou e-mail.
+  const pend = await sg('crm_movimentacoes?status=in.(nova,sem_email)&select=*&order=criado_em.asc&limit=40');
+  const empresas = await sg('crm_empresas?apagado_em=is.null&select=id,nome,dominio,website,site,setor_canonico&limit=10000');
+  const listaEmp = Array.isArray(empresas) ? empresas : [];
+  const KV = await knowledgeVivo();
+  const holding = (KV.agencias || []).find(a => a.slug === 'holding') || null;
+  let { usados } = saldoDoDia(cfg.lusha_creditos_dia, hojeStr, 0); usados += 0;
+  const teto = Number(cfg.lusha_daily_limit) || 8;
+  const agora = () => new Date().toISOString();
+  for (const mv of (Array.isArray(pend) ? pend : [])) {
+    if (Date.now() - inicio > LIMITE) break;
+    try {
+      const extra = String(mv.motivo || '');
+      const linkedinMov = (extra.match(/linkedin:(\S+)/) || [])[1] || null; const dominioMov = (extra.match(/dominio:(\S+)/) || [])[1] || null;
+      // Empresa: casa com a base ou cria.
+      let emp = mv.empresa_id ? listaEmp.find(e => e.id === mv.empresa_id) : null;
+      if (!emp) { const m = casarEmpresa(mv.empresa, listaEmp); if (m && m.confianca !== 'baixa') emp = m.empresa; }
+      if (!emp) { const nova = await spRet('crm_empresas', { nome: mv.empresa, nome_normalizado: normalizarEmpresa(mv.empresa), fonte: 'movimentacao', website: dominioMov }); if (nova) { emp = nova; listaEmp.push(nova); } }
+      if (!emp) { await sp(`crm_movimentacoes?id=eq.${mv.id}`, { status: 'erro', motivo: 'não criou a empresa', atualizado_em: agora() }, 'PATCH'); continue; }
+      // Pessoa: na mesma empresa, ou nova. Se ela estava na base em outra empresa, marca que saiu de lá.
+      let dec = null;
+      if (mv.decisor_id) dec = (await sg(`crm_decisores?id=eq.${mv.decisor_id}&select=id,nome,email,cargo,linkedin_url&limit=1`) || [])[0];
+      if (!dec) {
+        const daEmp = await sg(`crm_decisores?empresa_id=eq.${emp.id}&apagado_em=is.null&select=id,nome,email,cargo,linkedin_url,empresa_id&limit=500`);
+        dec = casarPessoa({ nome: mv.pessoa }, daEmp || [], emp.id);
+        if (dec) await sp(`crm_decisores?id=eq.${dec.id}`, { cargo: mv.cargo, sinal_recente_em: agora(), atualizado_em: agora() }, 'PATCH');
+      }
+      if (!dec) {
+        const homonimos = await sg(`crm_decisores?nome=ilike.${encodeURIComponent(mv.pessoa)}&apagado_em=is.null&select=id,empresa_id,email,crm_empresas(nome)&limit=5`);
+        for (const h of (Array.isArray(homonimos) ? homonimos : [])) {
+          if (mv.empresa_anterior && h.crm_empresas && casarEmpresa(mv.empresa_anterior, [{ id: 'x', nome: h.crm_empresas.nome }])) {
+            await sp(`crm_decisores?id=eq.${h.id}`, { status: 'saiu_da_empresa', observacoes: 'Saiu: assumiu ' + mv.cargo + ' na ' + mv.empresa + ' (' + (mv.veiculo || mv.fonte) + ', ' + hojeStr + ')', atualizado_em: agora() }, 'PATCH');
+          }
+        }
+        dec = await spRet('crm_decisores', { empresa_id: emp.id, nome: mv.pessoa, cargo: mv.cargo, linkedin_url: linkedinMov, fonte: 'movimentacao', status: 'ativo', estrelas: 4, sinal_recente_em: agora(),
+          observacoes: ('Assumiu ' + mv.cargo + ' na ' + mv.empresa + ' (' + (mv.veiculo || mv.fonte) + (mv.publicado_em ? ', ' + String(mv.publicado_em).slice(0, 10) : '') + ')' + (mv.trajetoria ? '. Trajetória: ' + mv.trajetoria : '') + (mv.feitos ? '. Feitos: ' + mv.feitos : '')).slice(0, 2000) });
+      }
+      if (!dec) { await sp(`crm_movimentacoes?id=eq.${mv.id}`, { status: 'erro', motivo: 'não criou o contato', atualizado_em: agora() }, 'PATCH'); continue; }
+      // E-mail: Lusha com prioridade, dentro do teto do dia.
+      if (!dec.email && usados < teto && LUSHA_KEY) {
+        const dom = emp.dominio || emp.website || emp.site || dominioMov;
+        const p = await pessoaLusha({ chave: LUSHA_KEY, nome: mv.pessoa, empresa: emp.nome, linkedin: dec.linkedin_url || linkedinMov,
+          dominio: dom ? String(dom).replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] : null });
+        usados += p.creditos || 0; cont.lusha_creditos += p.creditos || 0;
+        const patch = { enriquecimento_tentado_em: agora() };
+        if (p.email) { const dono = await sg(`crm_decisores?email=ilike.${encodeURIComponent(p.email)}&apagado_em=is.null&id=neq.${dec.id}&select=id&limit=1`); if (!(Array.isArray(dono) && dono.length)) patch.email = p.email; }
+        if (!dec.linkedin_url && p.linkedin) patch.linkedin_url = p.linkedin;
+        await sp(`crm_decisores?id=eq.${dec.id}`, patch, 'PATCH');
+        if (patch.email) dec.email = patch.email;
+        if (cont.lusha_creditos) await upsertConfig('lusha_creditos_dia', { data: hojeStr, usados });
+      }
+      // Mensagem (só escreve uma vez; reaproveita se já escreveu).
+      let assunto = mv.assunto, email = mv.mensagem_email, linkedin = mv.mensagem_linkedin;
+      if (!email) {
+        const memoria = await memoriaParaPrompt({ setor: emp.setor_canonico || '' });
+        const { system, user, fontes } = promptParabens({ mov: mv, holding, memoria, cases: casesDoSetor(KV.cases_destaque, emp.setor_canonico || '') });
+        let r = await gerarJSON({ system, user, schema: SCHEMA_PARABENS, effort: 'low', model: MODELO_SDR });
+        cont.custo_usd += r.custo || 0;
+        let probs = checarParabens(r.obj, fontes);
+        if (probs.length && r.obj) {
+          const r2 = await gerarJSON({ system, user: user + '\n\nCORRIJA: ' + probs.join('; '), schema: SCHEMA_PARABENS, effort: 'low', model: MODELO_SDR });
+          cont.custo_usd += r2.custo || 0; const p2 = checarParabens(r2.obj, fontes);
+          if (r2.obj && p2.length < probs.length) { r = r2; probs = p2; }
+        }
+        if (!r.obj || probs.some(x => /número|incompleta/.test(x))) { await sp(`crm_movimentacoes?id=eq.${mv.id}`, { status: 'erro', motivo: 'mensagem reprovada: ' + probs.join('; '), empresa_id: emp.id, decisor_id: dec.id, atualizado_em: agora() }, 'PATCH'); continue; }
+        assunto = r.obj.assunto; email = r.obj.email; linkedin = r.obj.linkedin;
+      }
+      const base = { empresa_id: emp.id, decisor_id: dec.id, assunto, mensagem_email: email, mensagem_linkedin: linkedin, atualizado_em: agora() };
+      if (dec.email) {
+        const fila = await spRet('crm_fila', { decisor_id: dec.id, empresa_id: emp.id, canal: 'email', assunto: String(assunto).slice(0, 200), corpo: String(email).slice(0, 4000),
+          status: 'aprovado', origem: 'movimentacao', etapa: 'parabens', etapa_cadencia: 1, aprovado_em: agora(), gerado_em: agora(), modelo: MODELO_SDR,
+          contexto_para_aprovacao: ('Parabéns: ' + mv.pessoa + ' assumiu ' + mv.cargo + ' na ' + mv.empresa + ' (' + (mv.veiculo || mv.fonte) + ')' + (mv.url ? ' ' + mv.url : '')).slice(0, 500) });
+        await sp(`crm_movimentacoes?id=eq.${mv.id}`, Object.assign(base, { status: 'rascunho', fila_id: fila && fila.id }), 'PATCH');
+        if (fila) cont.rascunhos++;
+      } else {
+        await sp(`crm_movimentacoes?id=eq.${mv.id}`, Object.assign(base, { status: 'sem_email', motivo: usados >= teto ? 'teto de créditos do dia: e-mail no próximo enriquecimento' : 'Lusha sem e-mail: use a mensagem no LinkedIn' }), 'PATCH');
+        cont.sem_email++;
+      }
+      cont.processadas++;
+    } catch (e) { cont.erros.push(String(e.message || e).slice(0, 160)); }
+  }
+  // Cria os rascunhos no Gmail agora (só cria; enviar é clique do Pedro).
+  if (cont.rascunhos) await fetch(SUPA_URL + '/rest/v1/rpc/sdr_invoke', { method: 'POST', headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json' }, body: JSON.stringify({ job: 'rascunhos-matinais', lote: 1 }) }).catch(() => {});
+  cont.custo_usd = Math.round(cont.custo_usd * 10000) / 10000; cont.ms = Date.now() - inicio;
+  await logCron('movimentacoes', nivelTrabalho(cont.novas + cont.processadas), 'fim', cont);
+  return res.status(200).json({ ok: true, ...cont });
+}
+
 // PATCH que devolve as linhas alteradas: o filtro de status garante que só uma
 // execução registra o envio (idempotência entre o cron e o clique no app).
 async function spPatchRet(path, body) {
@@ -2737,6 +2896,8 @@ export default async function handler(req, res) {
     if (job === 'gmail-crm')             return await jobGmailCrm(req, res);
     if (job === 'classificar-setores')   return await jobClassificarSetores(req, res);
     if (job === 'blitz-redacao')         return await jobBlitzRedacao(req, res);
+    if (job === 'movimentacoes')         return await jobMovimentacoes(req, res, 'imprensa');
+    if (job === 'movimentacoes-lusha')   return await jobMovimentacoes(req, res, 'lusha');
     if (job === 'sdr-envios') {
       const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null);
       const ctx = await sincronizarEnvios(gm);
