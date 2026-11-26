@@ -3,6 +3,8 @@ import Anthropic from '@anthropic-ai/sdk';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { AMIGO_TOOL_DEFS, execAmigo, executarPendente } from '../lib/amigo-wa.js';
+import { obterTokenGmail, criarRascunhoGmail, enviarRascunhoGmail } from '../lib/gmail-token.js';
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 const SUPA_URL      = 'https://uetltlnjmobeiunxfsqi.supabase.co';
@@ -488,20 +490,39 @@ export default async function handler(req, res) {
 // pipeline sem a confirmação que só a tela oferece.
 const WA_BLOQUEADAS = ['gerar_fila', 'abordar', 'criar_oportunidade', 'mover_estagio', 'atribuir_dono'];
 
-const WA_TOOL_DEFS = TOOL_DEFS.filter(t => !WA_BLOQUEADAS.includes(t.name));
+const WA_TOOL_DEFS = TOOL_DEFS.filter(t => !WA_BLOQUEADAS.includes(t.name)).concat(AMIGO_TOOL_DEFS);
+export const MODELO_WA = 'claude-sonnet-5-5';
+
+// Contexto das ferramentas do amigo (service key, Gmail do Pedro). pendente: ação que
+// espera o "manda" dele (e-mail ou etapa).
+function ctxAmigo() {
+  return {
+    req: (p, o) => supa(p, o), supaUrl: SUPA_URL, serviceKey: SUPA_SVC, envKey: ANTHROPIC_KEY, pendente: null,
+    gmail: { obter: () => obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_SVC }).catch(() => null), criar: criarRascunhoGmail, enviar: enviarRascunhoGmail }
+  };
+}
+export async function confirmarPendente(p) { return executarPendente(p, ctxAmigo()); }
 
 function buildSystemWa() {
   return buildSystem() + `
 
-## Você está no WhatsApp do Pedro
-- Responda curto: até 6 linhas, salvo quando ele pedir uma lista.
-- Formatação do WhatsApp: *negrito*, _itálico_. Nunca use #, ##, tabela ou bloco de código, porque não renderiza.
-- Lista longa: no máximo 10 itens, e ofereça mandar o resto.
-- Não existe cartão de confirmação aqui. Gerar fila, abordar e mexer em oportunidade só na tela do CRM; se ele pedir, diga isso em uma linha e ofereça o que dá para fazer por aqui.
-- registrar_resultado você executa direto quando ele contar o que aconteceu.`;
+## Você está no WhatsApp do Pedro: é o braço direito comercial dele
+- Fale como um amigo esperto e direto, em português, sem formalidade. Responda curto (até 8 linhas), salvo quando ele pedir lista ou texto pronto.
+- Formatação do WhatsApp: *negrito*, _itálico_. Nunca use #, ##, tabela ou bloco de código.
+- Seja proativo: se ele disser só um nome de empresa, puxe a ficha (oportunidade) e sugira o próximo passo. "Bom dia"/"o que tenho hoje" → minha_agenda.
+- Você lê o WhatsApp pessoal dele (ler_whatsapp): use para lembrar o que foi conversado com alguém antes de responder ou escrever.
+- Para escrever WhatsApp ou e-mail para alguém, use preparar_mensagem (pesquisa a empresa na internet e segue o jeito dele). Mostre o texto inteiro.
+  WhatsApp: mande o link que vier (ele toca e o WhatsApp abre com a mensagem pronta; quem aperta enviar é ele).
+  E-mail: diga que é só responder *manda* para enviar, ou pedir ajuste. Se ele pedir ajuste, chame enviar_email com o texto ajustado.
+- Enviar e-mail e mover etapa SÓ acontecem quando ele responder *manda*. Nunca diga que enviou sem essa confirmação.
+- Prazo ("cobrar a XP sexta"): definir_prazo direto, com a data em AAAA-MM-DD a partir de hoje.
+- registrar_resultado você executa direto quando ele contar o que aconteceu.
+- Gerar fila e criar oportunidade continuam só na tela do CRM.`;
 }
 
-async function execToolWa(name, input) {
+async function execToolWa(name, input, ctx) {
+  const amigo = await execAmigo(name, input, ctx);
+  if (amigo !== null) return amigo;
   // registrar_resultado não está no execTool porque na tela ele passa pelo
   // cartão de confirmação. No WhatsApp é a ação que mais faz sentido: o Pedro
   // conta o que aconteceu na rua e o toque entra no banco na hora.
@@ -520,6 +541,7 @@ export async function responderWhatsApp({ texto, historico = [] }) {
   const anthropic = new Anthropic({ apiKey: ANTHROPIC_KEY });
   const system = buildSystemWa();
   const ferramentas = [];
+  const ctx = ctxAmigo();
   let tokIn = 0, tokOut = 0;
 
   // Histórico guardado é texto puro; o loop monta os blocos de tool por turno.
@@ -533,7 +555,7 @@ export async function responderWhatsApp({ texto, historico = [] }) {
 
   while (true) {
     const msg = await anthropic.messages.create({
-      model: 'claude-sonnet-4-6',
+      model: MODELO_WA,
       max_tokens: 1500,
       system,
       tools: WA_TOOL_DEFS,
@@ -577,7 +599,7 @@ export async function responderWhatsApp({ texto, historico = [] }) {
       }
 
       let out;
-      try { out = await execToolWa(uso.name, uso.input || {}); }
+      try { out = await execToolWa(uso.name, uso.input || {}, ctx); }
       catch (e) { out = { erro: String(e.message || e) }; }
       resultados.push({ type: 'tool_result', tool_use_id: uso.id, content: JSON.stringify(out) });
     }
@@ -593,5 +615,5 @@ export async function responderWhatsApp({ texto, historico = [] }) {
     { role: 'assistant', content: resposta || 'Não consegui formular resposta.' },
   ];
 
-  return { texto: resposta, historico: novoHistorico, tokIn, tokOut, ferramentas };
+  return { texto: resposta, historico: novoHistorico, tokIn, tokOut, ferramentas, pendente: ctx.pendente };
 }
