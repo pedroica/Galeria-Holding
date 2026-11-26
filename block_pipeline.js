@@ -126,6 +126,116 @@
   }
 
   // ── OportunidadeDetalhe ─────────────────────────────────────────────────────
+  // ── Follow-up com pesquisa na internet (por oportunidade): WhatsApp ou e-mail ──
+  // A IA lê a oportunidade, pesquisa a empresa/pessoa na web e escreve no estilo do
+  // Pedro. WhatsApp: abre o app com o texto. E-mail: cria RASCUNHO no Gmail. Quem
+  // envia é sempre o Pedro.
+  function WhatsappComInternet({ op }) {
+    const [aberto, setAberto] = useState(false);
+    const [canal, setCanal] = useState('whatsapp');
+    const [instrucao, setInstrucao] = useState('');
+    const [decisorId, setDecisorId] = useState('');
+    const [gerando, setGerando] = useState(false);
+    const [erro, setErro] = useState(null);
+    const [res, setRes] = useState(null);
+    const [texto, setTexto] = useState('');
+    const [assunto, setAssunto] = useState('');
+    const [registrado, setRegistrado] = useState(false);
+    const [rascunho, setRascunho] = useState(null);
+    const [criando, setCriando] = useState(false);
+    const s = { fontFamily: 'IBM Plex Mono,monospace' };
+    const caixa = { width: '100%', background: '#0d0d1a', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, padding: '6px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono,monospace', boxSizing: 'border-box' };
+    const ehEmail = canal === 'email';
+    const cor = ehEmail ? '#60A5FA' : '#34D399';
+
+    async function chamar(payload) {
+      const r = await fetch('/api/enrich?provider=wa-pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getJwt() }, body: JSON.stringify(Object.assign({ oportunidade_id: op.id, canal }, payload)) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ('erro ' + r.status));
+      return j;
+    }
+    async function gerar() {
+      setGerando(true); setErro(null); setRegistrado(false); setRascunho(null);
+      try {
+        const j = await chamar({ decisor_id: decisorId || undefined, instrucao: instrucao.trim() || undefined });
+        setRes(j); setTexto(j.mensagem || ''); setAssunto(j.assunto || '');
+        if (j.contato && !decisorId) setDecisorId(j.contato.id);
+      } catch (e) { setErro(String(e.message || e)); }
+      setGerando(false);
+    }
+    function trocarCanal(c) { if (c === canal) return; setCanal(c); setRes(null); setTexto(''); setAssunto(''); setErro(null); setRegistrado(false); setRascunho(null); }
+    function abrirWa() {
+      const d = ((res && res.contato && res.contato.wa) || '').replace(/\D/g, '');
+      const n = d.length < 10 ? '' : ((d.length >= 12 && d.slice(0, 2) === '55') ? d : '55' + d);
+      window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(texto), '_blank', 'noopener,noreferrer');
+    }
+    async function criarRascunho() {
+      setCriando(true); setErro(null);
+      try {
+        const j = await chamar({ acao: 'rascunho', decisor_id: res.contato && res.contato.id, assunto, corpo: texto });
+        setRascunho(j);
+        if (j.link) window.open(j.link, '_blank', 'noopener,noreferrer');
+      } catch (e) { setErro(String(e.message || e)); }
+      setCriando(false);
+    }
+    async function registrar() {
+      const c = res && res.contato;
+      await supa('crm_toques', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ empresa_id: op.empresa_id || null, decisor_id: c ? c.id : null, canal: ehEmail ? 'email' : 'whatsapp', direcao: 'enviado', assunto: ehEmail ? assunto.slice(0, 500) : null, resumo: (ehEmail ? 'E-mail' : 'WhatsApp') + ' do Pipeline (com pesquisa na internet)', texto_enviado: texto.slice(0, 4000), data: new Date().toISOString(), fonte: 'manual', resultado: 'enviado' }) });
+      if (c) await supa('crm_decisores?id=eq.' + c.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ ultimo_toque_em: new Date().toISOString() }) });
+      await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'nota', texto: (ehEmail ? 'E-mail' : 'WhatsApp') + ' enviado' + (c ? ' para ' + c.nome : '') + ': ' + (ehEmail && assunto ? '[' + assunto + '] ' : '') + texto.slice(0, 300) }) });
+      setRegistrado(true);
+    }
+    const btn = (extra) => Object.assign({ fontSize: 10, padding: '6px 12px', background: '#0d0d1a', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, cursor: 'pointer' }, s, extra || {});
+
+    if (!aberto) return React.createElement('button', {
+      onClick: () => setAberto(true),
+      style: Object.assign({ width: '100%', fontSize: 10, padding: '8px 12px', background: 'rgba(52,211,153,.08)', border: '1px solid #34D399', color: '#34D399', borderRadius: 6, cursor: 'pointer', marginBottom: 16, textAlign: 'left' }, s)
+    }, '💬 Follow-up com pesquisa na internet (WhatsApp ou e-mail)');
+
+    const contatos = (res && res.contatos) || [];
+    const temCanal = (c) => ehEmail ? c.tem_email : c.tem_wa;
+    return React.createElement('div', { style: { background: '#1A1A2E', border: '1px solid ' + cor, borderRadius: 8, padding: 12, marginBottom: 16 } },
+      React.createElement('div', { style: Object.assign({ fontSize: 9, marginBottom: 8, display: 'flex', gap: 6, alignItems: 'center' }, s) },
+        ['whatsapp', 'email'].map(c => React.createElement('button', { key: c, onClick: () => trocarCanal(c), style: btn({ fontSize: 9, padding: '4px 10px', background: canal === c ? (c === 'email' ? '#60A5FA' : '#34D399') : '#0d0d1a', color: canal === c ? '#060606' : '#aaa', fontWeight: canal === c ? 700 : 400 }) }, c === 'email' ? '✉ E-mail' : '💬 WhatsApp')),
+        React.createElement('span', { onClick: () => setAberto(false), style: { cursor: 'pointer', color: '#555', marginLeft: 'auto' } }, 'fechar')
+      ),
+      contatos.length > 1 && React.createElement('select', {
+        value: decisorId, onChange: e => setDecisorId(e.target.value), style: Object.assign({}, caixa, { marginBottom: 6 })
+      }, contatos.map(c => React.createElement('option', { key: c.id, value: c.id }, c.nome + (c.cargo ? ' · ' + c.cargo : '') + (temCanal(c) ? '' : (ehEmail ? ' (sem e-mail)' : ' (sem WhatsApp)'))))),
+      React.createElement('textarea', {
+        value: instrucao, onChange: e => setInstrucao(e.target.value), rows: 2,
+        placeholder: 'Opcional: o que você quer com esse follow-up (ex.: cobrar a proposta, marcar o café, parabenizar pelo lançamento)',
+        style: Object.assign({}, caixa, { resize: 'vertical', marginBottom: 6 })
+      }),
+      React.createElement('button', {
+        onClick: gerar, disabled: gerando,
+        style: btn({ background: gerando ? '#2D2D44' : cor, border: 'none', color: '#060606', fontWeight: 700, cursor: gerando ? 'default' : 'pointer' })
+      }, gerando ? '🌐 Pesquisando e escrevendo… (até 1 min)' : (res ? '↻ Gerar outra' : '🌐 Pesquisar e escrever')),
+      erro && React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#EF4444', marginTop: 6 }, s) }, erro),
+      res && React.createElement('div', { style: { marginTop: 10 } },
+        res.contato && React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#888', marginBottom: 4 }, s) }, 'Para ' + res.contato.nome + (ehEmail
+          ? (res.contato.tem_email ? ' · ' + res.contato.email : ' · sem e-mail cadastrado: copie o texto')
+          : (res.contato.tem_wa ? '' : ' · sem número cadastrado: o WhatsApp abre para você escolher o contato'))),
+        ehEmail && React.createElement('input', { value: assunto, onChange: e => { setAssunto(e.target.value); setRascunho(null); }, placeholder: 'Assunto', style: Object.assign({}, caixa, { fontSize: 11, marginBottom: 4 }) }),
+        React.createElement('textarea', { value: texto, onChange: e => { setTexto(e.target.value); setRegistrado(false); setRascunho(null); }, rows: ehEmail ? 9 : 7, style: Object.assign({}, caixa, { fontSize: 11, lineHeight: 1.5, resize: 'vertical' }) }),
+        (res.alertas || []).length > 0 && React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#FBBF24', marginTop: 4 }, s) }, '⚠ ' + res.alertas.join(' · ')),
+        res.fato_usado && React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#aaa', marginTop: 6 }, s) }, '🌐 Fato usado: ' + res.fato_usado),
+        (res.fontes || []).length > 0 && React.createElement('div', { style: { marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 } },
+          res.fontes.map((u, i) => React.createElement('a', { key: i, href: u, target: '_blank', rel: 'noopener noreferrer', style: Object.assign({ fontSize: 9, color: '#60A5FA', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, s) }, u.replace(/^https?:\/\/(www\.)?/, '')))
+        ),
+        React.createElement('div', { style: { display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' } },
+          ehEmail
+            ? (rascunho
+              ? React.createElement('a', { href: rascunho.link, target: '_blank', rel: 'noopener noreferrer', style: btn({ background: '#60A5FA', border: 'none', color: '#060606', fontWeight: 700, textDecoration: 'none' }) }, '✓ Rascunho no Gmail: abrir')
+              : React.createElement('button', { onClick: criarRascunho, disabled: criando || !texto.trim() || !(res.contato && res.contato.tem_email), style: btn({ background: '#60A5FA', border: 'none', color: '#060606', fontWeight: 700, opacity: (res.contato && res.contato.tem_email) ? 1 : 0.4 }) }, criando ? 'Criando…' : 'Criar rascunho no Gmail'))
+            : React.createElement('button', { onClick: abrirWa, disabled: !texto.trim(), style: btn({ background: '#25D366', border: 'none', color: '#060606', fontWeight: 700 }) }, 'Abrir no WhatsApp'),
+          React.createElement('button', { onClick: () => { try { navigator.clipboard.writeText(ehEmail && assunto ? assunto + '\n\n' + texto : texto); } catch (_) {} }, style: btn() }, 'Copiar'),
+          React.createElement('button', { onClick: registrar, disabled: registrado || !texto.trim(), style: btn({ border: '1px solid ' + (registrado ? '#34D399' : '#2D2D44'), color: registrado ? '#34D399' : '#eee', cursor: registrado ? 'default' : 'pointer' }) }, registrado ? '✓ Registrado no histórico' : 'Enviei: registrar')
+        )
+      )
+    );
+  }
+
   function OportunidadeDetalhe({ op, agencias, meuPapel, minhaAgenciaId, onClose, onAtualizar, empresaNome, initialEditando }) {
     const [eventos, setEventos] = useState([]);
     const [toques, setToques] = useState([]);
@@ -264,6 +374,9 @@
           React.createElement('div', { style: { fontSize: 11, color: '#eee', ...s } }, op.proximo_passo),
           op.proximo_passo_em && React.createElement('div', { style: { fontSize: 9, color: '#FBBF24', ...s, marginTop: 4 } }, 'Até ' + ptDate(op.proximo_passo_em))
         ),
+
+        // Follow-up (WhatsApp ou e-mail) com pesquisa na internet
+        ehMinha && React.createElement(WhatsappComInternet, { key: 'wa-' + op.id, op }),
 
         // Ações
         meuPapel === 'admin' && React.createElement('div', { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' } },

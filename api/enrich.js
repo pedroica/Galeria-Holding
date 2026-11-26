@@ -8,7 +8,8 @@ import { fileURLToPath } from 'url';
 import { classificarResposta } from '../lib/sdr-respostas.js';
 import { SCHEMA_CAPTURA, promptCaptura, casarEmpresa, casarPessoa, normalizarCelular, normalizarEmpresa } from '../lib/captura.js';
 import { pessoaLusha, saldoDoDia } from '../lib/lusha.js';
-import { gerarJSON as gerarJSONllm } from '../lib/llm.js';
+import { gerarJSON as gerarJSONllm, gerarComBusca } from '../lib/llm.js';
+import { promptWhatsappPipeline, lerResposta, checarWhatsapp, escolherContato, numeroWa, linkWhatsapp } from '../lib/wa-pipeline.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
 import { analisarEdicao } from '../lib/sdr-aprendizado.js';
 import { GMAIL_SCOPE, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, credenciaisGoogle, obterTokenGmail, gmailReq, criarRascunhoGmail, enviarRascunhoGmail, atualizarRascunhoGmail, ehRascunhoGmail } from '../lib/gmail-token.js';
@@ -342,6 +343,64 @@ export default async function handler(req, res) {
   // captura-gravar: cria/atualiza empresa e pessoa (só campos vazios) e enriquece no
   // Lusha dentro do teto diário (crm_configuracoes.lusha_daily_limit; uso do dia em
   // lusha_creditos_dia, o mesmo do enriquecimento diário). Só usuário do CRM.
+  // ── WhatsApp do Pipeline: mensagem com pesquisa na internet ───────────────
+  // POST {oportunidade_id, decisor_id?, instrucao?} → {mensagem, fontes, contato, contatos, link}.
+  // Só escreve: quem envia é o Pedro, abrindo o WhatsApp pelo link (regra 3).
+  if (provider === 'wa-pipeline') {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+    const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+    const u = tok ? await fetch(SUPA_URL + '/auth/v1/user', { headers: { apikey: SUPA_ANON, Authorization: 'Bearer ' + tok } }).then(r => r.ok ? r.json() : null).catch(() => null) : null;
+    const emailUser = u && u.email ? String(u.email).toLowerCase() : null;
+    const usr = emailUser ? await supaReq('/rest/v1/crm_usuarios?email=ilike.' + encodeURIComponent(emailUser) + '&select=email,ativo&limit=1') : null;
+    if (!emailUser || !Array.isArray(usr) || !usr[0] || usr[0].ativo === false) return res.status(401).json({ error: 'Faça login com um usuário do CRM.' });
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const opId = String(body.oportunidade_id || '').replace(/[^0-9a-zA-Z-]/g, '');
+    if (!opId) return res.status(400).json({ error: 'oportunidade_id obrigatório' });
+    const canal = body.canal === 'email' ? 'email' : 'whatsapp';
+    // acao 'rascunho': cria o e-mail (já revisado na tela) como RASCUNHO no Gmail. Nunca envia.
+    if (body.acao === 'rascunho') {
+      const decId = String(body.decisor_id || '').replace(/[^0-9a-zA-Z-]/g, '');
+      const dd = decId ? await supaReq('/rest/v1/crm_decisores?id=eq.' + decId + '&select=id,nome,email&limit=1') : null;
+      const para = Array.isArray(dd) && dd[0] && dd[0].email;
+      if (!para) return res.status(400).json({ error: 'Esse contato não tem e-mail cadastrado.' });
+      if (!String(body.assunto || '').trim() || !String(body.corpo || '').trim()) return res.status(400).json({ error: 'Assunto e texto são obrigatórios.' });
+      const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_SVC });
+      if (!gm) return res.status(409).json({ error: 'Gmail não conectado. Conecte em Fila › Enviar.' });
+      try {
+        const d = await criarRascunhoGmail(gm.token, { conta: gm.email, para, assunto: String(body.assunto).slice(0, 200), corpo: String(body.corpo).slice(0, 6000) });
+        supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ origem: 'wa-pipeline', nivel: 'info', mensagem: 'rascunho de e-mail do pipeline criado', contexto: { oportunidade_id: opId, decisor_id: decId, draft_id: d.id, por: emailUser } }) }).catch(() => {});
+        return res.status(200).json({ ok: true, rascunho_id: d.id, link: d.link, para });
+      } catch (e) { return res.status(502).json({ error: 'Gmail recusou o rascunho: ' + String(e && e.message || e).slice(0, 160) }); }
+    }
+    const ops = await supaReq('/rest/v1/crm_oportunidades?id=eq.' + opId + '&select=*&limit=1');
+    const op = Array.isArray(ops) && ops[0];
+    if (!op) return res.status(404).json({ error: 'Oportunidade não encontrada' });
+    const empId = op.empresa_id ? String(op.empresa_id).replace(/[^0-9a-zA-Z-]/g, '') : null;
+    const [emps, decs, toques, eventos, ags] = await Promise.all([
+      empId ? supaReq('/rest/v1/crm_empresas?id=eq.' + empId + '&select=nome,setor,setor_canonico,website,dominio&limit=1') : null,
+      empId ? supaReq('/rest/v1/crm_decisores?empresa_id=eq.' + empId + '&apagado_em=is.null&select=id,nome,cargo,wa,email,linkedin_url,observacoes,status&order=ultimo_toque_em.desc.nullslast&limit=30') : null,
+      empId ? supaReq('/rest/v1/crm_toques?empresa_id=eq.' + empId + '&select=canal,direcao,resultado,assunto,resumo,data,criado_em&order=criado_em.desc&limit=10') : null,
+      supaReq('/rest/v1/crm_oportunidade_eventos?oportunidade_id=eq.' + opId + '&select=tipo,de,para,texto,criado_em&order=criado_em.desc&limit=10'),
+      op.agencia_id ? supaReq('/rest/v1/crm_agencias?id=eq.' + op.agencia_id + '&select=nome&limit=1') : null
+    ]);
+    const empresa = Array.isArray(emps) && emps[0] ? Object.assign({}, emps[0], { setor: emps[0].setor_canonico || emps[0].setor }) : null;
+    const contatos = (Array.isArray(decs) ? decs : []).filter(d => d.status !== 'saiu_da_empresa');
+    const contato = escolherContato(contatos, body.decisor_id, canal);
+    const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const pr = promptWhatsappPipeline({ op, empresa, contato, toques: Array.isArray(toques) ? toques : [], eventos: Array.isArray(eventos) ? eventos : [], instrucao: body.instrucao, agencia: Array.isArray(ags) && ags[0] ? ags[0].nome : '', hoje: hojeStr, canal });
+    const g = await gerarComBusca({ system: pr.system, content: pr.user, supaUrl: SUPA_URL, serviceKey: SUPA_SVC, envKey: ANTHROPIC_KEY });
+    const r = lerResposta(g.texto);
+    if (!r) return res.status(502).json({ error: 'A IA não devolveu a mensagem. Tente de novo.' + (g.erro ? ' (' + g.erro + ')' : '') });
+    const fontes = (r.fontes.length ? r.fontes : []).concat((g.urls || []).filter(x => !r.fontes.includes(x))).slice(0, 6);
+    supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ origem: 'wa-pipeline', nivel: 'info', mensagem: 'mensagem do pipeline gerada', contexto: { canal, oportunidade_id: opId, buscas: g.buscas || 0, por: emailUser } }) }).catch(() => {});
+    return res.status(200).json({
+      canal, assunto: r.assunto, mensagem: r.mensagem, fato_usado: r.fato_usado, fontes, alertas: checarWhatsapp(r.mensagem, canal, r.assunto), buscas: g.buscas || 0,
+      contato: contato ? { id: contato.id, nome: contato.nome, cargo: contato.cargo, wa: contato.wa || null, tem_wa: !!numeroWa(contato.wa), email: contato.email || null, tem_email: /@/.test(contato.email || '') } : null,
+      contatos: contatos.map(d => ({ id: d.id, nome: d.nome, cargo: d.cargo, tem_wa: !!numeroWa(d.wa), tem_email: /@/.test(d.email || '') })),
+      link: linkWhatsapp(contato && contato.wa, r.mensagem)
+    });
+  }
+
   if (provider === 'captura-ler' || provider === 'captura-gravar') {
     const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
     const u = tok ? await fetch(SUPA_URL + '/auth/v1/user', { headers: { apikey: SUPA_ANON, Authorization: 'Bearer ' + tok } }).then(r => r.ok ? r.json() : null).catch(() => null) : null;
