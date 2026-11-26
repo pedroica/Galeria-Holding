@@ -10,7 +10,7 @@ import { SCHEMA_CAPTURA, promptCaptura, casarEmpresa, casarPessoa, normalizarCel
 import { pessoaLusha, saldoDoDia } from '../lib/lusha.js';
 import { gerarJSON as gerarJSONllm, gerarComBusca } from '../lib/llm.js';
 import { promptWhatsappPipeline, lerResposta, checarWhatsapp, escolherContato, numeroWa, linkWhatsapp } from '../lib/wa-pipeline.js';
-import { chaveTelefone, telefoneDoJid, tipoConversa, midiaDoTipo, emailCorporativo, categoriaContato, empresaDoContato, indicePessoas, acharPessoa, celularPrincipal, nomeCompleto } from '../lib/mac-sync.js';
+import { chaveTelefone, telefoneDoJid, tipoConversa, midiaDoTipo, emailCorporativo, categoriaContato, empresaDoContato, indicePessoas, acharPessoa, celularPrincipal, nomeCompleto, empresaDoCartao } from '../lib/mac-sync.js';
 import { linhasEstiloAprendido, autoresDaConversa, falasDoAutor, amostrasColadas } from '../lib/estilo-aprendido.js';
 import { dominioDaEmpresa, dominiosDaEmpresa, contatosDoGmail, lerEnderecos, buscaGmail, linkLinkedin, textoDoPayload } from '../lib/contatos-conta.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
@@ -383,11 +383,26 @@ export default async function handler(req, res) {
         const lista = (Array.isArray(body.contatos) ? body.contatos : []).slice(0, 600);
         const cont = { recebidos: lista.length, trabalho: 0, interno: 0, pessoal: 0, pessoas_novas: 0, pessoas_completadas: 0, empresas_novas: 0 };
         const agenda = [];
+        // Contato que o Pedro (ou a limpeza) já revisou: mantém categoria, pessoa e empresa.
+        const ids = lista.map(c => String(c.id).replace(/"/g, '')).filter(Boolean);
+        const revisados = new Map();
+        for (let i = 0; i < ids.length; i += 150) {
+          const r = await supaReq('/rest/v1/crm_contatos_agenda?categoria_fixa=eq.true&origem_id=in.(' + ids.slice(i, i + 150).map(x => '"' + x + '"').join(',') + ')&select=origem_id,categoria,decisor_id,empresa_id');
+          for (const x of (Array.isArray(r) ? r : [])) revisados.set(x.origem_id, x);
+        }
         for (const c of lista) {
           const nome = nomeCompleto(c);
           const emails = (c.emails || []).map(e => String(e).toLowerCase().trim()).filter(e => /@/.test(e));
           const telefones = (c.telefones || []).map(t => String(t).trim()).filter(Boolean);
-          const cc = { empresa: c.empresa, emails, telefones };
+          const empresaCartao = empresaDoCartao(c);
+          const cc = { empresa: empresaCartao, emails, telefones };
+          const fixo = revisados.get(String(c.id));
+          if (fixo) {
+            cont[fixo.categoria] = (cont[fixo.categoria] || 0) + 1;
+            agenda.push({ origem_id: String(c.id).slice(0, 200), nome, empresa_texto: c.empresa || null, cargo: c.cargo || null, telefones, emails, categoria: fixo.categoria,
+              decisor_id: fixo.decisor_id, empresa_id: fixo.empresa_id, categoria_fixa: true, atualizado_em: agoraM });
+            continue;
+          }
           const categoria = categoriaContato(cc); cont[categoria]++;
           let dec = acharPessoa(cc, idx); let emp = null;
           if (dec) {
@@ -399,8 +414,8 @@ export default async function handler(req, res) {
             if (Object.keys(patch).length) { await supaReq('/rest/v1/crm_decisores?id=eq.' + dec.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(Object.assign({ atualizado_em: agoraM }, patch)) }); Object.assign(dec, patch); cont.pessoas_completadas++; }
           } else if (categoria === 'trabalho' && nome) {
             emp = empresaDoContato(cc, empresas);
-            if (!emp && String(c.empresa || '').trim().length >= 2) {
-              const nova = await supaReq('/rest/v1/crm_empresas', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome: String(c.empresa).trim().slice(0, 200), fonte: 'agenda' }) });
+            if (!emp && empresaCartao.length >= 2) {
+              const nova = await supaReq('/rest/v1/crm_empresas', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome: empresaCartao.slice(0, 200), fonte: 'agenda' }) });
               emp = Array.isArray(nova) ? nova[0] : null; if (emp) { empresas.push(emp); cont.empresas_novas++; }
             }
             if (emp) {
@@ -412,7 +427,7 @@ export default async function handler(req, res) {
             }
           }
           agenda.push({ origem_id: String(c.id).slice(0, 200), nome, empresa_texto: c.empresa || null, cargo: c.cargo || null, telefones, emails, categoria,
-            decisor_id: dec ? dec.id : null, empresa_id: dec ? (dec.empresa_id || null) : (emp ? emp.id : null), atualizado_em: agoraM });
+            decisor_id: dec ? dec.id : null, empresa_id: dec ? (dec.empresa_id || null) : (emp ? emp.id : null), categoria_fixa: false, atualizado_em: agoraM });
         }
         for (let i = 0; i < agenda.length; i += 300) await upsert('crm_contatos_agenda', agenda.slice(i, i + 300), 'origem_id');
         return res.status(200).json(Object.assign({ ok: true }, cont));

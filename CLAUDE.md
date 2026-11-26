@@ -369,6 +369,10 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
   quem já existe só tem campo vazio completado. `conversas` → `crm_wa_conversas` (ligada a pessoa/empresa por telefone);
   `mensagens` → `crm_wa_mensagens`; `fim` → RPC `wa_gerar_toques()` (um toque por dia e direção, últimos 18 meses, só
   conversas ligadas a pessoa de trabalho; atualiza `ultimo_toque_em`).
+- Limpeza de 26/11 (`crm_logs` origem `limpeza-agenda` guarda o que desfazer): das 369 empresas criadas pela agenda, 28
+  tinham nome de pessoa e foram para a empresa real, 44 sem empresa real (pessoa fica sem empresa) e 36 eram contatos
+  pessoais (médico, táxi...; pessoa e histórico na lixeira). Empresas falsas na lixeira. `crm_contatos_agenda.categoria_fixa`
+  = revisado: a sincronização não recria. `empresaDoCartao` evita empresa com nome de pessoa (usa o que sobra no nome).
 - Job `whatsapp-crm` (pg_cron a cada 15 min): lê as conversas de trabalho ligadas a empresa (últimos 60 dias, só as com
   mensagem nova desde `analisada_ate`) com o mesmo prompt/regras do Gmail (`construirPromptStatus` modo WhatsApp +
   `aplicarStatusConversa`): prazo combinado, reunião marcada (toque `reuniao_marcada`, canal whatsapp), avanço claro
