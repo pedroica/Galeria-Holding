@@ -719,11 +719,11 @@ select.kes-input{cursor:pointer}
   }
   await migrarSeed();
   // scripts classicos (sem const globais duplicados)
-  for(var s0 of ['gh-store.js','gh-core.js','block0_util.js','templates_agencias.js','prazos.js']){
+  for(var s0 of ['gh-store.js','gh-core.js','block0_util.js','templates_agencias.js','prazos.js','base.js']){
     try{ await loadScript(s0); }catch(e){ console.error(e); falhasCarga.push(s0); }
   }
   // blocos react pre-compilados
-  for(var s1 of ['block1.js','block2.js','block_copiloto.js','block_atividade.js','block_pipeline.js','block3.js','block6.js','block4.js','block_blocklist.js']){
+  for(var s1 of ['block1.js','block2.js','block_copiloto.js','block_atividade.js','block_pipeline.js','block3.js','block6.js','block_base.js','block4.js','block_blocklist.js']){
     try{ await runBlock(s1); }catch(e){ console.error(e); falhasCarga.push(s1); }
   }
   avisoFalhaCarga();

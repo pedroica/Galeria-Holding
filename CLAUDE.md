@@ -287,6 +287,14 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
 
 ---
 
+## Base: setores, listas e placar (26/11/2026)
+
+- `crm_empresas.setor_canonico`: setor numa lista única (`lib/setores.js`), preenchido pelo job `classificar-setores`
+  (setor antigo mapeado de graça; o resto pela IA, Sonnet, lotes de 60). O `setor` original não é tocado.
+- `crm_base_contatos_v`: um contato por linha com setor, estrelas, último toque, cliente ativo e oportunidade aberta.
+- Base › **Listas e blitz** (`block_base.js`, regras em `base.js`): filtros por setor, cargo, estrelas, canal e
+  "deixar de fora"; salva em `crm_listas` / `crm_lista_itens`. Base › **Placar** lê `crm_placar_v`.
+
 ## Fila antiga desligada (26/11/2026)
 
 - O gerador antigo (`gerar-fila-diario`) saiu dos crons da Vercel: não gerava nada desde 17/11 e o agente SDR o substitui.

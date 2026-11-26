@@ -24,6 +24,7 @@ import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTempl
 import { obterTokenGraph } from '../lib/graph-token.js';
 import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail, gmailReq, consultaRascunho, filaIdDaFronteira } from '../lib/gmail-token.js';
 import { perfilGmail, historicoGmail, eventosDoHistorico, metadadosMensagem, corpoMensagem, filaIdDoMessageId, textoDoPayload } from '../lib/gmail-sync.js';
+import { SETORES, setorDoAntigo, setorValido, SCHEMA_SETORES, promptSetores } from '../lib/setores.js';
 import { montarIndice, casarMensagem, decidirPipeline, construirPromptStatus, SCHEMA_STATUS, semCitacao, respostaReal, substituiSugestao, aplicarPrazoDoEmail } from '../lib/gmail-crm.js';
 import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
 import { tokenSdrValido } from '../lib/sdr-auth.js';
@@ -2573,6 +2574,42 @@ async function jobGmailCrm(req, res) {
   return res.status(200).json({ ok: true, ...cont });
 }
 
+// ── job: classificar-setores ─────────────────────────────────────────────────
+// Põe cada empresa num setor da lista única (crm_empresas.setor_canonico). Primeiro
+// o que o setor antigo já diz (de graça); o resto vai para a IA em lotes de 60.
+// Idempotente: só pega quem ainda não tem setor_canonico. Não mexe no setor original.
+async function jobClassificarSetores(req, res) {
+  const inicio = Date.now(); const LIMITE = 45000;
+  const cont = { pelo_setor_antigo: 0, pela_ia: 0, lotes: 0, custo_usd: 0, restantes: null };
+  const rows = await sg('crm_empresas?setor_canonico=is.null&apagado_em=is.null&select=id,nome,setor,segmento_detalhe,dominio,website,site&order=criado_em.desc&limit=600');
+  if (rows === null) return erroLeitura('classificar-setores', res, inicio, 'crm_empresas');
+  const agora = new Date().toISOString();
+  const paraIA = [];
+  for (const e of rows) {
+    const antigo = setorDoAntigo(e.setor);
+    if (antigo) { if (await sp(`crm_empresas?id=eq.${e.id}`, { setor_canonico: antigo, setor_confianca: 'alta', setor_fonte: 'setor_existente', classificado_em: agora }, 'PATCH')) cont.pelo_setor_antigo++; }
+    else paraIA.push({ id: e.id, nome: e.nome, setor: e.setor, segmento_detalhe: e.segmento_detalhe, site: e.dominio || e.website || e.site });
+  }
+  const modelo = 'claude-sonnet-5-5';
+  for (let i = 0; i < paraIA.length && Date.now() - inicio < LIMITE; i += 60) {
+    const lote = paraIA.slice(i, i + 60);
+    const { system, user } = promptSetores(lote);
+    const r = await gerarJSON({ system, user, schema: SCHEMA_SETORES, effort: 'low', model: modelo });
+    cont.lotes++; cont.custo_usd += r.custo || 0;
+    const ids = new Set(lote.map(x => x.id));
+    for (const it of ((r.obj && r.obj.itens) || [])) {
+      const setor = setorValido(it.setor);
+      if (!setor || !ids.has(it.id)) continue;
+      if (await sp(`crm_empresas?id=eq.${it.id}`, { setor_canonico: setor, setor_confianca: it.confianca, setor_fonte: 'ia', classificado_em: new Date().toISOString() }, 'PATCH')) cont.pela_ia++;
+    }
+  }
+  const resto = await sg('crm_empresas?setor_canonico=is.null&apagado_em=is.null&select=id&limit=3000');
+  cont.restantes = Array.isArray(resto) ? resto.length : null;
+  cont.custo_usd = Math.round(cont.custo_usd * 10000) / 10000; cont.ms = Date.now() - inicio;
+  await logCron('classificar-setores', nivelTrabalho(cont.pelo_setor_antigo + cont.pela_ia), 'fim', cont);
+  return res.status(200).json({ ok: true, ...cont });
+}
+
 // PATCH que devolve as linhas alteradas: o filtro de status garante que só uma
 // execução registra o envio (idempotência entre o cron e o clique no app).
 async function spPatchRet(path, body) {
@@ -2733,6 +2770,7 @@ export default async function handler(req, res) {
     if (job === 'sdr-vigia')             return await jobSdrVigia(req, res);
     if (job === 'sdr-aprendizado')       return await jobSdrAprendizado(req, res);
     if (job === 'gmail-crm')             return await jobGmailCrm(req, res);
+    if (job === 'classificar-setores')   return await jobClassificarSetores(req, res);
     if (job === 'sdr-envios') {
       const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null);
       const ctx = await sincronizarEnvios(gm);
