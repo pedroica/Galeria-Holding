@@ -27,6 +27,8 @@ const resp = { contact: { isCreditCharged: true, data: { emailAddresses: [{ addr
 const lido = lerPessoaV2(resp);
 ok(lido.achou && lido.email === 'joao@lopes.com.br' && lido.celular === '5511998765432' && lido.cargo === 'CMO' && lido.linkedin.includes('joao') && lido.site === 'lopes.com.br', 'lê a resposta do Lusha');
 ok(lerPessoaV2({ contact: { error: { code: 3, message: 'Could not find requested data.' } } }).achou === false, 'não achou');
+const real = lerPessoaV2({ contact: { isCreditCharged: true, data: { emailAddresses: [{ email: 'janaina@vitru.com.br', emailType: 'work', emailConfidence: 'A+' }], phoneNumbers: [{ internationalNumber: '+55 11 99876-5432', phoneType: 'mobile' }] } } });
+ok(real.achou && real.email === 'janaina@vitru.com.br' && real.celular === '5511998765432', 'formato REAL do Lusha: emailAddresses[].email / emailType (não .address)');
 ok(lerPessoaV2({ contact: { error: { name: 'EMPTY_DATA', code: 3 }, isCreditCharged: false, data: {} } }).achou === false, 'EMPTY_DATA com data vazia = não achou (formato real do Lusha)');
 
 let urlChamada = '';
@@ -34,6 +36,8 @@ const fakeFetch = async (u) => { urlChamada = u; return new Response(JSON.string
 const p = await pessoaLusha({ fetchFn: fakeFetch, chave: 'k', nome: 'João Lopes', empresa: 'Lopes Supermercados' });
 ok(/firstName=Jo%C3%A3o/.test(urlChamada) && /lastName=Lopes/.test(urlChamada) && /companyName=Lopes/.test(urlChamada) && /revealPhones=false/.test(urlChamada), 'pede só e-mail quando celular não foi pedido');
 ok(p.creditos === 1, 'gasto contado: 1 crédito (só e-mail)');
+const cobradoIlegivel = async () => new Response(JSON.stringify({ contact: { isCreditCharged: true, data: { emailAddresses: [{ formatoNovo: 'x' }], phoneNumbers: [] } } }), { status: 200 });
+ok((await pessoaLusha({ fetchFn: cobradoIlegivel, chave: 'k', nome: 'Ana Souza', empresa: 'X' })).creditos >= 1, 'cobrou e não deu para ler: o crédito conta mesmo assim (teto continua valendo)');
 ok((await pessoaLusha({ fetchFn: fakeFetch, chave: 'k', nome: 'João', empresa: 'X' })).erro === 'precisa de nome e sobrenome', 'sem sobrenome não gasta consulta');
 // Formato real (26/11): 1ª consulta parcial (só LinkedIn, sem cobrar), 2ª com e-mail.
 const { _esperaRetentativa } = await import('../lib/lusha.js'); _esperaRetentativa(0);
