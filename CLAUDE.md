@@ -384,6 +384,10 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
 
 - Número do CRM (Meta Cloud API, `api/enrich?provider=whatsapp` → `responderWhatsApp` em `api/copiloto.js`, modelo
   `MODELO_WA` = claude-sonnet-5-5). Só responde aos números de `WHATSAPP_ALLOWED_NUMBERS` (o Pedro).
+- **Telegram (decisão do Pedro, 26/11: grátis e sem número)**: `api/enrich?provider=telegram`, token `TELEGRAM_BOT_TOKEN`
+  (Vercel), webhook com segredo derivado do token; `GET ?acao=instalar` (Bearer CRON_SECRET) registra o webhook e gera o
+  link de pareamento (`/start <código>`, 24 h, uma vez); só o dono (`crm_configuracoes.telegram_dono_id`) é atendido.
+  WhatsApp e Telegram usam o mesmo `conversarComAmigo` (sessão `tg:<chat>` em `crm_wa_sessoes`).
 - Ferramentas novas em `lib/amigo-wa.js`: `minha_agenda`, `ler_whatsapp` (depósito do Mac), `oportunidade`,
   `preparar_mensagem` (mesma geração do Pipeline, `lib/followup.js`), `enviar_email`, `rascunho_email`, `definir_prazo`, `mover_etapa`.
 - **Enviar e-mail e mover etapa viram ação pendente** (`crm_wa_sessoes.pendente`) e só executam quando o Pedro responde

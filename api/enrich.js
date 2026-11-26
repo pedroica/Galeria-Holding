@@ -289,6 +289,72 @@ async function handleGmailCallback(req, res) {
 }
 
 // ─── Main handler ────────────────────────────────────────────────────────────
+// Conversa com o amigo (WhatsApp ou Telegram): ação pendente ("manda"), pausar, /novo e
+// a resposta da IA com as ferramentas do CRM. chave = id da sessão em crm_wa_sessoes.
+async function conversarComAmigo({ chave, texto, enviar, canal }) {
+  const svcH = { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json' };
+  if (!texto) { await enviar('Por enquanto eu só leio texto. Manda escrito que eu resolvo.'); return; }
+
+  const sess = await supaReq('/rest/v1/crm_wa_sessoes?select=mensagens,pendente&telefone=eq.' + encodeURIComponent(chave))
+    .catch(function () { return []; });
+  const historico = (sess[0] && Array.isArray(sess[0].mensagens)) ? sess[0].mensagens : [];
+  const pendente = sess[0] && sess[0].pendente && sess[0].pendente.tipo ? sess[0].pendente : null;
+  const gravarSessao = (campos) => supaReq('/rest/v1/crm_wa_sessoes?on_conflict=telefone', {
+    method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([Object.assign({ telefone: chave, atualizado_em: new Date().toISOString() }, campos)])
+  }).catch(function () {});
+
+  // Ação esperando o "manda" do Pedro (e-mail ou etapa). Só executa com a palavra dele;
+  // qualquer outra resposta descarta a ação (e segue a conversa normalmente).
+  if (pendente) {
+    const { CONFIRMA, CANCELA } = await import('../lib/amigo-wa.js');
+    if (CONFIRMA.test(texto)) {
+      const { confirmarPendente } = await import('./copiloto.js');
+      let out;
+      try { out = await confirmarPendente(pendente); } catch (e) { out = 'Deu erro ao executar: ' + String(e && (e.message || e.msg) || e).slice(0, 160); }
+      await gravarSessao({ pendente: null, mensagens: historico.concat([{ role: 'user', content: texto }, { role: 'assistant', content: out }]).slice(-20) });
+      await enviar(out);
+      supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ origem: canal, nivel: 'info', mensagem: 'ação confirmada pelo Pedro', contexto: { tipo: pendente.tipo, para: pendente.para || pendente.empresa || null } }) }).catch(function () {});
+      return;
+    }
+    await gravarSessao({ pendente: null });
+    if (CANCELA.test(texto) && texto.trim().split(/\s+/).length <= 3) { await enviar('Beleza, cancelei. Nada foi enviado.'); return; }
+  }
+
+  // "pausar" desliga o Piloto Automático na hora e cancela os envios agendados.
+  if (/^\s*pausar( tudo)?\s*[.!]*\s*$/i.test(texto)) {
+    const rp = await fetch(SUPA_URL + '/rest/v1/rpc/sdr_pausar_tudo', { method: 'POST', headers: svcH, body: JSON.stringify({ origem: canal }) });
+    const jr = rp.ok ? await rp.json().catch(() => ({})) : null;
+    await enviar(jr ? `Pausado. Piloto Automático desligado e ${jr.agendados_cancelados || 0} envio(s) agendado(s) cancelado(s). Nada sai até você religar.` : 'Não consegui pausar pelo banco. Use o botão Pausar tudo na tela agora.');
+    return;
+  }
+
+  // /novo zera a conversa sem precisar de botão.
+  if (/^\/(novo|limpar|reset)\b/i.test(texto.trim())) {
+    await supaReq('/rest/v1/crm_wa_sessoes?on_conflict=telefone', {
+      method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+      body: JSON.stringify([{ telefone: chave, mensagens: [], atualizado_em: new Date().toISOString() }])
+    }).catch(function () {});
+    await enviar('Conversa zerada. Pode mandar.');
+    return;
+  }
+
+  const { responderWhatsApp } = await import('./copiloto.js');
+  const r = await responderWhatsApp({ texto: texto, historico: historico.slice(-20) });
+
+  await gravarSessao({ mensagens: r.historico.slice(-20), pendente: r.pendente || null });
+
+  await enviar(r.texto || 'Não consegui formular resposta. Tenta de novo?');
+
+  supaReq('/rest/v1/crm_logs', {
+    method: 'POST', headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      origem: canal, nivel: 'info', mensagem: 'resposta enviada',
+      contexto: { ferramentas: r.ferramentas, pendente: r.pendente ? r.pendente.tipo : null, modelo: 'claude-sonnet-5-5', tokens_entrada: r.tokIn, tokens_saida: r.tokOut, custo_usd: (r.tokIn * 3 + r.tokOut * 15) / 1000000 }
+    })
+  }).catch(function () {});
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   const { provider, health } = req.query;
@@ -1483,6 +1549,76 @@ export default async function handler(req, res) {
     } catch (e) { return res.status(502).json({ error: String(e) }); }
   }
 
+  // ── provider: telegram — o amigo no Telegram (mesmo cérebro do WhatsApp) ────
+  // Bot do Pedro (TELEGRAM_BOT_TOKEN). Webhook com segredo derivado do token. Só fala com o
+  // dono: o Telegram dele é pareado uma vez pelo link /start <código> (crm_configuracoes).
+  // GET ?acao=instalar (Bearer CRON_SECRET) registra o webhook e gera o link de pareamento.
+  if (provider === 'telegram') {
+    const TG = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
+    if (!TG) return res.status(200).json({ ok: true, ignorado: 'sem TELEGRAM_BOT_TOKEN' });
+    const tgApi = (metodo, corpo) => fetch('https://api.telegram.org/bot' + TG + '/' + metodo, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo || {}) }).then(r => r.json()).catch(e => ({ ok: false, description: String(e && e.message || e) }));
+    const segredoTg = createHash('sha256').update('tg:' + TG).digest('hex').slice(0, 48);
+    const cfgTg = async (chave) => { const r = await supaReq('/rest/v1/crm_configuracoes?chave=eq.' + chave + '&select=valor&limit=1').catch(() => null); return Array.isArray(r) && r[0] ? r[0].valor : null; };
+    const gravaCfg = (chave, valor) => supaReq('/rest/v1/crm_configuracoes?on_conflict=chave', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ chave, valor }) });
+
+    if (req.method === 'GET' && req.query.acao === 'instalar') {
+      const auth = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      if (!auth || auth !== (process.env.CRON_SECRET || '').trim()) return res.status(401).json({ error: 'não autorizado' });
+      const base = 'https://' + (req.headers.host || 'galeria-holding-sage.vercel.app');
+      const wh = await tgApi('setWebhook', { url: base + '/api/enrich?provider=telegram', secret_token: segredoTg, allowed_updates: ['message'], drop_pending_updates: true });
+      const me = await tgApi('getMe');
+      await tgApi('setMyCommands', { commands: [{ command: 'novo', description: 'Zerar a conversa' }, { command: 'agenda', description: 'O que tenho hoje' }] });
+      const codigo = randomBytes(12).toString('hex');
+      await gravaCfg('telegram_pareamento', { hash: createHash('sha256').update(codigo).digest('hex'), expira: new Date(Date.now() + 24 * 3600e3).toISOString() });
+      const usuario = me && me.result && me.result.username;
+      return res.status(200).json({ ok: !!(wh && wh.ok), webhook: wh && (wh.description || wh.ok), bot: usuario, link: usuario ? 'https://t.me/' + usuario + '?start=' + codigo : null });
+    }
+    if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
+    const recebido = String(req.headers['x-telegram-bot-api-secret-token'] || '');
+    if (recebido.length !== segredoTg.length || !timingSafeEqual(Buffer.from(recebido), Buffer.from(segredoTg))) return res.status(401).json({ error: 'unauthorized' });
+    const up = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const m = up.message;
+    if (!m || !m.chat) return res.status(200).json({ ok: true });
+    const chatId = m.chat.id; const userId = m.from && m.from.id;
+    const texto = String(m.text || '').trim();
+    const enviarTg = async (t) => {
+      let resto = String(t || '').trim();
+      while (resto) {
+        let corte = resto.length > 3900 ? resto.lastIndexOf('\n', 3900) : resto.length;
+        if (corte < 1500) corte = Math.min(3900, resto.length);
+        const parte = resto.slice(0, corte); resto = resto.slice(corte).trim();
+        const r = await tgApi('sendMessage', { chat_id: chatId, text: parte, parse_mode: 'Markdown', disable_web_page_preview: true });
+        if (!r || !r.ok) await tgApi('sendMessage', { chat_id: chatId, text: parte, disable_web_page_preview: true });
+      }
+    };
+    // Telegram reenvia se demorar: cada update só é tratado uma vez.
+    const novo = await supaReq('/rest/v1/crm_wa_inbox', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ wamid: 'tg:' + up.update_id }) })
+      .then(() => true).catch(e => !/23505|duplicate key/i.test(JSON.stringify(e || '')));
+    if (!novo) return res.status(200).json({ ok: true });
+
+    // Pareamento: /start <código> do link que o Pedro recebeu.
+    const dono = await cfgTg('telegram_dono_id');
+    const mStart = texto.match(/^\/start\s+([a-f0-9]{24})$/i);
+    if (mStart) {
+      const par = await cfgTg('telegram_pareamento');
+      const okPar = par && par.hash && new Date(par.expira) > new Date() && createHash('sha256').update(mStart[1].toLowerCase()).digest('hex') === par.hash;
+      if (okPar) {
+        await gravaCfg('telegram_dono_id', String(userId));
+        await gravaCfg('telegram_pareamento', null);
+        await enviarTg('Oi, Pedro! 👋 Agora sou seu braço direito comercial aqui no Telegram.\n\nPode me pedir coisas como:\n• *bom dia* (sua agenda do dia)\n• *como está a XP?*\n• *o que o Marcelo me falou no WhatsApp?*\n• *escreve um zap pro Marcelo cobrando o café*\n• *prepara um e-mail pra Camila da Livelo*\n\nE-mail só sai quando você responder *manda*.');
+        return res.status(200).json({ ok: true, pareado: true });
+      }
+      if (!dono) { await enviarTg('Link de pareamento inválido ou vencido.'); return res.status(200).json({ ok: true }); }
+    }
+    if (!dono || String(userId) !== String(dono)) { if (!dono) await enviarTg('Este bot é privado.'); return res.status(200).json({ ok: true, ignorado: 'não é o dono' }); }
+
+    await tgApi('sendChatAction', { chat_id: chatId, action: 'typing' });
+    const t2 = /^\/agenda\b/i.test(texto) ? 'o que tenho hoje?' : texto;
+    try { await conversarComAmigo({ chave: 'tg:' + chatId, texto: t2, enviar: enviarTg, canal: 'telegram' }); }
+    catch (e) { await enviarTg('Deu erro aqui do meu lado: ' + String(e && e.message || e).slice(0, 200)); }
+    return res.status(200).json({ ok: true });
+  }
+
   // ── provider: whatsapp — agente conversacional (URL /api/whatsapp via rewrite) ──
   //
   // GET  → handshake de verificação da Meta
@@ -1618,65 +1754,7 @@ export default async function handler(req, res) {
         });
         if (!marcou) continue;
 
-        if (!msg.texto) { await enviarWa(msg.de, 'Por enquanto eu só leio texto. Manda escrito que eu resolvo.'); continue; }
-
-        const sess = await supaReq('/rest/v1/crm_wa_sessoes?select=mensagens,pendente&telefone=eq.' + encodeURIComponent(msg.de))
-          .catch(function () { return []; });
-        const historico = (sess[0] && Array.isArray(sess[0].mensagens)) ? sess[0].mensagens : [];
-        const pendente = sess[0] && sess[0].pendente && sess[0].pendente.tipo ? sess[0].pendente : null;
-        const gravarSessao = (campos) => supaReq('/rest/v1/crm_wa_sessoes?on_conflict=telefone', {
-          method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-          body: JSON.stringify([Object.assign({ telefone: msg.de, atualizado_em: new Date().toISOString() }, campos)])
-        }).catch(function () {});
-
-        // Ação esperando o "manda" do Pedro (e-mail ou etapa). Só executa com a palavra dele;
-        // qualquer outra resposta descarta a ação (e segue a conversa normalmente).
-        if (pendente) {
-          const { CONFIRMA, CANCELA } = await import('../lib/amigo-wa.js');
-          if (CONFIRMA.test(msg.texto)) {
-            const { confirmarPendente } = await import('./copiloto.js');
-            let out;
-            try { out = await confirmarPendente(pendente); } catch (e) { out = 'Deu erro ao executar: ' + String(e && (e.message || e.msg) || e).slice(0, 160); }
-            await gravarSessao({ pendente: null, mensagens: historico.concat([{ role: 'user', content: msg.texto }, { role: 'assistant', content: out }]).slice(-20) });
-            await enviarWa(msg.de, out);
-            supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ origem: 'whatsapp', nivel: 'info', mensagem: 'ação confirmada pelo Pedro', contexto: { tipo: pendente.tipo, para: pendente.para || pendente.empresa || null } }) }).catch(function () {});
-            continue;
-          }
-          await gravarSessao({ pendente: null });
-          if (CANCELA.test(msg.texto) && msg.texto.trim().split(/\s+/).length <= 3) { await enviarWa(msg.de, 'Beleza, cancelei. Nada foi enviado.'); continue; }
-        }
-
-        // "pausar" desliga o Piloto Automático na hora e cancela os envios agendados.
-        if (/^\s*pausar( tudo)?\s*[.!]*\s*$/i.test(msg.texto)) {
-          const rp = await fetch(SUPA_URL + '/rest/v1/rpc/sdr_pausar_tudo', { method: 'POST', headers: svcH, body: JSON.stringify({ origem: 'whatsapp' }) });
-          const jr = rp.ok ? await rp.json().catch(() => ({})) : null;
-          await enviarWa(msg.de, jr ? `Pausado. Piloto Automático desligado e ${jr.agendados_cancelados || 0} envio(s) agendado(s) cancelado(s). Nada sai até você religar.` : 'Não consegui pausar pelo banco. Use o botão Pausar tudo na tela agora.');
-          continue;
-        }
-
-        // /novo zera a conversa sem precisar de botão.
-        if (/^\/(novo|limpar|reset)\b/i.test(msg.texto.trim())) {
-          await supaReq('/rest/v1/crm_wa_sessoes?on_conflict=telefone', {
-            method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-            body: JSON.stringify([{ telefone: msg.de, mensagens: [], atualizado_em: new Date().toISOString() }])
-          }).catch(function () {});
-          await enviarWa(msg.de, 'Conversa zerada. Pode mandar.');
-          continue;
-        }
-
-        const r = await responderWhatsApp({ texto: msg.texto, historico: historico.slice(-20) });
-
-        await gravarSessao({ mensagens: r.historico.slice(-20), pendente: r.pendente || null });
-
-        await enviarWa(msg.de, r.texto || 'Não consegui formular resposta. Tenta de novo?');
-
-        supaReq('/rest/v1/crm_logs', {
-          method: 'POST', headers: { Prefer: 'return=minimal' },
-          body: JSON.stringify({
-            origem: 'whatsapp', nivel: 'info', mensagem: 'resposta enviada',
-            contexto: { ferramentas: r.ferramentas, pendente: r.pendente ? r.pendente.tipo : null, modelo: 'claude-sonnet-5-5', tokens_entrada: r.tokIn, tokens_saida: r.tokOut, custo_usd: (r.tokIn * 3 + r.tokOut * 15) / 1000000 }
-          })
-        }).catch(function () {});
+        await conversarComAmigo({ chave: msg.de, texto: msg.texto, enviar: (t) => enviarWa(msg.de, t), canal: 'whatsapp' });
       } catch (e) {
         console.error('[wa] erro:', e && e.message);
         try { await enviarWa(msg.de, 'Deu erro aqui do meu lado: ' + String(e && e.message).slice(0, 200)); } catch {}
