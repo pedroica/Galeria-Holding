@@ -28,5 +28,6 @@ ok(textoDoPayload({ mimeType: 'multipart/alternative', parts: [{ mimeType: 'text
 ok(JSON.stringify(dominiosDaEmpresa({ website: 'xpinc.com' }, [{ email: 'a@xpi.com.br' }, { email: 'b@gmail.com' }])) === '["xpinc.com","xpi.com.br"]', 'todos os domínios: site e e-mails das pessoas');
 ok(/from:xpinc\.com .*from:xpi\.com\.br/.test(buscaGmail(['xpinc.com', 'xpi.com.br'])), 'busca no Gmail por todos os domínios');
 ok(contatosDoGmail([{ de: 'Ana <ana@xpi.com.br>', para: 'p@g.test' }], ['xpinc.com', 'xpi.com.br'], 'p@g.test').length === 1, 'acha pessoa em qualquer domínio da empresa');
+ok(contatosDoGmail([{ de: 'XP Investimentos <ola@info.xpi.com.br>', para: 'p@g.test' }], ['xpi.com.br'], 'p@g.test').length === 0, 'disparo de subdomínio (info.) não é pessoa');
 console.log(`\n${n - fail} ok, ${fail} falha(s)`);
 process.exit(fail ? 1 : 0);

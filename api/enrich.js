@@ -400,13 +400,13 @@ export default async function handler(req, res) {
       const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_SVC });
       if (!gm) return res.status(409).json({ error: 'Gmail não conectado. Conecte em Fila › Enviar.' });
       try {
-        const lista = await gmailReq('GET', '/messages?maxResults=40&q=' + encodeURIComponent(buscaGmail(dominios)), null, gm.token);
+        const lista = await gmailReq('GET', '/messages?maxResults=40&q=' + encodeURIComponent(buscaGmail(dominios) + ' -category:promotions'), null, gm.token);
         const ids = ((lista && lista.messages) || []).map(m => m.id).slice(0, 40);
         const metas = await Promise.all(ids.map(id => gmailReq('GET', '/messages/' + id + '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Date', null, gm.token).catch(() => null)));
         const H = (m, n) => (((m && m.payload && m.payload.headers) || []).find(h => h.name.toLowerCase() === n.toLowerCase()) || {}).value || '';
         const msgs = metas.filter(Boolean).map(m => ({ id: m.id, de: H(m, 'From'), para: H(m, 'To'), cc: H(m, 'Cc'), data: H(m, 'Date'), texto: '' }));
         // Assinaturas: corpo das mensagens mais novas que vieram do domínio (até 10).
-        const doDominio = msgs.filter(m => lerEnderecos(m.de).some(a => dominios.some(dm => (a.email.split('@')[1] || '').endsWith(dm)))).slice(0, 10);
+        const doDominio = msgs.filter(m => lerEnderecos(m.de).some(a => dominios.includes(a.email.split('@')[1] || ''))).slice(0, 10);
         await Promise.all(doDominio.map(async m => { const f = await gmailReq('GET', '/messages/' + m.id + '?format=full', null, gm.token).catch(() => null); if (f) m.texto = textoDoPayload(f.payload).slice(0, 8000); }));
         const achados = contatosDoGmail(msgs, dominios, gm.email);
         const ja = new Set(contatos.map(c => String(c.email || '').toLowerCase()).filter(Boolean));
