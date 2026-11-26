@@ -1906,7 +1906,7 @@ Mínimo 5 pessoas. SOMENTE o JSON, sem texto adicional.`;
     [
       {label:'Empresas tocadas', val:contadoresSemana.empresas, cor:'#60A5FA'},
       {label:'Decisores tocados', val:contadoresSemana.decisores, cor:'#818CF8'},
-      {label:'Reuniões marcadas', val:contadoresSemana.reunioes, cor:'#34D399', meta:40},
+      {label:'Reuniões marcadas', val:contadoresSemana.reunioes, cor:'#34D399', meta:(typeof META_REUNIOES_SEMANA !== 'undefined' ? META_REUNIOES_SEMANA : 10)},
     ].map(function(c){
       return React.createElement("div",{key:c.label,style:{display:'flex',flexDirection:'column',gap:2}},
         React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:18,fontWeight:700,color:c.cor}},

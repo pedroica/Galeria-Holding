@@ -3883,7 +3883,7 @@ function PainelPrazos(props) {
 }
 
 // ── Reuniões: meta da semana + próximas reuniões (crm_reunioes_v) ─────────────
-var META_REUNIOES_SEMANA = 40;
+var META_REUNIOES_SEMANA = 10; // meta definida pelo Pedro em 26/11/2026 (era 40)
 function PainelReunioes(props) {
   var mono = "'IBM Plex Mono',monospace";
   var P = window.Prazos;
@@ -4081,11 +4081,11 @@ function PainelMetas({ agencias }) {
           React.createElement("div", { style: { display: 'flex', gap: 16 } },
             React.createElement("span", { style: { fontFamily: mono, fontSize: 9, color: '#60A5FA' } }, week.enviados + ' enviados'),
             React.createElement("span", { style: { fontFamily: mono, fontSize: 9, color: '#34D399' } }, week.respondeu + ' respostas'),
-            React.createElement("span", { style: { fontFamily: mono, fontSize: 11, fontWeight: 700, color: week.total >= 40 ? '#34D399' : '#E24B4A' } }, week.total + '/40 reuniões')
+            React.createElement("span", { style: { fontFamily: mono, fontSize: 11, fontWeight: 700, color: week.total >= META_REUNIOES_SEMANA ? '#34D399' : '#E24B4A' } }, week.total + '/' + META_REUNIOES_SEMANA + ' reuniões')
           )
         ),
         React.createElement("div", { style: { width: '100%', height: 4, background: '#1A1A2E', borderRadius: 2, overflow: 'hidden', marginBottom: 12 } },
-          React.createElement("div", { style: { width: Math.min(100, (week.total / 40) * 100) + '%', height: '100%', background: week.total >= 40 ? '#34D399' : '#FF6B2B' } })
+          React.createElement("div", { style: { width: Math.min(100, (week.total / META_REUNIOES_SEMANA) * 100) + '%', height: '100%', background: week.total >= META_REUNIOES_SEMANA ? '#34D399' : '#FF6B2B' } })
         ),
         React.createElement("div", { style: { display: 'flex', flexWrap: 'wrap', gap: 6 } },
           AG.map(function(a) {

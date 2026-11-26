@@ -73,7 +73,7 @@ o mapeamento em `VISTA` e o caso `vista === '...' ?` na chain de telas.
 - **Prazo** = próximo passo de oportunidade aberta (`crm_oportunidades.proximo_passo` + `proximo_passo_em`, date).
   Regras puras em `prazos.js` (window.Prazos; testes em `tests/prazos.test.mjs`).
 - Tela Hoje → `PainelPrazos` (vencidos / hoje / esta semana / sem prazo; Feito, +1 dia útil, +1 semana, Definir prazo, Abrir)
-  e `PainelReunioes` (meta semanal `META_REUNIOES_SEMANA` + próximas reuniões).
+  e `PainelReunioes` (meta semanal `META_REUNIOES_SEMANA` = 10, em block3.js, usada também em Metas semanais e na Base + próximas reuniões).
 - Pipeline: salvar oportunidade aberta exige próximo passo + data; arrastar para etapa aberta sem prazo abre o formulário.
 - **Reuniões** = `crm_reunioes_v` (toques de reunião + entradas em "Primeira reunião"). O `crm_kanban` legado não conta mais.
 - Gmail (`gmail-crm`): data combinada vira prazo (`aplicarPrazoDoEmail`: só com resposta real, data futura e sem
