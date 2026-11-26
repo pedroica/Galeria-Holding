@@ -2647,7 +2647,20 @@ function App() {
       setAgenciaUuids(m);
     }).catch(function() {});
   }, []);
+  // Menu enxuto (26/11): telas agrupadas em sub-abas. Destinos antigos continuam
+  // valendo e caem na aba certa (botões da tela Hoje, retorno do OAuth etc.).
+  const [subAba, setSubAba] = useState({ fila: 'enviar', inteligencia: 'inteligencia', pipeline: 'pipeline', admin: null });
+  const NAV_ALIAS = { aprovar: ['fila', 'aprovar'], sdr: ['fila', 'agente'], fila: ['fila', 'enviar'], atividade: ['inteligencia', 'atividade'],
+    inteligencia: ['inteligencia', 'inteligencia'], holding: ['pipeline', 'pipeline'], blocklist: ['admin', 'blocklist'], templates: ['admin', 'templates'], copiloto: ['admin', 'copiloto'] };
+  const SUBABAS = {
+    fila: [['aprovar', 'Aprovar'], ['enviar', 'Enviar'], ['agente', 'Agente']],
+    pipeline: [['pipeline', 'Pipeline'], ['metas', 'Metas semanais'], ['legado', 'Kanban legado']],
+    inteligencia: [['inteligencia', 'Inteligência'], ['atividade', 'Atividade']],
+    admin: [['usuarios', 'Usuários', true], ['templates', 'Templates'], ['blocklist', 'Blocklist'], ['copiloto', 'Copiloto']]
+  };
   const navTo = (section, agId, tab) => {
+    const al = NAV_ALIAS[section];
+    if (al) { section = al[0]; setSubAba(prev => Object.assign({}, prev, { [al[0]]: al[1] })); }
     setNavSection(section);
     if (agId) { setAgenciaId(agId); setCurGrupo(GRUPO.find(g => g.id === agId) || GRUPO[0]); }
     if (tab) setAgenciaTab(tab);
@@ -2656,6 +2669,10 @@ function App() {
   const [cronAlerta, setCronAlerta] = useState(false);
   const [meuPapel, setMeuPapel] = useState('admin'); // default admin até verificar
   const [minhaAgenciaId, setMinhaAgenciaId] = useState(null);
+  const subAtual = navSection === 'admin' ? (subAba.admin || (meuPapel === 'admin' ? 'usuarios' : 'templates')) : subAba[navSection];
+  const VISTA = { fila: { aprovar: 'aprovar', agente: 'sdr', enviar: 'fila' }, pipeline: { pipeline: 'pipeline', metas: 'metas', legado: 'legado' },
+    inteligencia: { inteligencia: 'inteligencia', atividade: 'atividade' }, admin: { usuarios: 'admin', templates: 'templates', blocklist: 'blocklist', copiloto: 'copiloto' } };
+  const vista = VISTA[navSection] ? (VISTA[navSection][subAtual] || navSection) : navSection;
   const [acessoNegado, setAcessoNegado] = useState(false);
   useEffect(() => {
     function handleAbordagemCopiloto(e) {
@@ -3059,10 +3076,10 @@ function App() {
     }
   }, "GALERIA HOLDING")),
   React.createElement("div", { className:"tb-nav", style:{ display:'flex', alignItems:'stretch', flex:1 } },
-    [['hoje','Hoje'],['inteligencia','Inteligência'],['holding','Holding'],['agencia','Agências'],['aprovar','Aprovar'],['sdr','SDR'],['fila','Fila'],['base','Base'],['blocklist','Blocklist'],['templates','Templates'],['copiloto','Copiloto'],['atividade','Atividade'],['pipeline','Pipeline'],['admin','Admin'],['ferramentas','Ferramentas']].map(([s, l]) =>
+    [['hoje','Hoje'],['pipeline','Pipeline'],['fila','Fila'],['base','Base'],['inteligencia','Inteligência'],['agencia','Agências'],['admin','Admin']].map(([s, l]) =>
       React.createElement("div", {
         key: s,
-        onClick: () => { if (s === 'ferramentas') { setToolsOpen(true); } else { navTo(s, null, null); } },
+        onClick: () => { const sub = { fila: 'enviar', inteligencia: 'inteligencia', pipeline: 'pipeline' }[s]; if (sub) setSubAba(prev => Object.assign({}, prev, { [s]: sub })); setNavSection(s); },
         style: { display:'flex', alignItems:'center', padding:'0 16px', borderRight:'.5px solid #2D2D44', borderBottom: navSection === s ? '2px solid #FF6B2B' : '2px solid transparent', cursor:'pointer', fontFamily:'IBM Plex Mono,monospace', fontSize:10, color: navSection === s ? '#FF6B2B' : '#9B9BB4', letterSpacing:'.5px', transition:'all .15s', whiteSpace:'nowrap', flexShrink:0 }
       }, l)
     )
@@ -3077,7 +3094,7 @@ function App() {
   )), navSection === 'agencia' && React.createElement("div", { style:{ display:'flex', alignItems:'stretch', background:'#080810', borderBottom:'.5px solid #1A1A2E', paddingLeft: window.innerWidth < 768 ? 8 : 60, height:30, overflowX:'auto', WebkitOverflowScrolling:'touch', flexShrink:0 } },
     [{id:'global', name:'Todos', color:'#9B9BB4'}, ...ALL_AGENCIAS].map(a => React.createElement("div", { key:a.id, onClick:()=>navTo('agencia', a.id, null), style:{ display:'flex', alignItems:'center', padding:'0 12px', borderRight:'.5px solid #1A1A2E', borderBottom: agenciaId===a.id ? '2px solid '+a.color : '2px solid transparent', cursor:'pointer', fontFamily:'IBM Plex Mono,monospace', fontSize:9, color: agenciaId===a.id ? a.color : '#555', whiteSpace:'nowrap', flexShrink:0, transition:'all .15s' } }, a.name))
   ), navSection === 'agencia' && React.createElement("div", { style:{ display:'flex', alignItems:'stretch', background:'#080810', borderBottom:'.5px solid #1A1A2E', paddingLeft: window.innerWidth < 768 ? 8 : 60, height:26, overflowX:'auto', WebkitOverflowScrolling:'touch', flexShrink:0 } },
-    [['pipeline','Pipeline'],['noticias','Notícias'],['servicos','Serviços'],['cases','Cases'],['credenciais','Credenciais'],['textos','Textos'],['enviar','Enviar pipeline']].map(([t,l]) =>
+    [['pipeline','Pipeline'],['noticias','Notícias'],['servicos','Serviços'],['materiais','Materiais'],['enviar','Enviar pipeline']].map(([t,l]) =>
       React.createElement("div", { key:t, onClick:()=>setAgenciaTab(t), style:{ display:'flex', alignItems:'center', padding:'0 12px', fontFamily:'IBM Plex Mono,monospace', fontSize:9, cursor:'pointer', borderBottom: agenciaTab===t ? '2px solid #FF6B2B' : '2px solid transparent', color: agenciaTab===t ? '#FF6B2B' : '#555', transition:'all .15s', whiteSpace:'nowrap' } }, l)
     )
   ), showTutorial && /*#__PURE__*/React.createElement(TutorialOverlay, {
@@ -3095,7 +3112,10 @@ function App() {
     onClose: () => setDashOpen(false)
   }), toolsOpen && /*#__PURE__*/React.createElement(FerramentasModal, {
     onClose: () => setToolsOpen(false)
-  }), navSection === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, { navTo: navTo, meuPapel: meuPapel })) : navSection === 'inteligencia' ? React.createElement("div", { style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'} }, React.createElement(InteligenciaView, { navTo: navTo, meuPapel: meuPapel })) : navSection === 'holding' ? React.createElement(HoldingHome, { agencias: ALL_AGENCIAS, agenciaUuids: agenciaUuids }) : navSection === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : navSection === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : navSection === 'sdr' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(SdrView, { navTo: navTo })) : navSection === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : navSection === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : navSection === 'blocklist' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, typeof BlocklistView !== 'undefined' ? React.createElement(BlocklistView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Blocklist carregando...')) : navSection === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : navSection === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : navSection === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : navSection === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : navSection === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : null /* telas antigas (viewMode) removidas na limpeza de 26/11 */);
+  }), SUBABAS[navSection] && React.createElement(BarraSubAbas, {
+    abas: SUBABAS[navSection].filter(a => !a[2] || meuPapel === 'admin'),
+    atual: subAtual, onChange: t => setSubAba(prev => Object.assign({}, prev, { [navSection]: t }))
+  }), vista === 'hoje' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TelaHoje, { navTo: navTo, meuPapel: meuPapel })) : vista === 'inteligencia' ? React.createElement("div", { style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'} }, React.createElement(InteligenciaView, { navTo: navTo, meuPapel: meuPapel })) : vista === 'metas' ? React.createElement("div", { style:{flex:1,overflow:'auto'} }, React.createElement(PainelMetas, { agencias: ALL_AGENCIAS })) : vista === 'legado' ? React.createElement("div", { style:{flex:1,overflow:'auto'} }, React.createElement(LegacyKanbanTab, null)) : vista === 'agencia' ? React.createElement(AgenciaHome, { agencia: curAgencia, tab: agenciaTab, navTo: navTo, agenciaUuids: agenciaUuids }) : vista === 'aprovar' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(AprovacaoHoje, null)) : vista === 'sdr' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, React.createElement(SdrView, { navTo: navTo })) : vista === 'fila' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(FilaDoDia, null)) : vista === 'base' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(EmpresasView, { accs: accs, setAccs: setAccs, curGrupo: curGrupo, alertas: lsGet("gh_alertas_v2", []), onKanbanAdd: () => {} })) : vista === 'blocklist' ? React.createElement("div", { className:"panel", style:{flex:1,overflow:'auto'} }, typeof BlocklistView !== 'undefined' ? React.createElement(BlocklistView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Blocklist carregando...')) : vista === 'templates' ? React.createElement("div", { className:"ws", style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, React.createElement(TemplatesView, null)) : vista === 'copiloto' ? React.createElement("div", { style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'} }, typeof CopiloView !== 'undefined' ? React.createElement(CopiloView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Copiloto carregando...')) : vista === 'atividade' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof AtividadeView !== 'undefined' ? React.createElement(AtividadeView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Atividade carregando...')) : vista === 'pipeline' ? React.createElement("div", {style:{flex:1,overflow:'hidden',display:'flex',flexDirection:'column'}}, typeof PipelineGlobalView !== 'undefined' ? React.createElement(PipelineGlobalView, {meuPapel:meuPapel, minhaAgenciaId:minhaAgenciaId}) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Pipeline carregando...')) : vista === 'admin' ? (meuPapel==='admin' ? React.createElement("div", {style:{flex:1,overflow:'auto',display:'flex',flexDirection:'column'}}, typeof AdminView !== 'undefined' ? React.createElement(AdminView, null) : React.createElement("div",{style:{padding:32,color:'#555',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Admin carregando...')) : React.createElement("div",{style:{padding:32,color:'#EF4444',fontFamily:'IBM Plex Mono,monospace',fontSize:12}},'Acesso restrito a administradores.')) : null /* telas antigas (viewMode) removidas na limpeza de 26/11 */);
 }
 
 
@@ -3995,172 +4015,6 @@ function LegacyKanbanTab() {
   );
 }
 
-function HoldingHome({ agencias, agenciaUuids }) {
-  var COLS = [
-    {id:'Wishlist',          label:'Wishlist'},
-    {id:'Primeira reunião',  label:'1ª Reunião'},
-    {id:'Contato direto',    label:'Contato direto'},
-    {id:'Negociando direto', label:'Negociando'},
-    {id:'Concorrências',     label:'Concorrências'},
-    {id:'Negociação',        label:'Negociação'},
-  ];
-  var COR_ESTAGIO = {
-    'Wishlist':'#60A5FA','Primeira reunião':'#A78BFA','Contato direto':'#818CF8',
-    'Negociando direto':'#FBBF24','Concorrências':'#FB923C','Negociação':'#F472B6',
-    'Cliente ativo':'#34D399','Perdido':'#EF4444','Pausado':'#6B7280',
-  };
-  var AG = Array.isArray(agencias) ? agencias : [];
-  var uuids = agenciaUuids || {};
-  var uuidToAg = {};
-  AG.forEach(function(a) { if (uuids[a.id]) uuidToAg[uuids[a.id]] = a; });
-
-  var [cards, setCards] = React.useState([]);
-  var [loading, setLoading] = React.useState(true);
-  var [filterAg, setFilterAg] = React.useState('all');
-  var [filterCol, setFilterCol] = React.useState('all');
-  var [search, setSearch] = React.useState('');
-  var [dragging, setDragging] = React.useState(null);
-  var [tab, setTab] = React.useState('pipeline');
-
-  React.useEffect(function() {
-    function load() {
-      supaFetch('/rest/v1/crm_oportunidades?apagado_em=is.null&select=*&order=atualizado_em.desc&limit=500').then(function(d) {
-        setCards(Array.isArray(d) ? d : []);
-        setLoading(false);
-      }).catch(function() { setLoading(false); });
-    }
-    load();
-    window.addEventListener('crm-op-updated', load);
-    return function() { window.removeEventListener('crm-op-updated', load); };
-  }, []);
-
-  function agenciaFromCard(card) {
-    return uuidToAg[card.agencia_id] || {id: card.agencia_id || '—', name: '—', color: '#555'};
-  }
-
-  var visible = cards.filter(function(c) {
-    if (filterAg !== 'all' && c.agencia_id !== filterAg) return false;
-    if (filterCol !== 'all' && c.estagio !== filterCol) return false;
-    if (search) { var q = search.toLowerCase(); if (!(c.titulo||'').toLowerCase().includes(q) && !(c.oferta||'').toLowerCase().includes(q)) return false; }
-    return true;
-  });
-
-  var weekGoals = (function() {
-    var weeks = [];
-    var now = new Date();
-    for (var w = 0; w < 5; w++) {
-      var wStart = new Date(now); wStart.setDate(wStart.getDate() - wStart.getDay() - w * 7); wStart.setHours(0,0,0,0);
-      var wEnd = new Date(wStart); wEnd.setDate(wEnd.getDate() + 7);
-      var wCards = cards.filter(function(c) { var d = new Date(c.atualizado_em); return c.estagio === 'Primeira reunião' && d >= wStart && d < wEnd; });
-      var byAg = {}; wCards.forEach(function(c) { var ag = agenciaFromCard(c); byAg[ag.id] = (byAg[ag.id]||0) + 1; });
-      weeks.push({label: w===0?'Esta semana':'Sem -'+w, total: wCards.length, byAg: byAg});
-    }
-    return weeks;
-  })();
-
-  function moveCard(cardId, newEstagio) {
-    var agora = new Date().toISOString();
-    var op = cards.find(function(c) { return c.id === cardId; });
-    setCards(function(p) { return p.map(function(c) { return c.id===cardId ? Object.assign({},c,{estagio:newEstagio, atualizado_em:agora}) : c; }); });
-    supaFetch('/rest/v1/crm_oportunidades?id=eq.'+cardId, {method:'PATCH', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({estagio:newEstagio, atualizado_em:agora})});
-    var userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
-    if (op) {
-      supaFetch('/rest/v1/crm_auditoria', {method:'POST', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({tabela:'crm_oportunidades', registro_id:cardId, campo:'estagio', valor_de:op.estagio, valor_para:newEstagio, usuario_email:userEmail, criado_em:agora})});
-      supaFetch('/rest/v1/crm_oportunidade_eventos', {method:'POST', headers:{'Prefer':'return=minimal'}, body: JSON.stringify({oportunidade_id:cardId, tipo:'estagio', de:op.estagio, para:newEstagio})});
-    }
-    window.dispatchEvent(new CustomEvent('crm-op-updated'));
-  }
-
-  function renderCard(card) {
-    var ag = agenciaFromCard(card);
-    return React.createElement("div", {key:card.id, draggable:true, onDragStart:function(){setDragging(card.id);}, onDragEnd:function(){setDragging(null);},
-      style:{background:'#0D0D1A',border:'.5px solid #1A1A2E',borderLeft:'2px solid '+ag.color,borderRadius:6,padding:'8px 10px',cursor:'grab',marginBottom:6,userSelect:'none'}},
-      React.createElement("div",{style:{display:'flex',alignItems:'flex-start',justifyContent:'space-between',gap:4}},
-        React.createElement("div",{style:{fontSize:12,fontWeight:600,color:'#F5F5F5',lineHeight:1.3,flex:1}}, card.titulo||'—'),
-        React.createElement("span",{style:{fontSize:8,fontFamily:'IBM Plex Mono,monospace',background:ag.color+'22',color:ag.color,padding:'1px 5px',borderRadius:100,flexShrink:0,marginTop:1}}, ag.name)
-      ),
-      card.oferta && React.createElement("div",{style:{fontSize:10,color:'#9B9BB4',marginTop:3}}, card.oferta),
-      card.valor_estimado && React.createElement("div",{style:{fontSize:9,fontFamily:'IBM Plex Mono,monospace',color:'#34D399',marginTop:3}},
-        'R$ '+Number(card.valor_estimado).toLocaleString('pt-BR')
-      )
-    );
-  }
-
-  return React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden',background:'#060610'}},
-    React.createElement("div",{style:{display:'flex',alignItems:'stretch',background:'#08080F',borderBottom:'.5px solid #1A1A2E',flexShrink:0}},
-      [['pipeline','Pipeline'],['metas','Metas semanais'],['legado','Kanban legado']].map(function(t) {
-        return React.createElement("div",{key:t[0],onClick:function(){setTab(t[0]);},
-          style:{padding:'0 18px',display:'flex',alignItems:'center',height:30,fontFamily:'IBM Plex Mono,monospace',fontSize:9,cursor:'pointer',
-            borderBottom:tab===t[0]?'2px solid #FF6B2B':'2px solid transparent',
-            color:tab===t[0]?'#FF6B2B':'#555',transition:'all .15s',letterSpacing:'.5px'}
-        }, t[1].toUpperCase());
-      })
-    ),
-    tab === 'metas' ? React.createElement(PainelMetas, { agencias: agencias }) :
-    tab === 'legado' ? React.createElement(LegacyKanbanTab, null) :
-    React.createElement("div",{style:{display:'flex',flex:1,flexDirection:'column',overflow:'hidden'}},
-    React.createElement("div",{style:{display:'flex',alignItems:'center',gap:8,padding:'8px 16px',borderBottom:'.5px solid #1A1A2E',flexWrap:'wrap',flexShrink:0}},
-      COLS.map(function(c) {
-        var cnt = cards.filter(function(k){return k.estagio===c.id;}).length;
-        return React.createElement("div",{key:c.id,style:{display:'flex',alignItems:'center',gap:4,padding:'3px 10px',background:'#0D0D1A',borderRadius:4,border:'.5px solid #1A1A2E'}},
-          React.createElement("span",{style:{fontSize:14,fontWeight:700,color:COR_ESTAGIO[c.id]||'#FF6B2B',fontFamily:'IBM Plex Mono,monospace'}}, cnt),
-          React.createElement("span",{style:{fontSize:9,color:'#555',fontFamily:'IBM Plex Mono,monospace'}}, c.label)
-        );
-      }),
-      React.createElement("div",{style:{flex:1}}),
-      React.createElement("input",{value:search,onChange:function(e){setSearch(e.target.value);},placeholder:'Buscar…',style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:4,padding:'4px 8px',color:'#F5F5F5',fontSize:11,outline:'none',fontFamily:'IBM Plex Mono,monospace',width:130}}),
-      React.createElement("select",{value:filterAg,onChange:function(e){setFilterAg(e.target.value);},style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:4,padding:'4px 8px',color:'#9B9BB4',fontSize:11,outline:'none'}},
-        React.createElement("option",{value:'all'},'Todas agências'),
-        AG.map(function(a){ return uuids[a.id] ? React.createElement("option",{key:a.id,value:uuids[a.id]},a.name) : null; }).filter(Boolean)
-      ),
-      React.createElement("select",{value:filterCol,onChange:function(e){setFilterCol(e.target.value);},style:{background:'#0D0D1A',border:'.5px solid #2D2D44',borderRadius:4,padding:'4px 8px',color:'#9B9BB4',fontSize:11,outline:'none'}},
-        React.createElement("option",{value:'all'},'Todas etapas'),
-        COLS.map(function(c){return React.createElement("option",{key:c.id,value:c.id},c.label);})
-      )
-    ),
-    React.createElement("div",{style:{display:'flex',flex:1,overflow:'hidden'}},
-      React.createElement("div",{style:{display:'flex',flex:1,overflow:'auto',gap:6,padding:'10px 12px'}},
-        COLS.map(function(col) {
-          var colCards = visible.filter(function(c){return c.estagio===col.id;});
-          return React.createElement("div",{key:col.id,
-            onDragOver:function(e){e.preventDefault();},
-            onDrop:function(e){e.preventDefault();if(dragging)moveCard(dragging,col.id);},
-            style:{flex:'0 0 190px',background:'#08080F',border:'.5px solid #1A1A2E',borderRadius:8,display:'flex',flexDirection:'column',maxHeight:'100%'}},
-            React.createElement("div",{style:{padding:'7px 10px',borderBottom:'.5px solid #1A1A2E',display:'flex',alignItems:'center',justifyContent:'space-between',flexShrink:0}},
-              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:9,color:COR_ESTAGIO[col.id]||'#9B9BB4',fontWeight:700,letterSpacing:.5}}, col.label.toUpperCase()),
-              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:13,color:COR_ESTAGIO[col.id]||'#FF6B2B',fontWeight:700}}, colCards.length)
-            ),
-            React.createElement("div",{style:{overflowY:'auto',padding:'6px',flex:1}},
-              loading ? React.createElement("div",{style:{color:'#555',fontSize:11,textAlign:'center',marginTop:20}},'…') :
-              colCards.map(renderCard)
-            )
-          );
-        })
-      ),
-      React.createElement("div",{style:{width:210,borderLeft:'.5px solid #1A1A2E',background:'#08080F',display:'flex',flexDirection:'column',overflow:'auto',padding:'12px 14px',flexShrink:0}},
-        React.createElement("div",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:9,color:'#9B9BB4',fontWeight:700,letterSpacing:.5,marginBottom:4}}, 'METAS REUNIÕES'),
-        React.createElement("div",{style:{fontSize:8,color:'#555',fontFamily:'IBM Plex Mono,monospace',marginBottom:12}}, '40/sem · 3/agência'),
-        weekGoals.map(function(week, wi) {
-          return React.createElement("div",{key:wi,style:{marginBottom:14}},
-            React.createElement("div",{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}},
-              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:8,color:'#555'}}, week.label),
-              React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:11,fontWeight:700,color:week.total>=40?'#34D399':'#E24B4A'}}, week.total+'/40')
-            ),
-            AG.map(function(a) {
-              var n = week.byAg[a.id] || 0;
-              return React.createElement("div",{key:a.id,style:{display:'flex',alignItems:'center',gap:4,marginBottom:2}},
-                React.createElement("div",{style:{width:4,height:4,borderRadius:'50%',background:a.color,flexShrink:0}}),
-                React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:8,color:'#666',flex:1,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}, a.id),
-                React.createElement("span",{style:{fontFamily:'IBM Plex Mono,monospace',fontSize:8,color:n>=3?'#34D399':'#E24B4A',fontWeight:700}}, n+'/3')
-              );
-            })
-          );
-        })
-      )
-    )
-    )
-  );
-}
 
 function AgNoticiasTab({ agencia, agenciaUuids }) {
   var [noticias, setNoticias] = React.useState([]);
@@ -4302,6 +4156,25 @@ function AgServicosTab({ agencia, agenciaUuids }) {
       );
     })
   );
+}
+
+// Barra de sub-abas do menu enxuto (mesmo visual da barra de abas das agências).
+function BarraSubAbas({ abas, atual, onChange }) {
+  return React.createElement("div", { style:{ display:'flex', alignItems:'stretch', background:'#080810', borderBottom:'.5px solid #1A1A2E', paddingLeft: window.innerWidth < 768 ? 8 : 60, height:30, overflowX:'auto', WebkitOverflowScrolling:'touch', flexShrink:0 } },
+    abas.map(([t, l]) => React.createElement("div", { key:t, onClick:() => onChange(t), style:{ display:'flex', alignItems:'center', padding:'0 14px', fontFamily:'IBM Plex Mono,monospace', fontSize:10, cursor:'pointer', whiteSpace:'nowrap', color: atual === t ? '#F5F5F5' : '#6B6B85', borderBottom: atual === t ? '2px solid #FF6B2B' : '2px solid transparent' } }, l)));
+}
+
+// Agência › Materiais: Cases, Credenciais e Textos numa aba só.
+function AgMateriaisTab({ agencia, agenciaUuids }) {
+  const [sub, setSub] = React.useState('cases');
+  return React.createElement("div", { style:{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' } },
+    React.createElement("div", { style:{ display:'flex', gap:6, padding:'8px 16px', borderBottom:'.5px solid #1A1A2E', flexShrink:0 } },
+      [['cases','Cases'],['credenciais','Credenciais'],['textos','Textos']].map(([t, l]) => React.createElement("button", { key:t, onClick:() => setSub(t),
+        style:{ padding:'4px 10px', borderRadius:4, border:'.5px solid ' + (sub === t ? '#FF6B2B' : '#2D2D44'), background: sub === t ? 'rgba(255,107,43,.12)' : 'transparent', color: sub === t ? '#FF6B2B' : '#9B9BB4', fontFamily:'IBM Plex Mono,monospace', fontSize:10, cursor:'pointer' } }, l))),
+    React.createElement("div", { style:{ flex:1, overflow:'auto', display:'flex', flexDirection:'column' } },
+      sub === 'cases' ? React.createElement(AgCasesTab, { agencia: agencia, agenciaUuids: agenciaUuids })
+      : sub === 'credenciais' ? React.createElement(AgCredenciaisTab, { agencia: agencia })
+      : React.createElement(AgTextosTab, { agencia: agencia })));
 }
 
 function AgCasesTab({ agencia, agenciaUuids }) {
@@ -4908,6 +4781,7 @@ function AgenciaHome({ agencia, tab, navTo, agenciaUuids }) {
     ) :
     tab === 'noticias'    ? React.createElement(AgNoticiasTab,   {agencia:agencia, agenciaUuids:agenciaUuids}) :
     tab === 'servicos'    ? React.createElement(AgServicosTab,   {agencia:agencia, agenciaUuids:agenciaUuids}) :
+    tab === 'materiais'   ? React.createElement(AgMateriaisTab,  {agencia:agencia, agenciaUuids:agenciaUuids}) :
     tab === 'cases'       ? React.createElement(AgCasesTab,      {agencia:agencia, agenciaUuids:agenciaUuids}) :
     tab === 'credenciais' ? React.createElement(AgCredenciaisTab,{agencia:agencia}) :
     tab === 'textos'      ? React.createElement(AgTextosTab,     {agencia:agencia}) :
