@@ -292,7 +292,8 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
 - O gerador antigo (`gerar-fila-diario`) saiu dos crons da Vercel: não gerava nada desde 17/11 e o agente SDR o substitui.
   O botão manual "Gerar nova fila" (Fila › Aprovar) continua.
 - Uma tarefa agendada do **Claude Cowork** ("fila-do-dia", grava `crm_fila.origem='cowork'`) criou 331 rascunhos de 18/11 a 26/11,
-  nenhum enviado. Ela não está neste repositório: desligar no Cowork. Os 326 pendentes foram arquivados (status `pulado`,
+  nenhum enviado. Ela não está neste repositório: é a tarefa "Máquina de Reuniões: fila do dia" em claude.ai/scheduled-task,
+  **pausada em 26/11/2026** (religar no mesmo lugar). Os 326 pendentes foram arquivados (status `pulado`,
   `decisao_por='limpeza-26-11'`). Para desfazer:
   `UPDATE crm_fila SET status='rascunho', motivo_pulo=NULL, decisao_por=NULL, decisao_em=NULL WHERE decisao_por='limpeza-26-11';`
 
