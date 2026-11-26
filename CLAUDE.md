@@ -27,17 +27,19 @@ index.html          — entry point; carrega scripts em sequência via eval
 gh-store.js         — camada Supabase: supa client, auth, helpers crm_fila/kanban
 gh-core.js          — proxy fetch (Anthropic/Hunter/Lusha), chaves locais, WA verify
 block0_util.js      — utilitários compartilhados (scorecard, Claude helpers)
-block1.js           — Kanban (crm_kanban) + componentes de agenda/pipeline
-block2.js           — Login, configurações, modal Ferramentas
-block3.js           — Tela principal: Empresas (FigurinhasV2), AprovacaoHoje,
-                      FilaDoDia, AgenciaHome, OutboundView, TemperaturaView
-block4.js           — Dashboard, Notícias, Relatórios
-block5.js           — Kanban estratégico (KES)
-block6.js           — Calendário / Agenda
-block7.js           — Radar de leads + enriquecimento C-level
-block_agente.js     — Agente autônomo de prospecção
-block_atividade.js  — Tela Atividade (Bloco 6): gráfico toques/dia, tabela canal/agência,
-                      lista de execuções de crons, último relatório de sexta
+block1.js           — utilitários de agenda/contato ainda usados pelas telas
+block2.js           — Login, configurações
+block3.js           — Telas principais: Hoje, Inteligência, Holding, Agências, Aprovar,
+                      SDR, Fila do dia, Base, Templates, Admin
+block4.js           — Base de empresas (EmpresasView), Notícias, Relatórios
+block6.js           — Modal Ferramentas (backup & APIs)
+block_pipeline.js   — Pipeline (crm_oportunidades)
+block_copiloto.js   — Copiloto
+block_atividade.js  — Tela Atividade: toques/dia, canal/agência, execuções de crons
+block_blocklist.js  — Blocklist
+(Limpeza de 26/11/2026: block5, block7, régua, bom dia, diário, XP e Gaia Share
+ saíram do app — nenhuma tela os abria. Estão no histórico do git se precisar.
+ gaia-share-core.js continua, usado só pela página pública gaia.html.)
 api/enrich.js       — Proxy: Hunter, Lusha (person + empresa), health check
 api/gerar-fila.js   — Gera lote crm_fila (rascunho)
 api/cron/           — Crons diários/semanais

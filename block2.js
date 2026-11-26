@@ -35,12 +35,6 @@ function calcularScore(empresa, accs, grupoId, alertas) {
   score += fitAlto ? 20 : 10;
   return Math.min(100, score);
 }
-function scoreCor(s) {
-  if (s >= 80) return "#E24B4A";
-  if (s >= 60) return "#EF9F27";
-  if (s >= 40) return "#FF6B2B";
-  return "#9B9BB4";
-}
 function scoreCls(s) {
   if (s >= 80) return "score-urgent";
   if (s >= 60) return "score-high";
@@ -69,39 +63,6 @@ async function claudeSearch(prompt, maxTokens) {
           type: "web_search_20250305",
           name: "web_search"
         }],
-        messages: [{
-          role: "user",
-          content: prompt
-        }]
-      }),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
-    const d = await r.json();
-    return (d.content || []).filter(b => b.type === "text").map(b => b.text).join("\n");
-  } catch (e) {
-    clearTimeout(timeout);
-    return null;
-  }
-}
-async function claudeAsk(prompt, maxTokens) {
-  if (!getClaudeKey()) {
-    return null;
-  }
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 30000);
-  try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": getClaudeKey(),
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: maxTokens || 2000,
         messages: [{
           role: "user",
           content: prompt
@@ -147,33 +108,6 @@ function lsSet(key, val) {
       alert('⚠️ Armazenamento local cheio. Exporte um backup (🛟 Ferramentas) e limpe dados antigos para continuar salvando.');
     }
   }
-}
-function lsMerge(key, patch) {
-  const cur = lsGet(key, {});
-  lsSet(key, {
-    ...cur,
-    ...patch
-  });
-}
-function getWeekKey(offsetWeeks) {
-  const d = new Date();
-  d.setDate(d.getDate() + (offsetWeeks || 0) * 7);
-  const jan1 = new Date(d.getFullYear(), 0, 1);
-  const wk = Math.ceil(((d - jan1) / 86400000 + jan1.getDay() + 1) / 7);
-  return d.getFullYear() + "-W" + String(wk).padStart(2, "0");
-}
-function getWeekLabel(weekKey) {
-  if (!weekKey) return "";
-  const [year, w] = weekKey.split("-W");
-  const jan1 = new Date(parseInt(year), 0, 1);
-  const days = (parseInt(w) - 1) * 7 - jan1.getDay() + 1;
-  const s = new Date(jan1.getTime() + days * 86400000);
-  const e = new Date(s.getTime() + 4 * 86400000);
-  const f = d => d.toLocaleDateString("pt-BR", {
-    day: "2-digit",
-    month: "short"
-  });
-  return `Semana ${w} — ${f(s)} a ${f(e)} ${year}`;
 }
 function ini(nome) {
   return (nome || "?").split(" ").slice(0, 2).map(w => w[0] || "").join("").toUpperCase();
@@ -270,133 +204,6 @@ function TutorialOverlay({
     className: "gh-btn-ghost",
     onClick: finish
   }, "Pular"))));
-}
-function Top10View({
-  accs,
-  alertas,
-  curGrupo,
-  onEmpresaClick
-}) {
-  const empresas = (typeof PROSP !== "undefined" ? PROSP : []).filter(e => e.setor);
-  const scored = empresas.map(e => ({
-    ...e,
-    score: calcularScore(e, accs, curGrupo.id, alertas)
-  })).sort((a, b) => b.score - a.score).slice(0, 10);
-  return /*#__PURE__*/React.createElement("div", {
-    style: {
-      display: "flex",
-      flexDirection: "column",
-      height: "100%",
-      overflow: "hidden",
-      background: "#0D0D0D"
-    }
-  }, /*#__PURE__*/React.createElement("div", {
-    style: {
-      padding: "16px 20px",
-      borderBottom: ".5px solid #2D2D44",
-      display: "flex",
-      alignItems: "center",
-      gap: 12,
-      flexShrink: 0
-    }
-  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 16,
-      fontWeight: 500,
-      color: "#F5F5F5",
-      letterSpacing: -.3
-    }
-  }, "🎯 Top 10 Empresas"), /*#__PURE__*/React.createElement("div", {
-    style: {
-      fontSize: 10,
-      fontFamily: "IBM Plex Mono,monospace",
-      color: "#9B9BB4",
-      marginTop: 2
-    }
-  }, "Priorizadas por score — ", curGrupo.name)), /*#__PURE__*/React.createElement("div", {
-    style: {
-      marginLeft: "auto",
-      fontSize: 9,
-      fontFamily: "IBM Plex Mono,monospace",
-      color: "#9B9BB4"
-    }
-  }, "Atualizado agora")), /*#__PURE__*/React.createElement("div", {
-    style: {
-      flex: 1,
-      overflowY: "auto",
-      padding: "16px 20px"
-    }
-  }, scored.map((e, i) => {
-    const sc = e.score;
-    const g = getGrad(e.nome);
-    return /*#__PURE__*/React.createElement("div", {
-      key: e.rank,
-      className: "top10-row",
-      onClick: () => onEmpresaClick && onEmpresaClick(e)
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "top10-rank"
-    }, "#", i + 1), /*#__PURE__*/React.createElement("div", {
-      style: {
-        width: 36,
-        height: 36,
-        borderRadius: "50%",
-        background: `linear-gradient(135deg,${g[0]},${g[1]})`,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        fontSize: 12,
-        fontWeight: 500,
-        color: "#fff",
-        flexShrink: 0
-      }
-    }, ini(e.nome)), /*#__PURE__*/React.createElement("div", {
-      style: {
-        flex: 1,
-        minWidth: 0
-      }
-    }, /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 12,
-        fontWeight: 500,
-        color: "#F5F5F5",
-        overflow: "hidden",
-        textOverflow: "ellipsis",
-        whiteSpace: "nowrap"
-      }
-    }, e.nome), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 9,
-        fontFamily: "IBM Plex Mono,monospace",
-        color: "#9B9BB4",
-        marginTop: 2
-      }
-    }, e.setor)), /*#__PURE__*/React.createElement("div", {
-      className: "score-badge " + scoreCls(sc),
-      style: {
-        width: 38,
-        height: 38
-      }
-    }, sc), /*#__PURE__*/React.createElement("div", {
-      style: {
-        fontSize: 8,
-        fontFamily: "IBM Plex Mono,monospace",
-        padding: "2px 8px",
-        borderRadius: 100,
-        background: sc >= 80 ? "rgba(226,75,74,.1)" : sc >= 60 ? "rgba(239,159,39,.1)" : "rgba(255,107,43,.1)",
-        color: scoreCor(sc),
-        border: "1px solid " + scoreCor(sc) + "44",
-        flexShrink: 0
-      }
-    }, sc >= 80 ? "URGENTE" : sc >= 60 ? "ALTA" : sc >= 40 ? "MÉDIA" : "BAIXA"));
-  }), scored.length === 0 && /*#__PURE__*/React.createElement("div", {
-    style: {
-      textAlign: "center",
-      padding: 60,
-      color: "#9B9BB4",
-      fontFamily: "IBM Plex Mono,monospace",
-      fontSize: 12
-    }
-  }, "Nenhuma empresa encontrada")));
 }
 function AbordagemModal({
   decisor,
