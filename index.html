@@ -672,33 +672,61 @@ select.kes-input{cursor:pointer}
       console.log('[Mailing] OK: '+Object.keys(seed).length+' empresas migradas');
     }catch(e){console.warn('[Mailing] Erro:',e);}
   }
-  function loadScript(src){
+  // Conexão instável (26/11): um bloco chegou com 200 e corpo VAZIO, nada foi definido
+  // e o app ficou em branco sem aviso. Agora cada arquivo tem até 3 tentativas (sem
+  // cache nas repetições) e, se ainda falhar, aparece um aviso com botão de recarregar.
+  var falhasCarga = [];
+  var espera = function(ms){ return new Promise(function(r){ setTimeout(r, ms); }); };
+  function loadScriptUmaVez(src){
     return new Promise(function(res,rej){
       var el=document.createElement('script');
       el.src=src; el.onload=res;
-      el.onerror=function(){rej(new Error('Falha ao carregar '+src));};
+      el.onerror=function(){ el.remove(); rej(new Error('Falha ao carregar '+src)); };
       document.body.appendChild(el);
     });
+  }
+  async function loadScript(src){
+    for(var t=1;t<=3;t++){
+      try{ return await loadScriptUmaVez(t===1 ? src : src+'?r='+Date.now()); }
+      catch(e){ if(t===3) throw e; await espera(800*t); }
+    }
   }
   // Blocos React: executados via eval global (mesma semantica do
   // babel-standalone original — function/var globais, const/let
   // isolados por bloco, evitando colisao de 'useState' etc.)
+  async function baixarBloco(src){
+    for(var t=1;t<=3;t++){
+      try{
+        var r = await fetch(t===1 ? src : src+'?r='+Date.now(), t===1 ? undefined : { cache: 'no-store' });
+        if(!r.ok) throw new Error('HTTP '+r.status+' em '+src);
+        var code = await r.text();
+        if(code.trim().length < 50) throw new Error('arquivo vazio: '+src);
+        return code;
+      }catch(e){ if(t===3) throw e; console.warn('[carga] tentando de novo', src, e.message); await espera(800*t); }
+    }
+  }
   async function runBlock(src){
-    var code = await fetch(src).then(function(r){
-      if(!r.ok) throw new Error('HTTP '+r.status+' em '+src);
-      return r.text();
-    });
+    var code = await baixarBloco(src);
     (0,eval)(code + "\n//# sourceURL=" + src);
+  }
+  function avisoFalhaCarga(){
+    if(!falhasCarga.length) return;
+    var d=document.createElement('div');
+    d.style.cssText='position:fixed;left:0;right:0;top:0;z-index:99999;background:#2A0E0E;border-bottom:1px solid #E24B4A;color:#F5F5F5;font:12px IBM Plex Mono,monospace;padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+    d.innerHTML='<span>Parte do app não carregou (conexão instável): '+falhasCarga.join(', ')+'.</span>';
+    var b=document.createElement('button'); b.textContent='Recarregar'; b.style.cssText='background:#FF6B2B;color:#fff;border:0;border-radius:4px;padding:5px 12px;font:inherit;cursor:pointer';
+    b.onclick=function(){ location.reload(); }; d.appendChild(b); document.body.appendChild(d);
   }
   await migrarSeed();
   // scripts classicos (sem const globais duplicados)
   for(var s0 of ['gh-store.js','gh-core.js','block0_util.js','templates_agencias.js','prazos.js']){
-    try{ await loadScript(s0); }catch(e){ console.error(e); }
+    try{ await loadScript(s0); }catch(e){ console.error(e); falhasCarga.push(s0); }
   }
   // blocos react pre-compilados
   for(var s1 of ['block1.js','block2.js','block_copiloto.js','block_atividade.js','block_pipeline.js','block3.js','block6.js','block4.js','block_blocklist.js']){
-    try{ await runBlock(s1); }catch(e){ console.error(e); }
+    try{ await runBlock(s1); }catch(e){ console.error(e); falhasCarga.push(s1); }
   }
+  avisoFalhaCarga();
   if('serviceWorker' in navigator && location.protocol.indexOf('http')===0){
     navigator.serviceWorker.register('sw.js').catch(function(){});
   }
