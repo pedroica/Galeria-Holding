@@ -3689,7 +3689,7 @@ function PainelAgente(props) {
   var acoes = [];
   if (!d.gmail.connected) acoes.push({ t: 'Conectar o Gmail: sem ele nenhum rascunho é criado', c: '#E24B4A', fn: nav('sdr') });
   if (d.respostas) acoes.push({ t: d.respostas + ' resposta(s) de prospect para ler', c: '#34D399', fn: nav('sdr') });
-  if (d.sugGmail) acoes.push({ t: d.sugGmail + ' mudança(s) de pipeline sugerida(s) pelo Gmail para você decidir', c: '#818CF8', fn: nav('inteligencia') });
+  if (d.sugGmail) acoes.push({ t: d.sugGmail + ' mudança(s) de pipeline sugerida(s) pelas conversas (Gmail e WhatsApp) para você decidir', c: '#818CF8', fn: nav('inteligencia') });
   if (d.rascunhosAbertos) acoes.push({ t: 'Revisar e enviar ' + d.rascunhosAbertos + ' rascunho(s) na pasta Rascunhos do Gmail', c: '#60A5FA', href: 'https://mail.google.com/mail/' + (d.gmail.email ? '?authuser=' + encodeURIComponent(d.gmail.email) : 'u/0/') + '#drafts' });
   if (d.waProntos) acoes.push({ t: d.waProntos + ' WhatsApp pronto(s): abrir em sequência', c: '#34D399', fn: nav('fila', 'whatsapp') });
   if (d.erros.length) acoes.push({ t: d.erros.length + ' erro(s) nas últimas 24h: ver Atividade', c: '#E24B4A', fn: nav('atividade') });
