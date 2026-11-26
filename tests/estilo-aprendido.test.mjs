@@ -43,6 +43,7 @@ ok(/EXATAMENTE como ela/.test(pr.system) && /\[1\] \(email · assunto: projeto\)
 const perfil = { perfil: { resumo: 'Direto e informal, fala como amigo.', regras: ['Começa com "Fala, <nome>"'], aberturas: ['Fala Ricardo, tudo certo?'], fechamentos: ['Abs'], expressoes: ['bora', 'rapidinho'], evitar: ['linguagem corporativa'], whatsapp: 'Curto, sem pontuação final.', exemplos: ['Bora marcar um café semana que vem?'] } };
 const ls = linhasEstiloAprendido(perfil, 'whatsapp').join('\n');
 ok(/JEITO DE ESCREVER DO PEDRO/.test(ls) && /bora, rapidinho/.test(ls) && /No WhatsApp: Curto/.test(ls) && /"Bora marcar/.test(ls), 'linhas do estilo para o prompt (com WhatsApp)');
+ok(/NUNCA os erros/.test(ls), 'imita o jeito, nunca os erros de digitação');
 ok(!/No WhatsApp/.test(linhasEstiloAprendido(perfil, 'email').join('\n')) && linhasEstiloAprendido(null).length === 0, 'sem perfil, nada; e-mail não leva a regra de WhatsApp');
 ok(/JEITO DE ESCREVER DO PEDRO/.test(promptWhatsappPipeline({ op: { estagio: 'Wishlist' }, estiloAprendido: linhasEstiloAprendido(perfil, 'whatsapp') }).system), 'follow-up do Pipeline usa o estilo aprendido');
 
