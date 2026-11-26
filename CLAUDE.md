@@ -343,6 +343,14 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
 - **E-mail sai pelo Gmail só no clique "Enviar agora" do Pedro (com confirmação)**; WhatsApp abre o app com o texto
   (wa.me) e o Pedro aperta enviar. Os dois gravam toque em `crm_toques` e nota em `crm_oportunidade_eventos`.
 
+## Jeito de escrever do Pedro (26/11/2026)
+
+- Job `aprender-estilo` (Vercel, segundas 9h UTC, ou rodar na hora): lê os Enviados do Gmail (12 meses), tira o que o
+  agente escreveu (parecido com `crm_fila`/`crm_oportunidade_mensagens`), encaminhados, massa e repetidos, soma os
+  follow-ups do Pipeline que o Pedro editou (`corpo` ≠ `corpo_original`, inclusive WhatsApp) e pede à IA (Opus) um perfil.
+- Perfil em `crm_configuracoes.estilo_pedro_aprendido` (`lib/estilo-aprendido.js`). Entra em toda redação via
+  `memoriaParaPrompt` (SDR, blitz, parabéns) e no follow-up do Pipeline (`estiloAprendido`).
+
 ## Fila antiga desligada (26/11/2026)
 
 - O gerador antigo (`gerar-fila-diario`) saiu dos crons da Vercel: não gerava nada desde 17/11 e o agente SDR o substitui.

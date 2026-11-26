@@ -10,6 +10,7 @@ import { SCHEMA_CAPTURA, promptCaptura, casarEmpresa, casarPessoa, normalizarCel
 import { pessoaLusha, saldoDoDia } from '../lib/lusha.js';
 import { gerarJSON as gerarJSONllm, gerarComBusca } from '../lib/llm.js';
 import { promptWhatsappPipeline, lerResposta, checarWhatsapp, escolherContato, numeroWa, linkWhatsapp } from '../lib/wa-pipeline.js';
+import { linhasEstiloAprendido } from '../lib/estilo-aprendido.js';
 import { dominioDaEmpresa, dominiosDaEmpresa, contatosDoGmail, lerEnderecos, buscaGmail, linkLinkedin, textoDoPayload } from '../lib/contatos-conta.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
 import { analisarEdicao } from '../lib/sdr-aprendizado.js';
@@ -529,18 +530,20 @@ export default async function handler(req, res) {
     }
 
     // gerar
-    const [toques, eventos, ags] = await Promise.all([
+    const [toques, eventos, ags, est] = await Promise.all([
       empId ? supaReq('/rest/v1/crm_toques?empresa_id=eq.' + empId + '&select=canal,direcao,resultado,assunto,resumo,data,criado_em&order=criado_em.desc&limit=10') : null,
       supaReq('/rest/v1/crm_oportunidade_eventos?oportunidade_id=eq.' + opId + '&select=tipo,de,para,texto,criado_em&order=criado_em.desc&limit=10'),
-      op.agencia_id ? supaReq('/rest/v1/crm_agencias?id=eq.' + op.agencia_id + '&select=nome&limit=1') : null
+      op.agencia_id ? supaReq('/rest/v1/crm_agencias?id=eq.' + op.agencia_id + '&select=nome&limit=1') : null,
+      supaReq('/rest/v1/crm_configuracoes?chave=eq.estilo_pedro_aprendido&select=valor&limit=1')
     ]);
     const contato = escolherContato(contatos, limpaId(body.decisor_id), canal);
-    const pr = promptWhatsappPipeline({ op, empresa, contato, toques: Array.isArray(toques) ? toques : [], eventos: Array.isArray(eventos) ? eventos : [], instrucao: body.instrucao, agencia: Array.isArray(ags) && ags[0] ? ags[0].nome : '', hoje: hojeStr, canal });
+    const estiloAprendido = linhasEstiloAprendido(Array.isArray(est) && est[0] ? est[0].valor : null, canal);
+    const pr = promptWhatsappPipeline({ op, empresa, contato, toques: Array.isArray(toques) ? toques : [], eventos: Array.isArray(eventos) ? eventos : [], instrucao: body.instrucao, agencia: Array.isArray(ags) && ags[0] ? ags[0].nome : '', hoje: hojeStr, canal, estiloAprendido });
     const g = await gerarComBusca({ system: pr.system, content: pr.user, supaUrl: SUPA_URL, serviceKey: SUPA_SVC, envKey: ANTHROPIC_KEY });
     const r = lerResposta(g.texto);
     if (!r) return res.status(502).json({ error: 'A IA não devolveu a mensagem. Tente de novo.' + (g.erro ? ' (' + g.erro + ')' : '') });
     const fontes = r.fontes.concat((g.urls || []).filter(x => !r.fontes.includes(x))).slice(0, 6);
-    const salvo = await supaReq('/rest/v1/crm_oportunidade_mensagens', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ oportunidade_id: opId, decisor_id: contato ? contato.id : null, canal, assunto: r.assunto || null, corpo: r.mensagem, fato_usado: r.fato_usado || null, fontes, instrucao: body.instrucao ? String(body.instrucao).slice(0, 500) : null }) }).catch(() => null);
+    const salvo = await supaReq('/rest/v1/crm_oportunidade_mensagens', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ oportunidade_id: opId, decisor_id: contato ? contato.id : null, canal, assunto: r.assunto || null, corpo: r.mensagem, corpo_original: r.mensagem, fato_usado: r.fato_usado || null, fontes, instrucao: body.instrucao ? String(body.instrucao).slice(0, 500) : null }) }).catch(() => null);
     log('mensagem do pipeline gerada', { canal, buscas: g.buscas || 0 });
     return res.status(200).json({
       id: Array.isArray(salvo) && salvo[0] ? salvo[0].id : null,
