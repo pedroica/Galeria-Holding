@@ -1,7 +1,7 @@
 // Proxy unificado: Hunter.io, Lusha, Microsoft Graph e health check.
 // Consolida múltiplas integrações num único handler para respeitar
 // o limite de 12 Serverless Functions do plano Hobby da Vercel.
-import { randomBytes, createHmac, timingSafeEqual } from 'crypto';
+import { randomBytes, createHmac, timingSafeEqual, createHash } from 'crypto';
 import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -307,6 +307,10 @@ export default async function handler(req, res) {
     return res.status(200).json({
       ok: true,
       claude: !!ANTHROPIC_KEY, hunter: !!HUNTER_KEY, lusha: !!LUSHA_KEY,
+      // Qual chave do Lusha está em uso e uma impressão digital curta (hash), nunca o valor.
+      lusha_chave: process.env.LUSHA_API_KEY ? 'LUSHA_API_KEY' : (process.env.LUSHA_KEY ? 'LUSHA_KEY' : null),
+      lusha_impressao: (process.env.LUSHA_API_KEY || LUSHA_KEY) ? createHash('sha256').update(String(process.env.LUSHA_API_KEY || LUSHA_KEY).trim()).digest('hex').slice(0, 8) : null,
+      lusha_chaves_diferentes: !!(process.env.LUSHA_API_KEY && process.env.LUSHA_KEY && process.env.LUSHA_API_KEY.trim() !== process.env.LUSHA_KEY.trim()),
       graph: !!MS_CLIENT_ID, sig: !!SIG_B64,
       // Diagnóstico do agente de WhatsApp: só presença, nunca o valor.
       whatsapp: {
