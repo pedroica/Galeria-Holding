@@ -149,9 +149,16 @@
     const cor = ehEmail ? '#60A5FA' : '#34D399';
 
     async function chamar(payload) {
-      const r = await fetch('/api/enrich?provider=wa-pipeline', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getJwt() }, body: JSON.stringify(Object.assign({ oportunidade_id: op.id, canal }, payload)) });
+      const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 90000);
+      let r;
+      try {
+        r = await fetch('/api/enrich?provider=wa-pipeline', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getJwt() }, body: JSON.stringify(Object.assign({ oportunidade_id: op.id, canal }, payload)) });
+      } catch (e) { throw new Error(e && e.name === 'AbortError' ? 'Demorou demais (mais de 1 min). Tente de novo.' : 'Sem conexão com o servidor. Tente de novo.'); }
+      finally { clearTimeout(timer); }
       const j = await r.json().catch(() => ({}));
-      if (!r.ok) throw new Error(j.error || ('erro ' + r.status));
+      if (r.status === 401) throw new Error('Sua sessão expirou: saia e entre de novo no CRM.');
+      if (r.status === 504) throw new Error('A pesquisa demorou demais. Tente de novo (ou escreva um objetivo mais direto).');
+      if (!r.ok) throw new Error(j.error || ('Erro ' + r.status + '. Tente de novo.'));
       return j;
     }
     async function gerar() {
@@ -376,7 +383,7 @@
         ),
 
         // Follow-up (WhatsApp ou e-mail) com pesquisa na internet
-        ehMinha && React.createElement(WhatsappComInternet, { key: 'wa-' + op.id, op }),
+        React.createElement(WhatsappComInternet, { key: 'wa-' + op.id, op }),
 
         // Ações
         meuPapel === 'admin' && React.createElement('div', { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' } },
@@ -631,22 +638,17 @@
       setAgencias(agsArr);
       if (window.__abrirOportunidade) { const alvo = opsArr.find(o => o.id === window.__abrirOportunidade); window.__abrirOportunidade = null; if (alvo) setDetalhe(alvo); }
 
-      const empIds = [...new Set(opsArr.filter(o => o.empresa_id).map(o => o.empresa_id))];
-      if (empIds.length > 0) {
-        const emps = await supa('crm_empresas?id=in.(' + empIds.join(',') + ')&select=id,nome&limit=500');
-        const gs = await supa('crm_gmail_status?empresa_id=in.(' + empIds.join(',') + ')&select=*&limit=500');
-        if (Array.isArray(gs)) { const g = {}; gs.forEach(x => { g[x.empresa_id] = x; }); setGmailStatus(g); }
-        if (Array.isArray(emps)) {
-          const m = {};
-          emps.forEach(e => { m[e.id] = e.nome; });
-          setEmpresasMap(m);
-        }
-      }
-
-      // Pedidos de atualização pendentes
-      const evs = await supa('crm_oportunidade_eventos?tipo=eq.pedido_atualizacao&order=criado_em.desc&limit=200');
-      setEventos(Array.isArray(evs) ? evs : []);
+      // Mostra o quadro já com os cards; nomes, status do Gmail e pedidos chegam em paralelo.
       setLoading(false);
+      const empIds = [...new Set(opsArr.filter(o => o.empresa_id).map(o => o.empresa_id))];
+      const [emps, gs, evs] = await Promise.all([
+        empIds.length ? supa('crm_empresas?id=in.(' + empIds.join(',') + ')&select=id,nome&limit=500') : [],
+        empIds.length ? supa('crm_gmail_status?empresa_id=in.(' + empIds.join(',') + ')&select=*&limit=500') : [],
+        supa('crm_oportunidade_eventos?tipo=eq.pedido_atualizacao&order=criado_em.desc&limit=200')
+      ]);
+      if (Array.isArray(gs)) { const g = {}; gs.forEach(x => { g[x.empresa_id] = x; }); setGmailStatus(g); }
+      if (Array.isArray(emps)) { const m = {}; emps.forEach(e => { m[e.id] = e.nome; }); setEmpresasMap(m); }
+      setEventos(Array.isArray(evs) ? evs : []);
     }
 
     useEffect(() => { carregar(); }, [agenciaFiltro]);
