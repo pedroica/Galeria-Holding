@@ -37,7 +37,7 @@ ok(bz.includes(ESTILO_PEDRO[1]) && /café/.test(bz), 'blitz escreve no estilo do
 
 // Liderança de marketing conta como contexto de apresentação (rascunho revisado pelo Pedro)
 const { contextoDoLead } = await import('../lib/sdr-meta.js');
-ok(contextoDoLead({ cargo: 'Diretora de Marketing' }).some(c => c.tipo === 'prioridade') && contextoDoLead({ cargo: 'Gerente Financeiro' }).length === 0, 'cargo de marketing vira contexto; financeiro não');
+ok(contextoDoLead({ cargo: 'Diretora de Marketing' }).some(c => c.tipo === 'prioridade') && contextoDoLead({ cargo: 'Founder, Chief Executive Officer' }).length === 1 && contextoDoLead({ cargo: 'Gerente Financeiro' }).length === 0 && contextoDoLead({ cargo: 'Gerente de Rh' }).length === 0, 'cargo de marketing ou direção geral vira contexto; financeiro/RH não');
 ok(contextoDoLead({ observacoes: 'E-mail enriquecido via Lusha em 26/11 (work)' }).length === 0, 'nota de enriquecimento não é relação');
 
 console.log(`\n${n - fail} ok, ${fail} falha(s)`);
