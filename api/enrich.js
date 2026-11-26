@@ -10,7 +10,7 @@ import { SCHEMA_CAPTURA, promptCaptura, casarEmpresa, casarPessoa, normalizarCel
 import { pessoaLusha, saldoDoDia } from '../lib/lusha.js';
 import { gerarJSON as gerarJSONllm, gerarComBusca } from '../lib/llm.js';
 import { promptWhatsappPipeline, lerResposta, checarWhatsapp, escolherContato, numeroWa, linkWhatsapp } from '../lib/wa-pipeline.js';
-import { dominioDaEmpresa, contatosDoGmail, lerEnderecos, buscaGmail, linkLinkedin, textoDoPayload } from '../lib/contatos-conta.js';
+import { dominioDaEmpresa, dominiosDaEmpresa, contatosDoGmail, lerEnderecos, buscaGmail, linkLinkedin, textoDoPayload } from '../lib/contatos-conta.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
 import { analisarEdicao } from '../lib/sdr-aprendizado.js';
 import { GMAIL_SCOPE, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, credenciaisGoogle, obterTokenGmail, gmailReq, criarRascunhoGmail, enviarRascunhoGmail, atualizarRascunhoGmail, ehRascunhoGmail } from '../lib/gmail-token.js';
@@ -385,33 +385,34 @@ export default async function handler(req, res) {
     const pub = (d) => ({ id: d.id, nome: d.nome, cargo: d.cargo || '', email: d.email || null, wa: d.wa || null, linkedin_url: d.linkedin_url || null, tem_wa: !!numeroWa(d.wa), tem_email: /@/.test(d.email || ''), fonte: d.fonte || null });
     let contatos = await lerContatos();
     const dominio = dominioDaEmpresa(empresa, contatos);
+    const dominios = dominiosDaEmpresa(empresa, contatos);
 
     if (acao === 'contatos') {
       const cache = await supaReq('/rest/v1/crm_oportunidade_mensagens?oportunidade_id=eq.' + opId + '&apagado_em=is.null&enviado_em=is.null&select=id,decisor_id,canal,assunto,corpo,fato_usado,fontes,gerado_em&order=gerado_em.desc&limit=20');
       const prontas = {};
       for (const m of (Array.isArray(cache) ? cache : [])) { const k = m.canal + '|' + (m.decisor_id || ''); if (!prontas[k]) prontas[k] = m; }
       const ordem = contatos.slice().sort((a, b) => ((/@/.test(b.email || '') || numeroWa(b.wa) ? 1 : 0) - (/@/.test(a.email || '') || numeroWa(a.wa) ? 1 : 0)));
-      return res.status(200).json({ empresa: empresa ? empresa.nome : op.titulo, dominio, contatos: ordem.map(pub), prontas: Object.values(prontas), linkedin_busca: linkLinkedin(empresa ? empresa.nome : op.titulo) });
+      return res.status(200).json({ empresa: empresa ? empresa.nome : op.titulo, dominio: dominios.join(', '), contatos: ordem.map(pub), prontas: Object.values(prontas), linkedin_busca: linkLinkedin(empresa ? empresa.nome : op.titulo) });
     }
 
     if (acao === 'gmail-contatos') {
-      if (!dominio) return res.status(200).json({ candidatos: [], aviso: 'Não sei o site da empresa. Cadastre o site na Base ou adicione o contato à mão.' });
+      if (!dominios.length) return res.status(200).json({ candidatos: [], aviso: 'Não sei o site da empresa. Cadastre o site na Base ou adicione o contato à mão.' });
       const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_SVC });
       if (!gm) return res.status(409).json({ error: 'Gmail não conectado. Conecte em Fila › Enviar.' });
       try {
-        const lista = await gmailReq('GET', '/messages?maxResults=40&q=' + encodeURIComponent(buscaGmail(dominio)), null, gm.token);
+        const lista = await gmailReq('GET', '/messages?maxResults=40&q=' + encodeURIComponent(buscaGmail(dominios)), null, gm.token);
         const ids = ((lista && lista.messages) || []).map(m => m.id).slice(0, 40);
         const metas = await Promise.all(ids.map(id => gmailReq('GET', '/messages/' + id + '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Date', null, gm.token).catch(() => null)));
         const H = (m, n) => (((m && m.payload && m.payload.headers) || []).find(h => h.name.toLowerCase() === n.toLowerCase()) || {}).value || '';
         const msgs = metas.filter(Boolean).map(m => ({ id: m.id, de: H(m, 'From'), para: H(m, 'To'), cc: H(m, 'Cc'), data: H(m, 'Date'), texto: '' }));
         // Assinaturas: corpo das mensagens mais novas que vieram do domínio (até 10).
-        const doDominio = msgs.filter(m => lerEnderecos(m.de).some(a => (a.email.split('@')[1] || '').endsWith(dominio))).slice(0, 10);
+        const doDominio = msgs.filter(m => lerEnderecos(m.de).some(a => dominios.some(dm => (a.email.split('@')[1] || '').endsWith(dm)))).slice(0, 10);
         await Promise.all(doDominio.map(async m => { const f = await gmailReq('GET', '/messages/' + m.id + '?format=full', null, gm.token).catch(() => null); if (f) m.texto = textoDoPayload(f.payload).slice(0, 8000); }));
-        const achados = contatosDoGmail(msgs, dominio, gm.email);
+        const achados = contatosDoGmail(msgs, dominios, gm.email);
         const ja = new Set(contatos.map(c => String(c.email || '').toLowerCase()).filter(Boolean));
         const candidatos = achados.map(p => Object.assign(p, { ja_no_crm: ja.has(p.email), decisor_id: (contatos.find(c => String(c.email || '').toLowerCase() === p.email) || {}).id || null }));
-        log('contatos achados no Gmail', { dominio, mensagens: msgs.length, pessoas: candidatos.length });
-        return res.status(200).json({ dominio, candidatos });
+        log('contatos achados no Gmail', { dominios, mensagens: msgs.length, pessoas: candidatos.length });
+        return res.status(200).json({ dominio: dominios.join(', '), candidatos });
       } catch (e) { return res.status(502).json({ error: 'Gmail: ' + String(e && e.message || e).slice(0, 160) }); }
     }
 
