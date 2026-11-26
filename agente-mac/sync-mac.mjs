@@ -40,7 +40,12 @@ async function enviar(acao, dados) {
   }
 }
 const hash = (x) => createHash('sha256').update(JSON.stringify(x)).digest('hex');
-const iso = (s) => (s == null ? null : new Date((Number(s) + EPOCH) * 1000).toISOString());
+// Data do Core Data → ISO. O WhatsApp guarda datas-placeholder absurdas (ano 11001): vira null.
+const iso = (s) => {
+  if (s == null || !Number.isFinite(Number(s))) return null;
+  const d = new Date((Number(s) + EPOCH) * 1000);
+  return d.getUTCFullYear() >= 2009 && d.getUTCFullYear() <= 2100 ? d.toISOString() : null;
+};
 
 // ── Contatos (app Contatos do Mac, sincronizado com o iPhone pelo iCloud) ──
 function lerContatos() {
@@ -94,9 +99,11 @@ async function main() {
   const resumo = { contatos: 0, conversas: 0, mensagens: 0 };
   if (!existsSync(CHAT)) throw new Error('WhatsApp do Mac não encontrado em ' + WA);
 
-  const contatos = lerContatos();
-  const hc = hash(contatos);
-  if (hc !== cfg.hash_contatos) {
+  // Contatos: se o macOS ainda não deu permissão (Acesso Total ao Disco), segue só com o WhatsApp.
+  let contatos = null;
+  try { contatos = lerContatos(); } catch (e) { log('contatos sem permissão do macOS:', e.code || e.message); resumo.contatos_sem_permissao = true; }
+  const hc = contatos ? hash(contatos) : cfg.hash_contatos;
+  if (contatos && hc !== cfg.hash_contatos) {
     const tot = {};
     for (let i = 0; i < contatos.length; i += 400) {
       const r = await enviar('contatos', { contatos: contatos.slice(i, i + 400) });
@@ -117,7 +124,7 @@ async function main() {
   for (;;) {
     const lote = lerMensagens(cfg.cursor_msg || 0, 2500);
     if (!lote.length) break;
-    const msgs = lote.filter(m => m.texto || TIPOS_MIDIA.includes(m.tipo)).map(m => ({
+    const msgs = lote.filter(m => (m.texto || TIPOS_MIDIA.includes(m.tipo)) && iso(m.data)).map(m => ({
       jid: m.jid, stanza: m.stanza, de_mim: m.de_mim === 1, texto: m.texto || null, tipo: m.tipo, enviada_em: iso(m.data),
       autor_nome: m.de_mim === 1 ? null : (m.autor_nome || null), autor_telefone: m.autor_tel ? String(m.autor_tel).replace(/\D/g, '') : null }));
     if (msgs.length) await enviar('mensagens', { mensagens: msgs });
