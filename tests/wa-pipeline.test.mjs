@@ -20,6 +20,7 @@ ok(/primeiro nome: Marcelo/.test(p.user) && /primeiro contato/.test(p.user) && /
 ok(/já existe conversa/.test(promptWhatsappPipeline({ op: Object.assign({}, op, { estagio: 'Contato direto' }) }).user), 'situação muda com a etapa');
 
 const resp = 'Pesquisei.\n```json\n{"mensagem":"Marcelo, vi que a XP lançou o novo app. Topa um café semana que vem?","fato_usado":"XP lançou app","fontes":["https://exame.com/x","nada"]}\n```';
+ok(/CONVERSA RECENTE NO WHATSAPP[\s\S]*Pedro: bora o café\?[\s\S]*Marcelo: fechado/.test(promptWhatsappPipeline({ op, contato: { nome: 'Marcelo Bronze' }, conversaWa: [{ de_mim: true, texto: 'bora o café?', enviada_em: '2026-11-20' }, { de_mim: false, texto: 'fechado', enviada_em: '2026-11-21' }] }).user), 'leva a conversa do WhatsApp para a IA continuar o fio');
 const r = lerResposta(resp);
 ok(r && /Marcelo/.test(r.mensagem) && r.fontes.length === 1, 'lê a resposta com bloco json e descarta fonte que não é URL');
 ok(lerResposta('sem json') === null, 'resposta sem json → null');

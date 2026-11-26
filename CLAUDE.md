@@ -355,6 +355,23 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
 - Perfil em `crm_configuracoes.estilo_pedro_aprendido` (`lib/estilo-aprendido.js`). Entra em toda redação via
   `memoriaParaPrompt` (SDR, blitz, parabéns) e no follow-up do Pipeline (`estiloAprendido`).
 
+## WhatsApp e Contatos do Mac do Pedro (26/11/2026)
+
+- Decisão do Pedro: **tudo** (todas as conversas e todos os contatos) vai para o CRM. Sem WhatsApp Business e sem robô
+  no WhatsApp Web (risco de banimento): o programa `agente-mac/sync-mac.mjs` lê, em modo somente leitura, o WhatsApp do
+  Mac (`~/Library/Group Containers/group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite` + `ContactsV2.sqlite` para
+  traduzir `@lid` em telefone) e o app Contatos (`AddressBook-v22.abcddb`). Roda a cada 15 min (launchd
+  `com.galeriaholding.sync-mac`), config e cursor em `~/.galeria-sync/config.json` (token do aparelho; o hash fica em
+  `crm_configuracoes.mac_sync_token_hash`). Nunca envia nada pelo WhatsApp.
+- Rota `api/enrich?provider=mac-sync` (regras em `lib/mac-sync.js`): `contatos` → `crm_contatos_agenda` (categoria
+  trabalho / interno (agências do grupo) / pessoal); contato de trabalho novo vira `crm_decisores` com `fonte='agenda'`,
+  `status='sugerido'`, **`etapa_cadencia='off'`** (o SDR não aborda; Pedro liga quando quiser) e empresa nova `fonte='agenda'`;
+  quem já existe só tem campo vazio completado. `conversas` → `crm_wa_conversas` (ligada a pessoa/empresa por telefone);
+  `mensagens` → `crm_wa_mensagens`; `fim` → RPC `wa_gerar_toques()` (um toque por dia e direção, últimos 18 meses, só
+  conversas ligadas a pessoa de trabalho; atualiza `ultimo_toque_em`).
+- As três tabelas têm RLS **só admin** (`crm_eh_admin()`). A conversa aparece no painel da oportunidade e entra no prompt
+  do follow-up (20 últimas mensagens).
+
 ## Fila antiga desligada (26/11/2026)
 
 - O gerador antigo (`gerar-fila-diario`) saiu dos crons da Vercel: não gerava nada desde 17/11 e o agente SDR o substitui.
