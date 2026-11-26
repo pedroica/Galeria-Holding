@@ -685,6 +685,13 @@ function AprovacaoHoje() {
     var agora = new Date().toISOString();
     supaJwt('/rest/v1/crm_decisores?id=eq.'+d.id, {method:'PATCH',headers:{'Prefer':'return=minimal'},body:JSON.stringify({reuniao_marcada_em:agora,agencia_prospectando:item.agencia_id,temperatura:(d.temperatura||0)+2})});
     var agSlug2 = item.agencia_slug || '';
+    // Toque de reunião: é o que a meta semanal (crm_reunioes_v) conta. Antes só ia para o
+    // crm_kanban legado e, se a empresa já tinha oportunidade aberta, a reunião não contava.
+    supaJwt('/rest/v1/crm_toques', {method:'POST',headers:{'Prefer':'return=minimal'},body:JSON.stringify({
+      decisor_id: d.id || null, empresa_id: item.empresa_id || null, canal: 'reuniao', direcao: 'recebido',
+      resultado: 'reuniao_marcada', fonte: 'manual', data: agora, agencia_id: item.agencia_id || agSlug2 || null,
+      resumo: 'Reunião marcada (Fila)' + ((item.crm_empresas||{}).nome ? ' — ' + item.crm_empresas.nome : '')
+    })}).catch(function(){});
     supaJwt('/rest/v1/crm_kanban?empresa_id=eq.'+(item.empresa_id||'')+'&agencia_id=eq.'+agSlug2+'&select=id&limit=1')
       .then(function(rows){
         if (Array.isArray(rows)&&rows.length>0) {
@@ -4035,10 +4042,10 @@ function PainelMetas({ agencias }) {
   var _loading = React.useState(true); var loading = _loading[0]; var setLoading = _loading[1];
 
   React.useEffect(function() {
-    // Últimas 4 semanas de kanban (reunioes)
+    // Últimas 4 semanas de reuniões (crm_reunioes_v — mesma fonte da tela Hoje; o crm_kanban é legado)
     var since = new Date(); since.setDate(since.getDate() - 28); since.setHours(0,0,0,0);
     Promise.all([
-      sj('/rest/v1/crm_kanban?col=eq.reuniao&atualizado_em=gte.' + since.toISOString() + '&select=id,agencia_id,responsavel,atualizado_em&limit=500'),
+      sj('/rest/v1/crm_reunioes_v?marcada_em=gte.' + since.toISOString() + '&select=id,empresa_id,agencia_slug,marcada_em&order=marcada_em.asc&limit=1000'),
       sj('/rest/v1/crm_fila?enviado_em=gte.' + since.toISOString() + '&select=id,agencia_id,canal,status,respondido_em&limit=2000'),
     ]).then(function(rs) {
       var kRows = Array.isArray(rs[0]) ? rs[0] : [];
@@ -4049,11 +4056,13 @@ function PainelMetas({ agencias }) {
       for (var w = 0; w < 4; w++) {
         var wS = new Date(now); wS.setDate(wS.getDate() - (wS.getDay() === 0 ? 6 : wS.getDay() - 1) - w * 7); wS.setHours(0,0,0,0);
         var wE = new Date(wS); wE.setDate(wE.getDate() + 7);
-        var wK = kRows.filter(function(c){ var d = new Date(c.atualizado_em); return d >= wS && d < wE; });
+        // uma reunião por empresa na semana (igual à tela Hoje)
+        var vistosK = {};
+        var wK = kRows.filter(function(c){ var d = new Date(c.marcada_em); if (!(d >= wS && d < wE)) return false; var k = c.empresa_id || c.id; if (vistosK[k]) return false; vistosK[k] = 1; return true; });
         var wF = fRows.filter(function(f){ var d = new Date(f.enviado_em); return d >= wS && d < wE; });
         var byAg = {};
         AG.forEach(function(a) {
-          var agK = wK.filter(function(c){ return (c.agencia_id||c.responsavel||'').toLowerCase().includes(a.id.toLowerCase()); });
+          var agK = wK.filter(function(c){ return (c.agencia_slug || '').toLowerCase() === String(a.id).toLowerCase(); });
           var agF = wF.filter(function(f){ return f.agencia_id === a.id; });
           byAg[a.id] = {
             reunioes: agK.length,
