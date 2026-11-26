@@ -35,6 +35,14 @@ const p = await pessoaLusha({ fetchFn: fakeFetch, chave: 'k', nome: 'João Lopes
 ok(/firstName=Jo%C3%A3o/.test(urlChamada) && /lastName=Lopes/.test(urlChamada) && /companyName=Lopes/.test(urlChamada) && /revealPhones=false/.test(urlChamada), 'pede só e-mail quando celular não foi pedido');
 ok(p.creditos === 1, 'gasto contado: 1 crédito (só e-mail)');
 ok((await pessoaLusha({ fetchFn: fakeFetch, chave: 'k', nome: 'João', empresa: 'X' })).erro === 'precisa de nome e sobrenome', 'sem sobrenome não gasta consulta');
+// Formato real (26/11): 1ª consulta parcial (só LinkedIn, sem cobrar), 2ª com e-mail.
+const { _esperaRetentativa } = await import('../lib/lusha.js'); _esperaRetentativa(0);
+let nCons = 0;
+const parcialDepoisCompleto = async () => { nCons++; return new Response(JSON.stringify(nCons === 1
+  ? { contact: { isCreditCharged: false, data: { emailAddresses: [], phoneNumbers: [], socialLinks: { linkedin: 'https://linkedin.com/in/bruna' } } } }
+  : { contact: { isCreditCharged: true, data: { emailAddresses: [{ address: 'bruna@alura.com.br' }], phoneNumbers: [], jobTitle: { title: 'CMO' } } } }), { status: 200 }); };
+const pp = await pessoaLusha({ fetchFn: parcialDepoisCompleto, chave: 'k', nome: 'Bruna Maggion', empresa: 'Alura' });
+ok(nCons === 2 && pp.email === 'bruna@alura.com.br' && pp.linkedin.includes('bruna') && pp.creditos === 1, 'perfil parcial na 1ª consulta: consulta de novo e traz o e-mail (mantém o LinkedIn)');
 const f403 = async () => new Response('{}', { status: 403 });
 ok(/plano/.test((await pessoaLusha({ fetchFn: f403, chave: 'k', nome: 'A B', empresa: 'X' })).erro), '403 do plano vira mensagem clara');
 
