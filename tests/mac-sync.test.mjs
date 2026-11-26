@@ -1,7 +1,7 @@
 // Depósito do Mac (WhatsApp + Contatos): regras puras (lib/mac-sync.js) e a rota mac-sync.
 process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key-fake';
 import { createHash } from 'node:crypto';
-import { chaveTelefone, telefoneDoJid, tipoConversa, midiaDoTipo, categoriaContato, empresaDoContato, indicePessoas, acharPessoa, celularPrincipal, nomeCompleto } from '../lib/mac-sync.js';
+import { chaveTelefone, telefoneDoJid, tipoConversa, midiaDoTipo, categoriaContato, empresaDoContato, indicePessoas, acharPessoa, celularPrincipal, nomeCompleto, empresaDoCartao } from '../lib/mac-sync.js';
 let fail = 0, n = 0;
 const ok = (c, m) => { n++; if (c) console.log('  ✓ ' + m); else { fail++; console.log('  ✗ ' + m); } };
 const json = (b, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
@@ -19,6 +19,10 @@ ok(acharPessoa({ telefones: ['+55 11 98765-4321'] }, idx).id === 'd1' && acharPe
 ok(celularPrincipal(['(11) 3333-4444', '+55 11 98765-4321']) === '5511987654321' && celularPrincipal(['1133334444']) === null, 'celular principal (ignora fixo)');
 ok(nomeCompleto({ nome: 'Ana', sobrenome: 'Souza' }) === 'Ana Souza' && nomeCompleto({ apelido: 'Bia' }) === 'Bia', 'nome completo');
 
+ok(empresaDoCartao({ nome: 'Gabriella', sobrenome: 'Furlan Daslu', empresa: 'Gabriella Furlan' }) === 'Daslu', 'empresa com nome da pessoa: a real é o que sobra no nome');
+ok(empresaDoCartao({ nome: 'Romero', sobrenome: 'Rodrigues', empresa: 'Romero Rodrigues' }) === '' && empresaDoCartao({ nome: 'Amanda', sobrenome: 'Guerra Corporativo Inbrands', empresa: 'Amanda Guerra Corporativo' }) === 'Inbrands', 'sem sobra, sem empresa; palavra solta (Corporativo) não conta');
+ok(empresaDoCartao({ nome: 'Ana', sobrenome: 'Souza', empresa: 'Natura' }) === 'Natura' && empresaDoCartao({ nome: 'Ana', empresa: '' }) === '', 'empresa de verdade fica');
+
 // Rota
 const TOKEN = 'token-do-mac';
 const T = { emp: [{ id: 'eNat', nome: 'NATURA COSMETICOS S A', website: 'natura.net' }], dec: [{ id: 'dAna', nome: 'Ana Souza', wa: null, email: 'ana@natura.net', empresa_id: 'eNat' }], agenda: [], conv: [], msgs: [], rpc: 0, cfg: { mac_sync_token_hash: createHash('sha256').update(TOKEN).digest('hex') } };
@@ -33,6 +37,7 @@ globalThis.fetch = async (url, opts = {}) => {
   if (u.includes('crm_decisores') && mt === 'GET') return json(off ? [] : T.dec);
   if (u.includes('crm_decisores') && mt === 'POST') { const d = Object.assign({ id: 'dNovo' + T.dec.length }, body); T.dec.push(d); return json([d], 201); }
   if (u.includes('crm_decisores') && mt === 'PATCH') { const id = (u.match(/id=eq\.(\w+)/) || [])[1]; Object.assign(T.dec.find(d => d.id === id), body); return new Response(null, { status: 204 }); }
+  if (u.includes('crm_contatos_agenda') && mt === 'GET' && u.includes('categoria_fixa=eq.true')) return json(T.agenda.filter(a => a.categoria_fixa && u.includes('"' + a.origem_id + '"')));
   if (u.includes('crm_contatos_agenda') && mt === 'GET') return json(off ? [] : T.agenda);
   if (u.includes('crm_contatos_agenda')) { for (const l of body) { const i = T.agenda.findIndex(a => a.origem_id === l.origem_id); if (i >= 0) T.agenda[i] = l; else T.agenda.push(l); } return new Response(null, { status: 201 }); }
   if (u.includes('crm_wa_conversas')) { for (const l of body) { const i = T.conv.findIndex(a => a.jid === l.jid); if (i >= 0) T.conv[i] = l; else T.conv.push(l); } return new Response(null, { status: 201 }); }
@@ -60,6 +65,15 @@ const carlos = T.dec.find(d => d.nome === 'Carlos Lima'), bia = T.dec.find(d => 
 ok(carlos && carlos.status === 'sugerido' && carlos.etapa_cadencia === 'off' && carlos.fonte === 'agenda' && T.emp.some(e => e.nome === 'Padaria Pão Bom' && e.fonte === 'agenda') && carlos.wa === '5511977776666', 'contato de trabalho novo vira pessoa sugerida, com empresa nova');
 ok(bia && bia.empresa_id === 'eNat', 'empresa achada pelo domínio do e-mail');
 ok(!T.dec.some(d => /Mãe|Rafa/.test(d.nome)) && T.agenda.length === 5 && T.agenda.find(a => a.origem_id === 'c3').categoria === 'pessoal', 'pessoal e interno ficam só na agenda, não viram prospect');
+T.agenda.push({ origem_id: 'c9', categoria: 'pessoal', decisor_id: null, empresa_id: null, categoria_fixa: true });
+const decAntes = T.dec.length, empAntes = T.emp.length;
+r = await chamar({ acao: 'contatos', contatos: [
+  { id: 'c9', nome: 'Dr', sobrenome: 'Joaquim Pneumo', empresa: 'Clínica Joaquim', telefones: ['11 91111-0000'], emails: [] },
+  { id: 'c10', nome: 'Romero', sobrenome: 'Rodrigues', empresa: 'Romero Rodrigues', telefones: ['11 91212-0000'], emails: [] },
+  { id: 'c11', nome: 'Gabriella', sobrenome: 'Furlan Daslu', empresa: 'Gabriella Furlan', telefones: ['11 91313-0000'], emails: [] }
+] });
+ok(T.agenda.find(a => a.origem_id === 'c9').categoria === 'pessoal' && T.agenda.find(a => a.origem_id === 'c9').categoria_fixa, 'contato já revisado não volta a ser de trabalho');
+ok(!T.emp.some(e => /Romero|Gabriella|Clínica Joaquim/.test(e.nome)) && T.emp.some(e => e.nome === 'Daslu') && T.dec.length === decAntes + 1 && T.emp.length === empAntes + 1, 'não cria empresa com nome de pessoa; usa a empresa que sobra no nome (Daslu)');
 r = await chamar({ acao: 'conversas', conversas: [
   { jid: '5511987654321@s.whatsapp.net', sessao: 0, nome: 'Ana', mensagens: 10 },
   { jid: '999@lid', sessao: 0, nome: 'Carlos', telefone: '5511977776666', mensagens: 3 },
