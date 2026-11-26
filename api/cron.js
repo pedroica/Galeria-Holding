@@ -1372,9 +1372,8 @@ async function memoriaParaPrompt({ setor, solucao, canal } = {}) {
 async function jobAprenderEstilo(req, res) {
   const inicio = Date.now();
   const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null);
-  if (!gm) { await logCron('aprender-estilo', 'warn', 'Gmail não conectado', {}); return res.status(200).json({ ok: false, motivo: 'gmail' }); }
   const ids = []; let pageToken = '';
-  for (let i = 0; i < 3 && ids.length < 240; i++) {
+  for (let i = 0; gm && i < 3 && ids.length < 240; i++) {
     const l = await gmailReq('GET', '/messages?maxResults=100&q=' + encodeURIComponent('in:sent newer_than:365d -in:chats') + (pageToken ? '&pageToken=' + pageToken : ''), null, gm.token).catch(() => null);
     for (const m of ((l && l.messages) || [])) ids.push(m.id);
     pageToken = l && l.nextPageToken; if (!pageToken) break;
@@ -1386,27 +1385,35 @@ async function jobAprenderEstilo(req, res) {
     for (const m of lote) if (m && !(m.labelIds || []).includes('DRAFT')) msgs.push({ assunto: H(m, 'subject'), para: [H(m, 'to'), H(m, 'cc')].filter(Boolean).join(','), data: new Date(Number(m.internalDate || 0)).toISOString(), texto: textoDoPayload(m.payload) });
   }
   const desde = new Date(Date.now() - 365 * 86400000).toISOString();
-  const [fila, opm] = await Promise.all([
+  const [fila, opm, evs, man] = await Promise.all([
     sg(`crm_fila?canal=eq.email&gerado_em=gte.${desde}&select=corpo&order=gerado_em.desc&limit=1500`),
-    sg(`crm_oportunidade_mensagens?gerado_em=gte.${desde}&select=canal,corpo,corpo_original,enviado_em&order=gerado_em.desc&limit=500`)
+    sg(`crm_oportunidade_mensagens?gerado_em=gte.${desde}&select=canal,corpo,corpo_original,enviado_em&order=gerado_em.desc&limit=500`),
+    sg(`crm_aprendizado_eventos?tipo=eq.enviado_com_alteracao&criado_em=gte.${desde}&select=final,diff&order=criado_em.desc&limit=300`),
+    sg('crm_configuracoes?chave=eq.estilo_amostras_manuais&select=valor&limit=1')
   ]);
   const opmArr = Array.isArray(opm) ? opm : [];
   const textosAgente = (Array.isArray(fila) ? fila : []).map(f => f.corpo).concat(opmArr.map(m => m.corpo_original || m.corpo));
-  const amostras = escolherAmostras(msgs, textosAgente, { max: 40 });
+  // Primeiro o que o Pedro colou ou exportou do WhatsApp (é dele com certeza); depois os
+  // rascunhos que ele reescreveu; por último os Enviados do Gmail.
+  const manuais = (Array.isArray(man) && man[0] && Array.isArray(man[0].valor) ? man[0].valor : []).slice(-60);
+  const reescritos = (Array.isArray(evs) ? evs : []).filter(e => e.diff && e.diff.similaridade != null && e.diff.similaridade < 0.6 && e.final && e.final.corpo)
+    .slice(0, 15).map(e => ({ canal: 'email (rascunho do agente reescrito pelo Pedro)', assunto: e.final.assunto || '', texto: textoProprio(e.final.corpo).slice(0, 2000) }));
+  const doGmail = escolherAmostras(msgs, textosAgente, { max: 30, eu: gm && gm.email });
+  const amostras = manuais.map(a => ({ canal: a.canal || 'email', assunto: '', texto: String(a.texto || '').slice(0, 2000) })).concat(reescritos, doGmail);
   // Follow-ups do Pipeline que o Pedro mexeu antes de mandar: a versão final é a voz dele
   // (é o único jeito de ver como ele escreve no WhatsApp).
   for (const m of opmArr) if (m.enviado_em && m.corpo_original && m.corpo && m.corpo.trim() !== m.corpo_original.trim()) amostras.push({ canal: m.canal, assunto: '', texto: textoProprio(m.corpo).slice(0, 1500) });
-  if (amostras.length < 8) {
+  if (amostras.length < 6) {
     await logCron('aprender-estilo', 'info', 'fim — poucas amostras', { enviados: msgs.length, amostras: amostras.length });
     return res.status(200).json({ ok: false, motivo: 'poucas amostras', enviados: msgs.length, amostras: amostras.length });
   }
-  const { system, user } = promptAprenderEstilo(amostras.slice(0, 50));
+  const { system, user } = promptAprenderEstilo(amostras.slice(0, 90));
   const r = await gerarJSON({ system, user, schema: SCHEMA_ESTILO, effort: 'high', model: 'claude-opus-5-5' });
   if (!r.obj) { await logCron('aprender-estilo', 'error', 'IA não devolveu o perfil', { erro: r.erro }); return res.status(200).json({ ok: false, erro: r.erro }); }
-  const valor = { perfil: r.obj, atualizado_em: new Date().toISOString(), amostras: amostras.length, enviados_lidos: msgs.length, whatsapp: amostras.filter(a => a.canal === 'whatsapp').length };
+  const valor = { perfil: r.obj, atualizado_em: new Date().toISOString(), amostras: Math.min(amostras.length, 90), enviados_lidos: msgs.length, fontes: { coladas_ou_whatsapp: manuais.length, rascunhos_reescritos: reescritos.length, gmail: doGmail.length }, whatsapp: amostras.filter(a => a.canal === 'whatsapp').length };
   await spUpsert('crm_configuracoes', { chave: 'estilo_pedro_aprendido', valor }, 'chave');
   _memCache = { ate: 0, rows: [] };
-  const ctx = { enviados: msgs.length, amostras: amostras.length, custo_usd: r.custo || 0, ms: Date.now() - inicio };
+  const ctx = { enviados: msgs.length, amostras: valor.amostras, fontes: valor.fontes, custo_usd: r.custo || 0, ms: Date.now() - inicio };
   await logCron('aprender-estilo', 'info', 'fim', ctx);
   return res.status(200).json({ ok: true, ...ctx, perfil: r.obj });
 }

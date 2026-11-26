@@ -3,7 +3,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key-fake';
 process.env.SUPA_CRM_URL = 'https://fake.supabase.co';
 process.env.CRON_SECRET = 'cron-vercel';
 process.env.ANTHROPIC_API_KEY = 'sk-fake';
-import { textoProprio, escolherAmostras, promptAprenderEstilo, linhasEstiloAprendido, similaridade } from '../lib/estilo-aprendido.js';
+import { textoProprio, escolherAmostras, promptAprenderEstilo, linhasEstiloAprendido, similaridade, lerConversaWhatsapp, autoresDaConversa, falasDoAutor, amostrasColadas } from '../lib/estilo-aprendido.js';
 import { promptWhatsappPipeline } from '../lib/wa-pipeline.js';
 let fail = 0, n = 0;
 const ok = (c, m) => { n++; if (c) console.log('  ✓ ' + m); else { fail++; console.log('  ✗ ' + m); } };
@@ -46,6 +46,21 @@ ok(/JEITO DE ESCREVER DO PEDRO/.test(ls) && /bora, rapidinho/.test(ls) && /No Wh
 ok(!/No WhatsApp/.test(linhasEstiloAprendido(perfil, 'email').join('\n')) && linhasEstiloAprendido(null).length === 0, 'sem perfil, nada; e-mail não leva a regra de WhatsApp');
 ok(/JEITO DE ESCREVER DO PEDRO/.test(promptWhatsappPipeline({ op: { estagio: 'Wishlist' }, estiloAprendido: linhasEstiloAprendido(perfil, 'whatsapp') }).system), 'follow-up do Pipeline usa o estilo aprendido');
 
+// Filtro de automação e de e-mail para si mesmo
+const auto = Array.from({ length: 6 }, (_, i) => ({ assunto: 'Leads ' + i + ' Anunciantes novos', para: 'r@x.com', texto: BASE[i] }));
+ok(escolherAmostras(auto, []).length === 0, 'assunto repetido 5+ vezes é automação');
+ok(escolherAmostras([{ assunto: 'nota', para: 'Pedro <p@g.test>', texto: BASE[2] }], [], { eu: 'p@g.test' }).length === 0, 'e-mail para si mesmo fica de fora');
+
+// WhatsApp exportado
+const android = '26/11/2026 13:45 - Pedro Ica: Fala Bia, tudo certo?\n26/11/2026 13:45 - Pedro Ica: bora um café semana que vem?\nlinha de continuação\n26/11/2026 13:50 - Bia: Bora sim!\n26/11/2026 13:51 - Pedro Ica: <Mídia oculta>\n26/11/2026 13:52 - Pedro Ica: show, te mando o convite agora mesmo';
+const ios = '‎[26/11/2026, 13:45:12] Pedro Ica: Oi Rafa, conseguiu ver a proposta?\n[26/11/2026, 13:46:00] Rafa: vi sim';
+ok(lerConversaWhatsapp(android).length === 4 && /continuação/.test(lerConversaWhatsapp(android)[1].texto), 'lê exportação do Android (com continuação, sem mídia)');
+ok(lerConversaWhatsapp(ios)[0].autor === 'Pedro Ica' && lerConversaWhatsapp(ios)[1].autor === 'Rafa', 'lê exportação do iPhone');
+ok(autoresDaConversa(android)[0].autor === 'Pedro Ica', 'lista quem fala mais');
+const fal = falasDoAutor(android, 'Pedro Ica');
+ok(fal.length === 2 && /Fala Bia[\s\S]*bora um café/.test(fal[0].texto) && fal[0].canal === 'whatsapp' && !fal.some(f => /Bora sim/.test(f.texto)), 'junta as falas seguidas do Pedro e ignora as dos outros');
+ok(amostrasColadas('Oi Ana, tudo bem? Segue a proposta revisada.\n---\nCarlos, valeu pelo papo de hoje cedo.\n---\nok').length === 2, 'texto colado separado por ---');
+
 // Job
 const b64 = (t) => Buffer.from(t).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
 const salvo = {}; let ia = null;
@@ -56,7 +71,7 @@ globalThis.fetch = async (url, opts = {}) => {
   const body = opts.body && /^[\[{]/.test(opts.body) ? JSON.parse(opts.body) : null;
   if (u.includes('crm_oauth_tokens')) return json([{ id: 1, access_token: 'tok', refresh_token: 'rt', expires_at: new Date(Date.now() + 3600e3).toISOString(), account_email: 'p@g.test' }]);
   if (u.includes('gmail.googleapis.com') && /\/messages\?/.test(u)) return json({ messages: textos.map((_, i) => ({ id: 'm' + i })).concat([{ id: 'mAg' }]) });
-  if (u.includes('gmail.googleapis.com')) { const id = u.match(/messages\/(\w+)/)[1]; const t = id === 'mAg' ? agente : textos[Number(id.slice(1))]; return json({ id, labelIds: ['SENT'], internalDate: String(Date.now()), payload: { mimeType: 'text/plain', headers: [{ name: 'Subject', value: 's' + id }, { name: 'To', value: 'r@x.com' }], body: { data: b64(t) } } }); }
+  if (u.includes('gmail.googleapis.com')) { const id = u.match(/messages\/(\w+)/)[1]; const t = id === 'mAg' ? agente : textos[Number(id.slice(1))]; return json({ id, labelIds: ['SENT'], internalDate: String(Date.now()), payload: { mimeType: 'text/plain', headers: [{ name: 'Subject', value: ['projeto','proposta','expansão','deck','próximos passos','parabéns','orçamento','indicação','campanha','relatório','posicionamento','agente'][id === 'mAg' ? 11 : Number(id.slice(1))] }, { name: 'To', value: 'r@x.com' }], body: { data: b64(t) } } }); }
   if (u.includes('crm_fila')) return json([{ corpo: agente }]);
   if (u.includes('crm_oportunidade_mensagens')) return json([{ canal: 'whatsapp', corpo: 'Fala Bia! bora um café essa semana?', corpo_original: 'Olá, Bia. Topa um café?', enviado_em: '2026-11-26' }]);
   if (u.includes('crm_configuracoes') && mt === 'POST') { salvo[body.chave] = body.valor; return new Response(null, { status: 201 }); }
