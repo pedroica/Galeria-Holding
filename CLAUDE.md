@@ -380,6 +380,16 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
 - As três tabelas têm RLS **só admin** (`crm_eh_admin()`). A conversa aparece no painel da oportunidade e entra no prompt
   do follow-up (20 últimas mensagens).
 
+## Amigo no WhatsApp (Copiloto no WhatsApp, 26/11/2026)
+
+- Número do CRM (Meta Cloud API, `api/enrich?provider=whatsapp` → `responderWhatsApp` em `api/copiloto.js`, modelo
+  `MODELO_WA` = claude-sonnet-5-5). Só responde aos números de `WHATSAPP_ALLOWED_NUMBERS` (o Pedro).
+- Ferramentas novas em `lib/amigo-wa.js`: `minha_agenda`, `ler_whatsapp` (depósito do Mac), `oportunidade`,
+  `preparar_mensagem` (mesma geração do Pipeline, `lib/followup.js`), `enviar_email`, `rascunho_email`, `definir_prazo`, `mover_etapa`.
+- **Enviar e-mail e mover etapa viram ação pendente** (`crm_wa_sessoes.pendente`) e só executam quando o Pedro responde
+  "manda" (`CONFIRMA`); qualquer outra resposta descarta. WhatsApp para terceiros nunca sai pelo sistema: o amigo manda
+  o link wa.me com o texto e o Pedro aperta enviar.
+
 ## Fila antiga desligada (26/11/2026)
 
 - O gerador antigo (`gerar-fila-diario`) saiu dos crons da Vercel: não gerava nada desde 17/11 e o agente SDR o substitui.

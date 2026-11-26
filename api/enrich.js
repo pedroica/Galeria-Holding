@@ -11,6 +11,7 @@ import { pessoaLusha, saldoDoDia } from '../lib/lusha.js';
 import { gerarJSON as gerarJSONllm, gerarComBusca } from '../lib/llm.js';
 import { promptWhatsappPipeline, lerResposta, checarWhatsapp, escolherContato, numeroWa, linkWhatsapp } from '../lib/wa-pipeline.js';
 import { chaveTelefone, telefoneDoJid, tipoConversa, midiaDoTipo, emailCorporativo, categoriaContato, empresaDoContato, indicePessoas, acharPessoa, celularPrincipal, nomeCompleto, empresaDoCartao } from '../lib/mac-sync.js';
+import { gerarFollowup } from '../lib/followup.js';
 import { linhasEstiloAprendido, autoresDaConversa, falasDoAutor, amostrasColadas } from '../lib/estilo-aprendido.js';
 import { dominioDaEmpresa, dominiosDaEmpresa, contatosDoGmail, lerEnderecos, buscaGmail, linkLinkedin, textoDoPayload } from '../lib/contatos-conta.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
@@ -690,39 +691,11 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
-    // gerar
-    const [toques, eventos, ags, est] = await Promise.all([
-      empId ? supaReq('/rest/v1/crm_toques?empresa_id=eq.' + empId + '&select=canal,direcao,resultado,assunto,resumo,data,criado_em&order=criado_em.desc&limit=10') : null,
-      supaReq('/rest/v1/crm_oportunidade_eventos?oportunidade_id=eq.' + opId + '&select=tipo,de,para,texto,criado_em&order=criado_em.desc&limit=10'),
-      op.agencia_id ? supaReq('/rest/v1/crm_agencias?id=eq.' + op.agencia_id + '&select=nome&limit=1') : null,
-      supaReq('/rest/v1/crm_configuracoes?chave=eq.estilo_pedro_aprendido&select=valor&limit=1')
-    ]);
-    const contato = escolherContato(contatos, limpaId(body.decisor_id), canal);
-    const estiloAprendido = linhasEstiloAprendido(Array.isArray(est) && est[0] ? est[0].valor : null, canal);
-    // Conversa do WhatsApp (depósito do Mac) com essa pessoa: as 20 últimas mensagens.
-    let conversaWa = [];
-    if (contato) {
-      const cv = await supaReq('/rest/v1/crm_wa_conversas?decisor_id=eq.' + contato.id + '&select=jid&limit=3').catch(() => null);
-      const jids = (Array.isArray(cv) ? cv : []).map(c => c.jid);
-      if (jids.length) {
-        const ms = await supaReq('/rest/v1/crm_wa_mensagens?jid=in.(' + jids.map(j => '"' + j + '"').join(',') + ')&select=de_mim,texto,midia,enviada_em&order=enviada_em.desc&limit=20').catch(() => null);
-        conversaWa = (Array.isArray(ms) ? ms : []).reverse();
-      }
-    }
-    const pr = promptWhatsappPipeline({ op, empresa, contato, toques: Array.isArray(toques) ? toques : [], eventos: Array.isArray(eventos) ? eventos : [], instrucao: body.instrucao, agencia: Array.isArray(ags) && ags[0] ? ags[0].nome : '', hoje: hojeStr, canal, estiloAprendido, conversaWa });
-    const g = await gerarComBusca({ system: pr.system, content: pr.user, supaUrl: SUPA_URL, serviceKey: SUPA_SVC, envKey: ANTHROPIC_KEY });
-    const r = lerResposta(g.texto);
-    if (!r) return res.status(502).json({ error: 'A IA não devolveu a mensagem. Tente de novo.' + (g.erro ? ' (' + g.erro + ')' : '') });
-    const fontes = r.fontes.concat((g.urls || []).filter(x => !r.fontes.includes(x))).slice(0, 6);
-    const salvo = await supaReq('/rest/v1/crm_oportunidade_mensagens', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ oportunidade_id: opId, decisor_id: contato ? contato.id : null, canal, assunto: r.assunto || null, corpo: r.mensagem, corpo_original: r.mensagem, fato_usado: r.fato_usado || null, fontes, instrucao: body.instrucao ? String(body.instrucao).slice(0, 500) : null }) }).catch(() => null);
-    log('mensagem do pipeline gerada', { canal, buscas: g.buscas || 0 });
-    return res.status(200).json({
-      id: Array.isArray(salvo) && salvo[0] ? salvo[0].id : null,
-      canal, assunto: r.assunto, mensagem: r.mensagem, fato_usado: r.fato_usado, fontes, alertas: checarWhatsapp(r.mensagem, canal, r.assunto), buscas: g.buscas || 0,
-      contato: contato ? pub(contato) : null,
-      contatos: contatos.map(pub),
-      link: linkWhatsapp(contato && contato.wa, r.mensagem)
-    });
+    // gerar (lib/followup.js, o mesmo que o amigo no WhatsApp usa)
+    const f = await gerarFollowup({ req: supaReq, op, empresa, contatos, decisorId: limpaId(body.decisor_id), canal, instrucao: body.instrucao, hojeStr, supaUrl: SUPA_URL, serviceKey: SUPA_SVC, envKey: ANTHROPIC_KEY });
+    if (f.erro) return res.status(502).json({ error: f.erro });
+    log('mensagem do pipeline gerada', { canal, buscas: f.buscas });
+    return res.status(200).json(Object.assign({}, f, { contato: f.contato ? pub(f.contato) : null, contatos: contatos.map(pub) }));
   }
 
   if (provider === 'captura-ler' || provider === 'captura-gravar') {
@@ -1641,9 +1614,31 @@ export default async function handler(req, res) {
 
         if (!msg.texto) { await enviarWa(msg.de, 'Por enquanto eu só leio texto. Manda escrito que eu resolvo.'); continue; }
 
-        const sess = await supaReq('/rest/v1/crm_wa_sessoes?select=mensagens&telefone=eq.' + encodeURIComponent(msg.de))
+        const sess = await supaReq('/rest/v1/crm_wa_sessoes?select=mensagens,pendente&telefone=eq.' + encodeURIComponent(msg.de))
           .catch(function () { return []; });
         const historico = (sess[0] && Array.isArray(sess[0].mensagens)) ? sess[0].mensagens : [];
+        const pendente = sess[0] && sess[0].pendente && sess[0].pendente.tipo ? sess[0].pendente : null;
+        const gravarSessao = (campos) => supaReq('/rest/v1/crm_wa_sessoes?on_conflict=telefone', {
+          method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+          body: JSON.stringify([Object.assign({ telefone: msg.de, atualizado_em: new Date().toISOString() }, campos)])
+        }).catch(function () {});
+
+        // Ação esperando o "manda" do Pedro (e-mail ou etapa). Só executa com a palavra dele;
+        // qualquer outra resposta descarta a ação (e segue a conversa normalmente).
+        if (pendente) {
+          const { CONFIRMA, CANCELA } = await import('../lib/amigo-wa.js');
+          if (CONFIRMA.test(msg.texto)) {
+            const { confirmarPendente } = await import('./copiloto.js');
+            let out;
+            try { out = await confirmarPendente(pendente); } catch (e) { out = 'Deu erro ao executar: ' + String(e && (e.message || e.msg) || e).slice(0, 160); }
+            await gravarSessao({ pendente: null, mensagens: historico.concat([{ role: 'user', content: msg.texto }, { role: 'assistant', content: out }]).slice(-20) });
+            await enviarWa(msg.de, out);
+            supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ origem: 'whatsapp', nivel: 'info', mensagem: 'ação confirmada pelo Pedro', contexto: { tipo: pendente.tipo, para: pendente.para || pendente.empresa || null } }) }).catch(function () {});
+            continue;
+          }
+          await gravarSessao({ pendente: null });
+          if (CANCELA.test(msg.texto) && msg.texto.trim().split(/\s+/).length <= 3) { await enviarWa(msg.de, 'Beleza, cancelei. Nada foi enviado.'); continue; }
+        }
 
         // "pausar" desliga o Piloto Automático na hora e cancela os envios agendados.
         if (/^\s*pausar( tudo)?\s*[.!]*\s*$/i.test(msg.texto)) {
@@ -1665,10 +1660,7 @@ export default async function handler(req, res) {
 
         const r = await responderWhatsApp({ texto: msg.texto, historico: historico.slice(-20) });
 
-        await supaReq('/rest/v1/crm_wa_sessoes?on_conflict=telefone', {
-          method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
-          body: JSON.stringify([{ telefone: msg.de, mensagens: r.historico.slice(-20), atualizado_em: new Date().toISOString() }])
-        }).catch(function () {});
+        await gravarSessao({ mensagens: r.historico.slice(-20), pendente: r.pendente || null });
 
         await enviarWa(msg.de, r.texto || 'Não consegui formular resposta. Tenta de novo?');
 
@@ -1676,7 +1668,7 @@ export default async function handler(req, res) {
           method: 'POST', headers: { Prefer: 'return=minimal' },
           body: JSON.stringify({
             origem: 'whatsapp', nivel: 'info', mensagem: 'resposta enviada',
-            contexto: { ferramentas: r.ferramentas, modelo: 'claude-sonnet-4-6', tokens_entrada: r.tokIn, tokens_saida: r.tokOut, custo_usd: (r.tokIn * 3 + r.tokOut * 15) / 1000000 }
+            contexto: { ferramentas: r.ferramentas, pendente: r.pendente ? r.pendente.tipo : null, modelo: 'claude-sonnet-5-5', tokens_entrada: r.tokIn, tokens_saida: r.tokOut, custo_usd: (r.tokIn * 3 + r.tokOut * 15) / 1000000 }
           })
         }).catch(function () {});
       } catch (e) {
