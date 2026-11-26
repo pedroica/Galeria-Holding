@@ -2308,6 +2308,124 @@ async function gm_get(token, path) {
 }
 const hdrV = (hs, n) => ((hs || []).find(x => String(x.name).toLowerCase() === n) || {}).value || '';
 
+// Aplica o estado lido de uma conversa (Gmail ou WhatsApp) na oportunidade da empresa:
+// prazo combinado, reunião marcada e avanço de etapa (ou sugestão para o Pedro aprovar).
+const FONTE_GMAIL = { nome: 'Gmail', autor: 'agente-gmail', canal: 'email' };
+const FONTE_WHATSAPP = { nome: 'WhatsApp', autor: 'agente-whatsapp', canal: 'whatsapp' };
+async function aplicarStatusConversa({ empresaId, threadId, ultima, st, dataPP, mensagens, op, respondeu, nomeEmpresa, cont, fonte }) {
+    const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    // Prazo combinado no e-mail vira o próximo passo da oportunidade aberta.
+    if (aplicarPrazoDoEmail({ dataPP, hojeStr, op, respondeu, ultimaMsgEm: ultima })) {
+      const passo = String(st.proximo_passo || st.resumo || '').slice(0, 300);
+      if (await sp(`crm_oportunidades?id=eq.${op.id}`, { proximo_passo: passo, proximo_passo_em: dataPP, atualizado_em: new Date().toISOString() }, 'PATCH')) {
+        await sp('crm_oportunidade_eventos', { oportunidade_id: op.id, tipo: 'nota', texto: ('Prazo pelo ' + fonte.nome + ': ' + passo + ' até ' + dataPP.split('-').reverse().join('/') + (st.evidencia ? ' — "' + st.evidencia + '"' : '')).slice(0, 600), autor_email: fonte.autor });
+        op.proximo_passo = passo; op.proximo_passo_em = dataPP; cont.prazos = (cont.prazos || 0) + 1;
+      }
+    }
+    // Reunião marcada com data: registra (meta semanal e lista de próximas reuniões), uma por empresa e dia.
+    if (respondeu && st.sinal === 'reuniao_marcada' && dataPP && dataPP >= hojeStr) {
+      const ja = await sg(`crm_toques?empresa_id=eq.${empresaId}&reuniao_em=gte.${dataPP}T00:00:00-03:00&reuniao_em=lte.${dataPP}T23:59:59-03:00&apagado_em=is.null&select=id&limit=1`);
+      if (Array.isArray(ja) && !ja.length) {
+        const ultimaRec = [...mensagens].reverse().find(x => x.direcao === 'recebido');
+        if (await sp('crm_toques', { empresa_id: empresaId, canal: fonte.canal, direcao: 'recebido', assunto: String((ultimaRec && ultimaRec.assunto) || fonte.nome).slice(0, 500),
+          resumo: (fonte.nome + ': reunião marcada para ' + dataPP.split('-').reverse().join('/') + ' — ' + (st.resumo || '')).slice(0, 500), data: new Date().toISOString(),
+          fonte: 'sistema', resultado: 'reuniao_marcada', reuniao_em: dataPP + 'T00:00:00-03:00' })) cont.reunioes = (cont.reunioes || 0) + 1;
+      }
+    }
+    const dec = decidirPipeline({ sinal: st.sinal, confianca: st.confianca, estagioAtual: op ? op.estagio : null,
+      clienteRespondeu: respondeu });
+    if (dec.acao === 'nada') { cont.sem_mudanca++; return; }
+    const base = { empresa_id: empresaId, thread_id: threadId, sinal: st.sinal, confianca: st.confianca, estagio_para: dec.para,
+      resumo: String(st.resumo || '').slice(0, 400), evidencia: String(st.evidencia || '').slice(0, 300), motivo: dec.motivo };
+    if (dec.acao === 'sugerir') {
+      const linha = Object.assign({ oportunidade_id: op && !dec.nova ? op.id : null, estagio_de: op && !dec.nova ? op.estagio : null, status: 'pendente' }, base);
+      // O Pedro já recusou esta mudança para esta empresa nos últimos 30 dias: não insiste.
+      const recusada = await sg(`crm_gmail_sugestoes?empresa_id=eq.${empresaId}&status=eq.rejeitada&estagio_para=eq.${encodeURIComponent(dec.para)}&decidido_por=not.like.agente*&decidido_em=gte.${new Date(Date.now() - 30 * 864e5).toISOString()}&select=id&limit=1`);
+      if (Array.isArray(recusada) && recusada.length) { cont.sem_mudanca++; return; }
+      // Uma pendente por empresa: atualiza a existente em vez de criar outra.
+      const pend = await sg(`crm_gmail_sugestoes?empresa_id=eq.${empresaId}&status=eq.pendente&select=id,estagio_para&order=criado_em.desc&limit=1`);
+      const atual = Array.isArray(pend) && pend.length ? pend[0] : null;
+      if (atual) {
+        if (!substituiSugestao(atual, { estagio_para: dec.para })) { cont.sem_mudanca++; return; }
+        if (await sp(`crm_gmail_sugestoes?id=eq.${atual.id}`, Object.assign({}, linha, { criado_em: new Date().toISOString() }), 'PATCH')) cont.sugeridas++;
+        return;
+      }
+      if (await spUpsert('crm_gmail_sugestoes', linha, 'empresa_id,thread_id,sinal', true)) cont.sugeridas++;
+      return;
+    }
+    // aplicar/criar: registra antes (índice único impede aplicar duas vezes o mesmo sinal da mesma conversa).
+    const reg = await fetch(SUPA_URL + '/rest/v1/crm_gmail_sugestoes?on_conflict=empresa_id,thread_id,sinal', { method: 'POST',
+      headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=representation' },
+      body: JSON.stringify(Object.assign({ oportunidade_id: op ? op.id : null, estagio_de: dec.acao === 'criar' ? null : op.estagio, status: 'aplicada', decidido_em: new Date().toISOString(), decidido_por: fonte.autor }, base)) });
+    const regRows = reg.ok ? await reg.json().catch(() => []) : [];
+    if (!regRows.length) return;
+    let opId = op ? op.id : null;
+    if (dec.acao === 'criar') {
+      const nova = await spRet('crm_oportunidades', { empresa_id: empresaId, titulo: (nomeEmpresa || 'Empresa') + ': conversa no ' + fonte.nome, estagio: dec.para,
+        origem: 'abordagem_direta', proximo_passo: String(st.proximo_passo || st.resumo || '').slice(0, 300), proximo_passo_em: dataPP });
+      if (!nova) return;
+      opId = nova.id;
+      await sp('crm_oportunidade_eventos', { oportunidade_id: opId, tipo: 'criada', para: dec.para, texto: (fonte.nome + ': ' + st.resumo + (st.evidencia ? ' — "' + st.evidencia + '"' : '')).slice(0, 600), autor_email: fonte.autor });
+      await sp(`crm_gmail_sugestoes?id=eq.${regRows[0].id}`, { oportunidade_id: opId }, 'PATCH');
+    } else {
+      await sp(`crm_oportunidades?id=eq.${opId}`, Object.assign({ estagio: dec.para, atualizado_em: new Date().toISOString() },
+        !op.proximo_passo && st.proximo_passo ? { proximo_passo: String(st.proximo_passo).slice(0, 300), proximo_passo_em: dataPP } : {}), 'PATCH');
+      await sp('crm_oportunidade_eventos', { oportunidade_id: opId, tipo: 'estagio', de: op.estagio, para: dec.para, texto: (fonte.nome + ': ' + st.resumo + (st.evidencia ? ' — "' + st.evidencia + '"' : '')).slice(0, 600), autor_email: fonte.autor });
+    }
+    // Sugestões pendentes da mesma empresa que esta atualização já cobre saem da lista.
+    const cobertas = await sg(`crm_gmail_sugestoes?empresa_id=eq.${empresaId}&status=eq.pendente&select=id,estagio_para`);
+    for (const p of (Array.isArray(cobertas) ? cobertas : [])) {
+      if (substituiSugestao(p, { estagio_para: dec.para })) await sp(`crm_gmail_sugestoes?id=eq.${p.id}`, { status: 'rejeitada', decidido_em: new Date().toISOString(), decidido_por: fonte.autor, motivo: 'coberta pela atualização automática #' + regRows[0].id }, 'PATCH');
+    }
+    cont.aplicadas++;
+}
+
+// ── whatsapp-crm: o CRM lê as conversas de trabalho do WhatsApp (depósito do Mac) ──
+// A cada 15 min: conversas ligadas a uma empresa, com mensagem nova desde a última
+// leitura e dos últimos 60 dias. Mesmas regras do Gmail (aplicarStatusConversa):
+// prazo combinado, reunião marcada, avanço de etapa claro; o resto vira sugestão.
+async function jobWhatsappCrm(req, res) {
+  const inicio = Date.now(); const LIMITE = 45000;
+  const cont = { conversas_lidas: 0, aplicadas: 0, sugeridas: 0, sem_mudanca: 0, custo_usd: 0 };
+  const cfgR = await sg('crm_configuracoes?chave=in.(whatsapp_crm_custo_dia_max_usd,gmail_crm_modelo)&select=chave,valor');
+  const cfg = {}; for (const r of (Array.isArray(cfgR) ? cfgR : [])) cfg[r.chave] = r.valor;
+  const desde = new Date(Date.now() - 60 * 864e5).toISOString();
+  const lista = await sg(`crm_wa_conversas?empresa_id=not.is.null&tipo=eq.pessoa&categoria=eq.trabalho&ultima_em=gte.${desde}&select=jid,nome,empresa_id,decisor_id,ultima_em,analisada_ate&order=ultima_em.desc&limit=200`);
+  if (lista === null) return erroLeitura('whatsapp-crm', res, inicio, 'crm_wa_conversas');
+  const fila = lista.filter(c => !c.analisada_ate || new Date(c.ultima_em) > new Date(c.analisada_ate));
+  const tetoUsd = Number(cfg.whatsapp_crm_custo_dia_max_usd) || 1;
+  const logsHoje = await sg(`crm_logs?origem=eq.cron:whatsapp-crm&mensagem=like.fim*&criado_em=gte.${inicioDiaBRT()}&select=contexto&limit=500`);
+  let gastoHoje = gastoDosLogs(logsHoje);
+  const modelo = typeof cfg.gmail_crm_modelo === 'string' && cfg.gmail_crm_modelo ? cfg.gmail_crm_modelo : MODELO_SDR;
+  if (!(await temChaveLLM())) { await logCron('whatsapp-crm', 'aviso', 'fim — sem chave da IA', {}); return res.status(200).json({ ok: true, pulado: true }); }
+  const empIds = [...new Set(fila.map(c => c.empresa_id))];
+  const nomes = {};
+  if (empIds.length) { const ns = await sg(`crm_empresas?id=in.(${empIds.join(',')})&select=id,nome`); for (const e of (Array.isArray(ns) ? ns : [])) nomes[e.id] = e.nome; }
+  for (const c of fila) {
+    if (gastoHoje >= tetoUsd || Date.now() - inicio > LIMITE) break;
+    const ms = await sg(`crm_wa_mensagens?jid=eq.${encodeURIComponent(c.jid)}&enviada_em=gte.${desde}&select=de_mim,texto,midia,enviada_em&order=enviada_em.desc&limit=60`);
+    const mensagens = (Array.isArray(ms) ? ms : []).reverse().filter(m => m.texto || m.midia).map(m => ({ direcao: m.de_mim ? 'enviado' : 'recebido', data: m.enviada_em, de: c.nome || 'contato', assunto: '', texto: m.texto || m.midia }));
+    if (!mensagens.length) { await sp(`crm_wa_conversas?jid=eq.${encodeURIComponent(c.jid)}`, { analisada_ate: c.ultima_em, analisada_em: new Date().toISOString() }, 'PATCH'); continue; }
+    const ops = await sg(`crm_oportunidades?empresa_id=eq.${c.empresa_id}&apagado_em=is.null&select=id,estagio,proximo_passo,proximo_passo_em,atualizado_em&order=atualizado_em.desc.nullslast&limit=5`);
+    const abertas = Array.isArray(ops) ? ops : [];
+    const op = abertas.find(o => !['Perdido', 'Cliente ativo', 'Pausado'].includes(o.estagio)) || abertas[0] || null;
+    const { system, user } = construirPromptStatus({ empresa: nomes[c.empresa_id], estagioAtual: op ? op.estagio : null, mensagens, hoje: new Date().toISOString().slice(0, 10), canal: 'whatsapp' });
+    const r = await gerarJSON({ system, user, schema: SCHEMA_STATUS, effort: 'low', model: modelo });
+    cont.custo_usd += r.custo || 0; gastoHoje += r.custo || 0;
+    if (!r.obj) continue;
+    cont.conversas_lidas++;
+    const st = r.obj;
+    const dataPP = /^\d{4}-\d{2}-\d{2}$/.test(st.data_proximo_passo || '') ? st.data_proximo_passo : null;
+    await sp(`crm_wa_conversas?jid=eq.${encodeURIComponent(c.jid)}`, { sinal: st.sinal, confianca: st.confianca, resumo: String(st.resumo || '').slice(0, 400), proximo_passo: String(st.proximo_passo || '').slice(0, 300),
+      proximo_passo_em: dataPP, evidencia: String(st.evidencia || '').slice(0, 300), analisada_ate: c.ultima_em, analisada_em: new Date().toISOString() }, 'PATCH');
+    const respondeu = mensagens.some(m => m.direcao === 'recebido');
+    await aplicarStatusConversa({ empresaId: c.empresa_id, threadId: 'wa:' + c.jid, ultima: c.ultima_em, st, dataPP, mensagens, op, respondeu, nomeEmpresa: nomes[c.empresa_id], cont, fonte: FONTE_WHATSAPP });
+  }
+  cont.custo_usd = Math.round(cont.custo_usd * 10000) / 10000; cont.pendentes = Math.max(0, fila.length - cont.conversas_lidas); cont.ms = Date.now() - inicio;
+  await logCron('whatsapp-crm', cont.aplicadas || cont.sugeridas ? 'aviso' : 'info', cont.aplicadas || cont.sugeridas ? `fim — ${cont.aplicadas} atualização(ões) no pipeline, ${cont.sugeridas} sugestão(ões)` : 'fim', cont);
+  return res.status(200).json({ ok: true, ...cont });
+}
+
 async function jobGmailCrm(req, res) {
   const inicio = Date.now(); const LIMITE = 48000;
   const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null);
@@ -2438,71 +2556,7 @@ async function jobGmailCrm(req, res) {
       proximo_passo: String(st.proximo_passo || '').slice(0, 300), proximo_passo_em: dataPP, evidencia: String(st.evidencia || '').slice(0, 300),
       thread_id: c.threadId, ultima_mensagem_em: c.ultima, ultima_direcao: c.direcao, atualizado_em: new Date().toISOString() }, 'empresa_id');
     const respondeu = respostaReal(mensagens, proprios);
-    const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-    // Prazo combinado no e-mail vira o próximo passo da oportunidade aberta.
-    if (aplicarPrazoDoEmail({ dataPP, hojeStr, op, respondeu, ultimaMsgEm: c.ultima })) {
-      const passo = String(st.proximo_passo || st.resumo || '').slice(0, 300);
-      if (await sp(`crm_oportunidades?id=eq.${op.id}`, { proximo_passo: passo, proximo_passo_em: dataPP, atualizado_em: new Date().toISOString() }, 'PATCH')) {
-        await sp('crm_oportunidade_eventos', { oportunidade_id: op.id, tipo: 'nota', texto: ('Prazo pelo Gmail: ' + passo + ' até ' + dataPP.split('-').reverse().join('/') + (st.evidencia ? ' — "' + st.evidencia + '"' : '')).slice(0, 600), autor_email: 'agente-gmail' });
-        op.proximo_passo = passo; op.proximo_passo_em = dataPP; cont.prazos = (cont.prazos || 0) + 1;
-      }
-    }
-    // Reunião marcada com data: registra (meta semanal e lista de próximas reuniões), uma por empresa e dia.
-    if (respondeu && st.sinal === 'reuniao_marcada' && dataPP && dataPP >= hojeStr) {
-      const ja = await sg(`crm_toques?empresa_id=eq.${c.empresa_id}&reuniao_em=gte.${dataPP}T00:00:00-03:00&reuniao_em=lte.${dataPP}T23:59:59-03:00&apagado_em=is.null&select=id&limit=1`);
-      if (Array.isArray(ja) && !ja.length) {
-        const ultimaRec = [...mensagens].reverse().find(x => x.direcao === 'recebido');
-        if (await sp('crm_toques', { empresa_id: c.empresa_id, canal: 'email', direcao: 'recebido', assunto: String((ultimaRec && ultimaRec.assunto) || '').slice(0, 500),
-          resumo: ('Gmail: reunião marcada para ' + dataPP.split('-').reverse().join('/') + ' — ' + (st.resumo || '')).slice(0, 500), data: new Date().toISOString(),
-          fonte: 'sistema', resultado: 'reuniao_marcada', reuniao_em: dataPP + 'T00:00:00-03:00' })) cont.reunioes = (cont.reunioes || 0) + 1;
-      }
-    }
-    const dec = decidirPipeline({ sinal: st.sinal, confianca: st.confianca, estagioAtual: op ? op.estagio : null,
-      clienteRespondeu: respondeu });
-    if (dec.acao === 'nada') { cont.sem_mudanca++; continue; }
-    const base = { empresa_id: c.empresa_id, thread_id: c.threadId, sinal: st.sinal, confianca: st.confianca, estagio_para: dec.para,
-      resumo: String(st.resumo || '').slice(0, 400), evidencia: String(st.evidencia || '').slice(0, 300), motivo: dec.motivo };
-    if (dec.acao === 'sugerir') {
-      const linha = Object.assign({ oportunidade_id: op && !dec.nova ? op.id : null, estagio_de: op && !dec.nova ? op.estagio : null, status: 'pendente' }, base);
-      // O Pedro já recusou esta mudança para esta empresa nos últimos 30 dias: não insiste.
-      const recusada = await sg(`crm_gmail_sugestoes?empresa_id=eq.${c.empresa_id}&status=eq.rejeitada&estagio_para=eq.${encodeURIComponent(dec.para)}&decidido_por=not.like.agente*&decidido_em=gte.${new Date(Date.now() - 30 * 864e5).toISOString()}&select=id&limit=1`);
-      if (Array.isArray(recusada) && recusada.length) { cont.sem_mudanca++; continue; }
-      // Uma pendente por empresa: atualiza a existente em vez de criar outra.
-      const pend = await sg(`crm_gmail_sugestoes?empresa_id=eq.${c.empresa_id}&status=eq.pendente&select=id,estagio_para&order=criado_em.desc&limit=1`);
-      const atual = Array.isArray(pend) && pend.length ? pend[0] : null;
-      if (atual) {
-        if (!substituiSugestao(atual, { estagio_para: dec.para })) { cont.sem_mudanca++; continue; }
-        if (await sp(`crm_gmail_sugestoes?id=eq.${atual.id}`, Object.assign({}, linha, { criado_em: new Date().toISOString() }), 'PATCH')) cont.sugeridas++;
-        continue;
-      }
-      if (await spUpsert('crm_gmail_sugestoes', linha, 'empresa_id,thread_id,sinal', true)) cont.sugeridas++;
-      continue;
-    }
-    // aplicar/criar: registra antes (índice único impede aplicar duas vezes o mesmo sinal da mesma conversa).
-    const reg = await fetch(SUPA_URL + '/rest/v1/crm_gmail_sugestoes?on_conflict=empresa_id,thread_id,sinal', { method: 'POST',
-      headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=ignore-duplicates,return=representation' },
-      body: JSON.stringify(Object.assign({ oportunidade_id: op ? op.id : null, estagio_de: dec.acao === 'criar' ? null : op.estagio, status: 'aplicada', decidido_em: new Date().toISOString(), decidido_por: 'agente-gmail' }, base)) });
-    const regRows = reg.ok ? await reg.json().catch(() => []) : [];
-    if (!regRows.length) continue;
-    let opId = op ? op.id : null;
-    if (dec.acao === 'criar') {
-      const nova = await spRet('crm_oportunidades', { empresa_id: c.empresa_id, titulo: (nomeEmp[c.empresa_id] || 'Empresa') + ': conversa no Gmail', estagio: dec.para,
-        origem: 'abordagem_direta', proximo_passo: String(st.proximo_passo || st.resumo || '').slice(0, 300), proximo_passo_em: dataPP });
-      if (!nova) continue;
-      opId = nova.id;
-      await sp('crm_oportunidade_eventos', { oportunidade_id: opId, tipo: 'criada', para: dec.para, texto: ('Gmail: ' + st.resumo + (st.evidencia ? ' — "' + st.evidencia + '"' : '')).slice(0, 600), autor_email: 'agente-gmail' });
-      await sp(`crm_gmail_sugestoes?id=eq.${regRows[0].id}`, { oportunidade_id: opId }, 'PATCH');
-    } else {
-      await sp(`crm_oportunidades?id=eq.${opId}`, Object.assign({ estagio: dec.para, atualizado_em: new Date().toISOString() },
-        !op.proximo_passo && st.proximo_passo ? { proximo_passo: String(st.proximo_passo).slice(0, 300), proximo_passo_em: dataPP } : {}), 'PATCH');
-      await sp('crm_oportunidade_eventos', { oportunidade_id: opId, tipo: 'estagio', de: op.estagio, para: dec.para, texto: ('Gmail: ' + st.resumo + (st.evidencia ? ' — "' + st.evidencia + '"' : '')).slice(0, 600), autor_email: 'agente-gmail' });
-    }
-    // Sugestões pendentes da mesma empresa que esta atualização já cobre saem da lista.
-    const cobertas = await sg(`crm_gmail_sugestoes?empresa_id=eq.${c.empresa_id}&status=eq.pendente&select=id,estagio_para`);
-    for (const p of (Array.isArray(cobertas) ? cobertas : [])) {
-      if (substituiSugestao(p, { estagio_para: dec.para })) await sp(`crm_gmail_sugestoes?id=eq.${p.id}`, { status: 'rejeitada', decidido_em: new Date().toISOString(), decidido_por: 'agente-gmail', motivo: 'coberta pela atualização automática #' + regRows[0].id }, 'PATCH');
-    }
-    cont.aplicadas++;
+    await aplicarStatusConversa({ empresaId: c.empresa_id, threadId: c.threadId, ultima: c.ultima, st, dataPP, mensagens, op, respondeu, nomeEmpresa: nomeEmp[c.empresa_id], cont, fonte: FONTE_GMAIL });
   }
 
   // Cursor só avança se tudo foi processado (senão a próxima execução retoma).
@@ -2972,6 +3026,7 @@ export default async function handler(req, res) {
     if (job === 'sdr-aprendizado')       return await jobSdrAprendizado(req, res);
     if (job === 'aprender-estilo')       return await jobAprenderEstilo(req, res);
     if (job === 'gmail-crm')             return await jobGmailCrm(req, res);
+    if (job === 'whatsapp-crm')          return await jobWhatsappCrm(req, res);
     if (job === 'classificar-setores')   return await jobClassificarSetores(req, res);
     if (job === 'blitz-redacao')         return await jobBlitzRedacao(req, res);
     if (job === 'movimentacoes')         return await jobMovimentacoes(req, res, 'imprensa');

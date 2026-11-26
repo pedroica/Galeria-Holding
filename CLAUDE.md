@@ -369,6 +369,10 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
   quem já existe só tem campo vazio completado. `conversas` → `crm_wa_conversas` (ligada a pessoa/empresa por telefone);
   `mensagens` → `crm_wa_mensagens`; `fim` → RPC `wa_gerar_toques()` (um toque por dia e direção, últimos 18 meses, só
   conversas ligadas a pessoa de trabalho; atualiza `ultimo_toque_em`).
+- Job `whatsapp-crm` (pg_cron a cada 15 min): lê as conversas de trabalho ligadas a empresa (últimos 60 dias, só as com
+  mensagem nova desde `analisada_ate`) com o mesmo prompt/regras do Gmail (`construirPromptStatus` modo WhatsApp +
+  `aplicarStatusConversa`): prazo combinado, reunião marcada (toque `reuniao_marcada`, canal whatsapp), avanço claro
+  de etapa ou sugestão em `crm_gmail_sugestoes` (`thread_id='wa:<jid>'`, `agente-whatsapp`). Teto `whatsapp_crm_custo_dia_max_usd` (1).
 - As três tabelas têm RLS **só admin** (`crm_eh_admin()`). A conversa aparece no painel da oportunidade e entra no prompt
   do follow-up (20 últimas mensagens).
 
