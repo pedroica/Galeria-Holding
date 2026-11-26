@@ -27,7 +27,7 @@ ok(checarWhatsapp(r.mensagem).length === 0, 'mensagem boa passa');
 ok(checarWhatsapp('Oi — tudo bem? Veja https://x.com e o preço').some(x => /travessão/.test(x)) && checarWhatsapp('veja https://x.com').includes('tem link') && checarWhatsapp('palavra '.repeat(120)).includes('longa para WhatsApp'), 'barra travessão, link e texto longo');
 
 // Rota
-let chamadaIA = null; const logs = [];
+let chamadaIA = null; const logs = []; const gmail = []; let enviou = false;
 globalThis.__SDR_LLM_MOCK = (a) => { chamadaIA = a; return { texto: resp, urls: ['https://exame.com/x', 'https://valor.com/y'], buscas: 2 }; };
 globalThis.fetch = async (url, opts = {}) => {
   const u = decodeURIComponent(String(url)); const mt = (opts.method || 'GET').toUpperCase();
@@ -35,7 +35,11 @@ globalThis.fetch = async (url, opts = {}) => {
   if (u.includes('crm_usuarios')) return json([{ email: 'pedro@galeria.test', ativo: true }]);
   if (u.includes('crm_oportunidades')) return json(u.includes('id=eq.op1') ? [Object.assign({ empresa_id: 'eXP', agencia_id: 'a404' }, op)] : []);
   if (u.includes('crm_empresas')) return json([{ nome: 'XP INC', setor: 'banco', setor_canonico: 'Financeiro' }]);
-  if (u.includes('crm_decisores')) return json([{ id: 'dRenan', nome: 'Renan', cargo: 'Compras', wa: null }, { id: 'dMarcelo', nome: 'Marcelo Bronze', cargo: 'Diretor de Marketing', wa: '11 98888-7777' }, { id: 'dVelho', nome: 'Saiu', status: 'saiu_da_empresa', wa: '11977776666' }]);
+  if (u.includes('oauth2.googleapis') || u.includes('gmail.googleapis.com')) { gmail.push(mt + ' ' + u); if (u.includes('/drafts') && mt === 'POST') return json({ id: 'r-123', message: { id: 'm1', threadId: 't1' } }); if (u.includes('sendAs')) return json({ sendAs: [] }); if (/\/send(\?|$)/.test(u)) { enviou = true; return json({}); } return json({}); }
+  if (u.includes('crm_oauth_tokens')) return json([{ id: 1, access_token: 'tok', refresh_token: 'rt', expires_at: new Date(Date.now() + 3600e3).toISOString(), account_email: 'pedro@galeria.test' }]);
+  if (u.includes('crm_decisores') && u.includes('id=eq.dRenan')) return json([{ id: 'dRenan', nome: 'Renan', email: 'renan@xp.test' }]);
+  if (u.includes('crm_decisores') && u.includes('id=eq.dMarcelo')) return json([{ id: 'dMarcelo', nome: 'Marcelo', email: null }]);
+  if (u.includes('crm_decisores')) return json([{ id: 'dRenan', nome: 'Renan', cargo: 'Compras', wa: null, email: 'renan@xp.test' }, { id: 'dMarcelo', nome: 'Marcelo Bronze', cargo: 'Diretor de Marketing', wa: '11 98888-7777' }, { id: 'dVelho', nome: 'Saiu', status: 'saiu_da_empresa', wa: '11977776666' }]);
   if (u.includes('crm_toques') || u.includes('crm_oportunidade_eventos')) return json([]);
   if (u.includes('crm_agencias')) return json([{ nome: '404' }]);
   if (u.includes('crm_logs')) { logs.push(mt); return new Response(null, { status: 201 }); }
@@ -55,6 +59,20 @@ ok(x.body.fontes.includes('https://valor.com/y') && x.body.contatos.length === 2
 const y = await chamar({ oportunidade_id: 'op1', decisor_id: 'dRenan', instrucao: 'cobrar o Renan' });
 ok(y.body.contato.id === 'dRenan' && y.body.link.startsWith('https://wa.me/?text=') && /cobrar o Renan/.test(chamadaIA.user), 'contato escolhido sem número: link abre o WhatsApp para escolher');
 ok((await chamar({ oportunidade_id: 'nao-existe' })).status === 404, 'oportunidade inexistente: 404');
+
+// E-mail
+const pe = promptWhatsappPipeline({ op, canal: 'email' });
+ok(/E-MAIL/.test(pe.system) && /"assunto"/.test(pe.system) && /web_search/.test(pe.system), 'prompt de e-mail pede assunto e pesquisa na internet');
+ok(checarWhatsapp('Oi Renan, tudo bem?', 'email', '').includes('sem assunto') && checarWhatsapp('Oi Renan', 'email', 'retomando o papo').length === 0, 'e-mail exige assunto');
+const respEmail = '```json\n{"assunto":"retomando o papo","mensagem":"Renan, tudo bem?\\n\\nTopa um café?","fato_usado":"","fontes":[]}\n```';
+globalThis.__SDR_LLM_MOCK = (a) => { chamadaIA = a; return { texto: respEmail, urls: [], buscas: 1 }; };
+const em = await chamar({ oportunidade_id: 'op1', canal: 'email' });
+ok(em.status === 200 && em.body.canal === 'email' && em.body.assunto === 'retomando o papo' && em.body.contato.id === 'dRenan' && em.body.contato.tem_email, 'e-mail: escolhe quem tem e-mail e devolve assunto — ' + em.status);
+ok(/E-MAIL/.test(chamadaIA.system), 'IA recebe o pedido de e-mail');
+const rs = await chamar({ oportunidade_id: 'op1', canal: 'email', acao: 'rascunho', decisor_id: 'dRenan', assunto: 'retomando o papo', corpo: 'Renan, tudo bem?\n\nTopa um café?' });
+ok(rs.status === 200 && rs.body.rascunho_id === 'r-123' && rs.body.para === 'renan@xp.test' && gmail.some(g => /POST .*\/drafts/.test(g)), 'cria rascunho no Gmail — ' + JSON.stringify(rs.body));
+ok(!enviou && !gmail.some(g => /\/send(\?|$)/.test(g)), 'nunca envia: só rascunho');
+ok((await chamar({ oportunidade_id: 'op1', canal: 'email', acao: 'rascunho', decisor_id: 'dMarcelo', assunto: 'a', corpo: 'b' })).status === 400, 'contato sem e-mail: não cria rascunho');
 
 console.log(`\n${n - fail} ok, ${fail} falha(s)`);
 process.exit(fail ? 1 : 0);
