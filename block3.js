@@ -1242,7 +1242,7 @@ function InteligenciaView(props) {
         var aplic = d.sug.filter(function (x) { return x.status === 'aplicada'; });
         var linhaSug = function (x, botoes) {
           return React.createElement("div", { key: x.id, style: { borderBottom: '.5px solid #1A1A2E', padding: '7px 0', display: 'flex', flexDirection: 'column', gap: 3 } },
-            React.createElement("div", { style: { fontSize: 12, color: '#F5F5F5' } }, React.createElement("b", null, (x.crm_empresas && x.crm_empresas.nome) || '—'), ' · ' + (x.estagio_de || 'sem oportunidade') + ' → ', React.createElement("b", { style: { color: x.estagio_para === 'Perdido' ? '#E24B4A' : '#34D399' } }, x.estagio_para)),
+            React.createElement("div", { style: { fontSize: 12, color: '#F5F5F5' } }, React.createElement("b", null, (x.crm_empresas && x.crm_empresas.nome) || '—'), ' · ' + (x.estagio_de || 'nova oportunidade') + ' → ', React.createElement("b", { style: { color: x.estagio_para === 'Perdido' ? '#E24B4A' : '#34D399' } }, x.estagio_para)),
             React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4' } }, (x.resumo || '') + (x.evidencia ? ' — "' + x.evidencia + '"' : '') + ' · confiança ' + (x.confianca || '?')),
             React.createElement("div", { style: { display: 'flex', gap: 6 } }, botoes));
         };

@@ -24,7 +24,7 @@ import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTempl
 import { obterTokenGraph } from '../lib/graph-token.js';
 import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail, gmailReq, consultaRascunho, filaIdDaFronteira } from '../lib/gmail-token.js';
 import { perfilGmail, historicoGmail, eventosDoHistorico, metadadosMensagem, corpoMensagem, filaIdDoMessageId, textoDoPayload } from '../lib/gmail-sync.js';
-import { montarIndice, casarMensagem, decidirPipeline, construirPromptStatus, SCHEMA_STATUS, semCitacao, respostaReal } from '../lib/gmail-crm.js';
+import { montarIndice, casarMensagem, decidirPipeline, construirPromptStatus, SCHEMA_STATUS, semCitacao, respostaReal, substituiSugestao } from '../lib/gmail-crm.js';
 import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
 import { tokenSdrValido } from '../lib/sdr-auth.js';
 import { crossSell, sinaisDeCompra } from '../lib/sdr-topo.js';
@@ -2490,7 +2490,19 @@ async function jobGmailCrm(req, res) {
     const base = { empresa_id: c.empresa_id, thread_id: c.threadId, sinal: st.sinal, confianca: st.confianca, estagio_para: dec.para,
       resumo: String(st.resumo || '').slice(0, 400), evidencia: String(st.evidencia || '').slice(0, 300), motivo: dec.motivo };
     if (dec.acao === 'sugerir') {
-      if (await spUpsert('crm_gmail_sugestoes', Object.assign({ oportunidade_id: op ? op.id : null, estagio_de: op ? op.estagio : null, status: 'pendente' }, base), 'empresa_id,thread_id,sinal', true)) cont.sugeridas++;
+      const linha = Object.assign({ oportunidade_id: op && !dec.nova ? op.id : null, estagio_de: op && !dec.nova ? op.estagio : null, status: 'pendente' }, base);
+      // O Pedro já recusou esta mudança para esta empresa nos últimos 30 dias: não insiste.
+      const recusada = await sg(`crm_gmail_sugestoes?empresa_id=eq.${c.empresa_id}&status=eq.rejeitada&estagio_para=eq.${encodeURIComponent(dec.para)}&decidido_por=not.like.agente*&decidido_em=gte.${new Date(Date.now() - 30 * 864e5).toISOString()}&select=id&limit=1`);
+      if (Array.isArray(recusada) && recusada.length) { cont.sem_mudanca++; continue; }
+      // Uma pendente por empresa: atualiza a existente em vez de criar outra.
+      const pend = await sg(`crm_gmail_sugestoes?empresa_id=eq.${c.empresa_id}&status=eq.pendente&select=id,estagio_para&order=criado_em.desc&limit=1`);
+      const atual = Array.isArray(pend) && pend.length ? pend[0] : null;
+      if (atual) {
+        if (!substituiSugestao(atual, { estagio_para: dec.para })) { cont.sem_mudanca++; continue; }
+        if (await sp(`crm_gmail_sugestoes?id=eq.${atual.id}`, Object.assign({}, linha, { criado_em: new Date().toISOString() }), 'PATCH')) cont.sugeridas++;
+        continue;
+      }
+      if (await spUpsert('crm_gmail_sugestoes', linha, 'empresa_id,thread_id,sinal', true)) cont.sugeridas++;
       continue;
     }
     // aplicar/criar: registra antes (índice único impede aplicar duas vezes o mesmo sinal da mesma conversa).

@@ -6,7 +6,7 @@ process.env.SUPA_CRM_URL = 'https://fake.supabase.co';
 process.env.CRON_SECRET = 'cron-vercel';
 process.env.ANTHROPIC_API_KEY = 'sk-fake';
 
-import { parseEnderecos, montarIndice, casarMensagem, decidirPipeline, semCitacao, construirPromptStatus, respostaReal, nomeDoEmail } from '../lib/gmail-crm.js';
+import { parseEnderecos, montarIndice, casarMensagem, decidirPipeline, semCitacao, construirPromptStatus, respostaReal, nomeDoEmail, substituiSugestao } from '../lib/gmail-crm.js';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log((c ? '  ✓ ' : '  ✗ FALHOU: ') + m); };
@@ -52,6 +52,17 @@ ok(!respostaReal([{ direcao: 'recebido', de: 'Ana <ana@empresa.com.br>', assunto
 ok(!respostaReal([{ direcao: 'recebido', de: 'dono@exemplo.test', assunto: 'Re: Conversa rápida' }], eu), 'mensagem do próprio Pedro não é resposta');
 ok(respostaReal([{ direcao: 'enviado', de: 'dono@exemplo.test', assunto: 'Conversa rápida' }, { direcao: 'recebido', de: 'Ana <ana@empresa.com.br>', assunto: 'Re: Conversa rápida' }], eu), 'resposta de pessoa da empresa conta');
 ok(nomeDoEmail('daniel.galhardo') === 'Daniel Galhardo' && nomeDoEmail('ana_souza2') === 'Ana Souza2' && nomeDoEmail('joao') === 'Joao', 'nome legível a partir do e-mail');
+const dp = (o) => decidirPipeline(Object.assign({ confianca: 'alta', clienteRespondeu: true }, o));
+ok(dp({ sinal: 'concorrencia', estagioAtual: 'Contato direto' }).para === 'Concorrências' && dp({ sinal: 'concorrencia', estagioAtual: 'Contato direto' }).acao === 'aplicar', 'concorrência (RFI/pitch) leva para Concorrências');
+ok(dp({ sinal: 'negociacao', estagioAtual: 'Cliente ativo' }).acao === 'sugerir' && dp({ sinal: 'negociacao', estagioAtual: 'Cliente ativo' }).nova === true, 'cliente ativo + negociação nova: sugere NOVA oportunidade, não recua a antiga');
+ok(dp({ sinal: 'interesse', estagioAtual: 'Perdido' }).nova === true, 'perdida + interesse: sugere nova oportunidade');
+ok(dp({ sinal: 'nao_agora', estagioAtual: 'Perdido' }).acao === 'nada', 'perdida + "agora não": nada a fazer');
+ok(dp({ sinal: 'perdido', estagioAtual: 'Cliente ativo' }).acao === 'sugerir' && !dp({ sinal: 'perdido', estagioAtual: 'Cliente ativo' }).nova, 'cliente ativo com sinal de saída: sugere mudar a própria oportunidade');
+ok(dp({ sinal: 'interesse', estagioAtual: 'Pausado' }).acao === 'sugerir' && !dp({ sinal: 'interesse', estagioAtual: 'Pausado' }).nova, 'pausada: sugere retomar a mesma');
+ok(substituiSugestao(null, { estagio_para: 'Contato direto' }), 'sem pendente: grava');
+ok(!substituiSugestao({ estagio_para: 'Concorrências' }, { estagio_para: 'Contato direto' }), 'pendente mais avançada fica (não troca Concorrências por Contato direto)');
+ok(substituiSugestao({ estagio_para: 'Contato direto' }, { estagio_para: 'Concorrências' }), 'sugestão mais avançada substitui a pendente');
+ok(substituiSugestao({ estagio_para: 'Negociação' }, { estagio_para: 'Negociação' }), 'mesma etapa: a mais recente vence');
 
 console.log('Texto da conversa');
 ok(semCitacao('Pode ser quinta 10h.\n\nEm seg., 24 de nov. de 2026 às 10:00, Pedro <p@x.com> escreveu:\n> texto antigo') === 'Pode ser quinta 10h.', 'tira a citação da mensagem anterior');
