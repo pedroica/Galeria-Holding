@@ -52,17 +52,19 @@ Hooks disponíveis em block3.js: `const { useState, useMemo, useEffect, useCallb
 
 ---
 
-## Navegação principal (block3.js ≈ linha 3998)
+## Navegação principal (block3.js, App)
 
-```javascript
-[['hoje','Hoje'],['holding','Holding'],['agencia','Agências'],
- ['aprovar','Aprovar'],['fila','Fila'],['base','Base'],['ferramentas','Ferramentas']]
-```
+Menu enxuto (26/11/2026): **Hoje · Pipeline · Fila · Base · Inteligência · Agências · Admin**.
+Telas agrupadas em sub-abas (`SUBABAS` no App, barra `BarraSubAbas`):
+- Fila: Aprovar · Enviar · Agente (SDR)
+- Pipeline: Pipeline · Metas semanais · Kanban legado
+- Inteligência: Inteligência · Atividade
+- Admin: Usuários (só admin) · Templates · Blocklist · Copiloto
+- Agências: Pipeline · Notícias · Serviços · Materiais (Cases/Credenciais/Textos) · Enviar pipeline
 
-Cada item `[slug, label]` aparece na topbar. Para adicionar uma tela nova:
-1. Adicionar o par ao array acima
-2. Adicionar o caso `navSection === 'slug' ? React.createElement(MinhaView, null) :` na chain de views (≈ linha 4033)
-3. Escrever o componente React no bloco correto
+`navTo('sdr'|'aprovar'|'atividade'|'templates'|...)` continua valendo: `NAV_ALIAS` leva para o menu + sub-aba certos.
+A tela mostrada é `vista` (menu + sub-aba). Para uma tela nova: adicionar a sub-aba em `SUBABAS`,
+o mapeamento em `VISTA` e o caso `vista === '...' ?` na chain de telas.
 
 ---
 
