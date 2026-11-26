@@ -495,3 +495,62 @@ function CapturaView(props) {
       result.some(function (x) { return x.decisor_id; }) && bbe("div", { style: { marginTop: 10 } }, bbBotao('⚡ Escrever mensagens para eles', blitzParaEles, '#FF6B2B', { cheio: true }))),
     blitz && bbe(BlitzPainel, { lista: blitz.lista, linhas: [], navTo: props && props.navTo, onClose: function () { setBlitz(null); } }));
 }
+
+// ── Movimentações: novos CMOs e diretores de marketing (tela Hoje) ────────────
+// Vem do job movimentacoes (imprensa todo dia, Lusha às segundas). Com e-mail: o
+// rascunho de parabéns já está no Gmail (o envio é seu). Sem e-mail: a versão
+// para o LinkedIn fica pronta para copiar.
+function PainelMovimentacoes(props) {
+  var _m = React.useState(null); var movs = _m[0]; var setMovs = _m[1];
+  var _a = React.useState(null); var aberto = _a[0]; var setAberto = _a[1];
+  var _c = React.useState(null); var copiado = _c[0]; var setCopiado = _c[1];
+  function carregar() {
+    var desde = new Date(Date.now() - 14 * 864e5).toISOString();
+    supaFetch('/rest/v1/crm_movimentacoes?criado_em=gte.' + desde + '&status=neq.descartada&select=*,crm_decisores(linkedin_url,email),crm_fila(status,outlook_message_id,outlook_draft_link)&order=criado_em.desc&limit=50')
+      .then(function (r) { setMovs(Array.isArray(r) ? r : []); }).catch(function () { setMovs([]); });
+  }
+  React.useEffect(carregar, []);
+  if (!movs || !movs.length) return null;
+  function descartar(m) {
+    if (!window.confirm('Descartar a movimentação de ' + m.pessoa + '? O rascunho, se houver, não será enviado.')) return;
+    var feitos = [supaFetch('/rest/v1/crm_movimentacoes?id=eq.' + m.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'descartada', atualizado_em: new Date().toISOString() }) })];
+    if (m.fila_id) feitos.push(supaFetch('/rest/v1/crm_fila?id=eq.' + m.fila_id + '&status=eq.aprovado', { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'pulado', motivo_pulo: 'movimentação descartada pelo Pedro' }) }));
+    Promise.all(feitos).then(carregar);
+  }
+  function copiar(m) {
+    var t = m.mensagem_linkedin || m.mensagem_email || '';
+    (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { setCopiado(m.id); setTimeout(function () { setCopiado(null); }, 2500); }).catch(function () { window.prompt('Copie a mensagem:', t); });
+    var li = (m.crm_decisores && m.crm_decisores.linkedin_url) || '';
+    if (li) window.open(li, '_blank');
+  }
+  var estado = function (m) {
+    var f = m.crm_fila || {};
+    if (m.status === 'rascunho' && f.status === 'enviado') return { t: 'enviado ✓', c: '#34D399' };
+    if (m.status === 'rascunho') return { t: f.outlook_message_id ? 'rascunho no Gmail ✓' : 'criando rascunho…', c: '#60A5FA' };
+    if (m.status === 'sem_email') return { t: 'sem e-mail: LinkedIn', c: '#FBBF24' };
+    if (m.status === 'erro') return { t: 'revisar: ' + (m.motivo || ''), c: '#E24B4A' };
+    return { t: 'processando…', c: '#6B6B85' };
+  };
+  return bbe("div", { style: { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px' } },
+    bbe("div", { style: { display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 8 } },
+      bbe("span", { style: { fontFamily: BB_MONO, fontSize: 10, color: '#F5F5F5', letterSpacing: '.5px', fontWeight: 700 } }, 'NOVOS CMOs E DIRETORES DE MARKETING'),
+      bbe("span", { style: { fontFamily: BB_MONO, fontSize: 9, color: '#6B6B85' } }, movs.length + ' nos últimos 14 dias · parabéns no seu estilo, envio é seu')),
+    movs.map(function (m) {
+      var e = estado(m);
+      return bbe("div", { key: m.id, style: { borderBottom: '.5px solid #1A1A2E', padding: '7px 0' } },
+        bbe("div", { style: { display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' } },
+          bbe("span", { style: { fontSize: 12, color: '#F5F5F5', fontWeight: 600 } }, m.pessoa),
+          bbe("span", { style: { fontSize: 11, color: '#C9C9D6' } }, (m.cargo || '') + ' · ' + (m.empresa || '')),
+          m.url ? bbe("a", { href: m.url, target: '_blank', rel: 'noopener', style: { fontFamily: BB_MONO, fontSize: 9, color: '#6B6B85' } }, m.veiculo || 'fonte') : bbe("span", { style: { fontFamily: BB_MONO, fontSize: 9, color: '#6B6B85' } }, m.veiculo || ''),
+          bbe("span", { style: { flex: 1 } }),
+          bbe("span", { style: { fontFamily: BB_MONO, fontSize: 9, color: e.c } }, e.t),
+          (m.mensagem_email || m.mensagem_linkedin) && bbBotao(aberto === m.id ? 'fechar' : 'ver mensagem', function () { setAberto(aberto === m.id ? null : m.id); }),
+          m.status === 'rascunho' && bbe("a", { href: (m.crm_fila && m.crm_fila.outlook_draft_link) || 'https://mail.google.com/mail/#drafts', target: '_blank', rel: 'noopener', style: { fontFamily: BB_MONO, fontSize: 10, color: '#60A5FA' } }, 'abrir no Gmail'),
+          m.status === 'sem_email' && bbBotao(copiado === m.id ? 'copiado ✓' : 'copiar para LinkedIn', function () { copiar(m); }, '#FBBF24'),
+          bbBotao('descartar', function () { descartar(m); })),
+        aberto === m.id && bbe("div", { style: { marginTop: 6, padding: '8px 10px', background: '#060610', borderRadius: 4, fontSize: 11, color: '#C9C9D6', whiteSpace: 'pre-wrap', lineHeight: 1.5 } },
+          m.assunto ? bbe("div", { style: { fontFamily: BB_MONO, fontSize: 10, color: '#6B6B85', marginBottom: 4 } }, 'Assunto: ' + m.assunto) : null,
+          m.mensagem_email || '', m.mensagem_linkedin ? bbe("div", { style: { marginTop: 8, fontFamily: BB_MONO, fontSize: 10, color: '#6B6B85' } }, 'LinkedIn: ' + m.mensagem_linkedin) : null,
+          (m.trajetoria || m.feitos) ? bbe("div", { style: { marginTop: 8, fontFamily: BB_MONO, fontSize: 9, color: '#555' } }, 'Fonte: ' + [m.trajetoria, m.feitos].filter(Boolean).join(' · ')) : null));
+    }));
+}

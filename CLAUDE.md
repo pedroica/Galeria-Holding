@@ -317,6 +317,20 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
 - Job `enriquecimento-diario` (Vercel, 8h): usa o que sobrar do teto; só e-mail (+cargo/LinkedIn que vêm junto);
   prioridade: em lista/blitz > cadastro rápido > estrelas; pausa 1,3 s entre consultas; tenta de novo após 60 dias.
 
+## Estilo do Pedro e movimentações de executivos (26/11/2026)
+
+- **Estilo único** (`lib/estilo.js`, usado no SDR, na blitz e nos parabéns): começar pela pessoa (momento, cargo),
+  passar pela trajetória e feitos **só com fonte**, ligar ao desafio dela e fechar com convite para um café para ver
+  como a Galeria Holding pode ajudar.
+- **Movimentações** (`lib/movimentacoes.js`, job `movimentacoes`): quem assumiu como CMO / diretor(a) de marketing no Brasil.
+  Imprensa (Google News RSS: Meio & Mensagem, Propmark...) a cada 20 min das 06h às 09h40 BRT (1ª passada busca, as outras
+  processam); Lusha (`movimentacoes-lusha`, sinais promotion/companyChange) às segundas 06h. Decisão do Pedro: Lusha 1x/semana.
+  LinkedIn do Pedro **não** é lido (sem API oficial; robô arrisca a conta).
+- Cada movimentação (`crm_movimentacoes`, chave pessoa|empresa): empresa e contato (`fonte='movimentacao'`; homônimo na
+  empresa anterior vira `saiu_da_empresa`), e-mail no Lusha com prioridade no teto, e-mail + versão LinkedIn de parabéns
+  (Opus; `checarParabens` barra número fora da fonte). Com e-mail: `crm_fila` `origem='movimentacao'`, `status='aprovado'` →
+  rascunho no Gmail (nunca envia). Sem e-mail: fica para o LinkedIn. Painel na tela Hoje (`PainelMovimentacoes`).
+
 ## Fila antiga desligada (26/11/2026)
 
 - O gerador antigo (`gerar-fila-diario`) saiu dos crons da Vercel: não gerava nada desde 17/11 e o agente SDR o substitui.
