@@ -37,6 +37,7 @@ import { construirPromptEstrategia, validarTese, resumoEcossistema, SCHEMA_ESTRA
 import { inicioDiaBRT, vagasDoDia, gastoDosLogs, orcamentoOk, contextoDoLead, conversaRecente } from '../lib/sdr-meta.js';
 import { scoreOportunidade } from '../lib/sdr-score.js';
 import { montarMemoriaPrompt, analisarEdicao, propostasDeAprendizado, perfilDeComunicacao } from '../lib/sdr-aprendizado.js';
+import { escolherAmostras, promptAprenderEstilo, SCHEMA_ESTILO, linhasEstiloAprendido, textoProprio } from '../lib/estilo-aprendido.js';
 
 // Base de conhecimento (agências, cases com números exatos). Carregada no cold start.
 let KNOWLEDGE = { agencias: [], cases_destaque: [] };
@@ -1351,12 +1352,63 @@ async function configSdr() {
 // Memória comercial ATIVA para o prompt (só o que o Pedro ativou ou escreveu).
 // Filtra pelo escopo (setor/solução) e limita o tamanho. Cache de 5 min.
 let _memCache = { ate: 0, rows: null };
-async function memoriaParaPrompt({ setor, solucao } = {}) {
+async function memoriaParaPrompt({ setor, solucao, canal } = {}) {
   if (_memCache.ate < Date.now()) {
-    const r = await sg('crm_memoria_comercial?status=eq.ativo&select=tipo,texto,escopo,evidencias&order=evidencias.desc&limit=200');
-    _memCache = { ate: Date.now() + 5 * 60000, rows: Array.isArray(r) ? r : [] };
+    const [r, est] = await Promise.all([
+      sg('crm_memoria_comercial?status=eq.ativo&select=tipo,texto,escopo,evidencias&order=evidencias.desc&limit=200'),
+      sg('crm_configuracoes?chave=eq.estilo_pedro_aprendido&select=valor&limit=1')
+    ]);
+    _memCache = { ate: Date.now() + 5 * 60000, rows: Array.isArray(r) ? r : [], estilo: Array.isArray(est) && est[0] ? est[0].valor : null };
   }
-  return montarMemoriaPrompt(_memCache.rows, { setor, solucao });
+  // Jeito de escrever aprendido dos e-mails do Pedro (job aprender-estilo) vai junto da memória.
+  const estilo = linhasEstiloAprendido(_memCache.estilo, canal).join('\n');
+  return [estilo, montarMemoriaPrompt(_memCache.rows, { setor, solucao })].filter(Boolean).join('\n\n');
+}
+
+// ── aprender-estilo: o jeito de escrever do Pedro ─────────────────────────────
+// Toda segunda (e no botão): lê os e-mails que o Pedro escreveu (Enviados, 12 meses; sai
+// o que o agente escreveu) e os follow-ups que ele editou no Pipeline; a IA descreve o
+// estilo; o perfil vai em crm_configuracoes.estilo_pedro_aprendido e entra em toda redação.
+async function jobAprenderEstilo(req, res) {
+  const inicio = Date.now();
+  const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null);
+  if (!gm) { await logCron('aprender-estilo', 'warn', 'Gmail não conectado', {}); return res.status(200).json({ ok: false, motivo: 'gmail' }); }
+  const ids = []; let pageToken = '';
+  for (let i = 0; i < 3 && ids.length < 240; i++) {
+    const l = await gmailReq('GET', '/messages?maxResults=100&q=' + encodeURIComponent('in:sent newer_than:365d -in:chats') + (pageToken ? '&pageToken=' + pageToken : ''), null, gm.token).catch(() => null);
+    for (const m of ((l && l.messages) || [])) ids.push(m.id);
+    pageToken = l && l.nextPageToken; if (!pageToken) break;
+  }
+  const H = (m, n) => (((m && m.payload && m.payload.headers) || []).find(h => h.name.toLowerCase() === n) || {}).value || '';
+  const msgs = [];
+  for (let i = 0; i < ids.length && Date.now() - inicio < 30000; i += 25) {
+    const lote = await Promise.all(ids.slice(i, i + 25).map(id => gmailReq('GET', '/messages/' + id + '?format=full', null, gm.token).catch(() => null)));
+    for (const m of lote) if (m && !(m.labelIds || []).includes('DRAFT')) msgs.push({ assunto: H(m, 'subject'), para: [H(m, 'to'), H(m, 'cc')].filter(Boolean).join(','), data: new Date(Number(m.internalDate || 0)).toISOString(), texto: textoDoPayload(m.payload) });
+  }
+  const desde = new Date(Date.now() - 365 * 86400000).toISOString();
+  const [fila, opm] = await Promise.all([
+    sg(`crm_fila?canal=eq.email&gerado_em=gte.${desde}&select=corpo&order=gerado_em.desc&limit=1500`),
+    sg(`crm_oportunidade_mensagens?gerado_em=gte.${desde}&select=canal,corpo,corpo_original,enviado_em&order=gerado_em.desc&limit=500`)
+  ]);
+  const opmArr = Array.isArray(opm) ? opm : [];
+  const textosAgente = (Array.isArray(fila) ? fila : []).map(f => f.corpo).concat(opmArr.map(m => m.corpo_original || m.corpo));
+  const amostras = escolherAmostras(msgs, textosAgente, { max: 40 });
+  // Follow-ups do Pipeline que o Pedro mexeu antes de mandar: a versão final é a voz dele
+  // (é o único jeito de ver como ele escreve no WhatsApp).
+  for (const m of opmArr) if (m.enviado_em && m.corpo_original && m.corpo && m.corpo.trim() !== m.corpo_original.trim()) amostras.push({ canal: m.canal, assunto: '', texto: textoProprio(m.corpo).slice(0, 1500) });
+  if (amostras.length < 8) {
+    await logCron('aprender-estilo', 'info', 'fim — poucas amostras', { enviados: msgs.length, amostras: amostras.length });
+    return res.status(200).json({ ok: false, motivo: 'poucas amostras', enviados: msgs.length, amostras: amostras.length });
+  }
+  const { system, user } = promptAprenderEstilo(amostras.slice(0, 50));
+  const r = await gerarJSON({ system, user, schema: SCHEMA_ESTILO, effort: 'high', model: 'claude-opus-5-5' });
+  if (!r.obj) { await logCron('aprender-estilo', 'error', 'IA não devolveu o perfil', { erro: r.erro }); return res.status(200).json({ ok: false, erro: r.erro }); }
+  const valor = { perfil: r.obj, atualizado_em: new Date().toISOString(), amostras: amostras.length, enviados_lidos: msgs.length, whatsapp: amostras.filter(a => a.canal === 'whatsapp').length };
+  await spUpsert('crm_configuracoes', { chave: 'estilo_pedro_aprendido', valor }, 'chave');
+  _memCache = { ate: 0, rows: [] };
+  const ctx = { enviados: msgs.length, amostras: amostras.length, custo_usd: r.custo || 0, ms: Date.now() - inicio };
+  await logCron('aprender-estilo', 'info', 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx, perfil: r.obj });
 }
 
 // Contexto do CRM por lead (id do estado → itens). 3 consultas para o lote todo.
@@ -2911,6 +2963,7 @@ export default async function handler(req, res) {
     if (job === 'sdr-respostas')         return await jobSdrRespostas(req, res);
     if (job === 'sdr-vigia')             return await jobSdrVigia(req, res);
     if (job === 'sdr-aprendizado')       return await jobSdrAprendizado(req, res);
+    if (job === 'aprender-estilo')       return await jobAprenderEstilo(req, res);
     if (job === 'gmail-crm')             return await jobGmailCrm(req, res);
     if (job === 'classificar-setores')   return await jobClassificarSetores(req, res);
     if (job === 'blitz-redacao')         return await jobBlitzRedacao(req, res);
