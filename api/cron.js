@@ -1704,7 +1704,9 @@ async function jobSdrQualidade(req, res) {
     const melhor = avaliacoes[0];
     // Revisável: 7+ em tudo, risco baixo e checagens ok. Vira RASCUNHO para o Pedro
     // revisar (nunca envio automático: aprovado_autonomo continua exigindo 8).
-    const revisavel = !melhor.dec.aprovado_autonomo && decisao(melhor.aval, melhor.chec, cfg.notaMinimaRascunho).aprovado_autonomo;
+    // Detalhe de forma (uma palavra a mais no assunto/corpo) não barra rascunho: o Pedro ajusta na revisão.
+    const falhasSemForma = ((melhor.chec && melhor.chec.falhas) || []).filter(f => !/^forma:/.test(f));
+    const revisavel = !melhor.dec.aprovado_autonomo && decisao(melhor.aval, { ok: falhasSemForma.length === 0, falhas: falhasSemForma }, cfg.notaMinimaRascunho).aprovado_autonomo;
     // Fase 3: com o estrategista, reprovado volta UMA vez para a redação com o
     // motivo do revisor (a tese continua a mesma). Só depois disso fica retido.
     if (!melhor.dec.aprovado_autonomo && !revisavel && cfg.estrategista && est.tese && (Number(est.refacoes) || 0) < cfg.refacoesMax) {
