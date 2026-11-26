@@ -1,5 +1,5 @@
 // Pessoas da conta para o follow-up do Pipeline: parte pura (lib/contatos-conta.js).
-import { limparDominio, dominioDaEmpresa, lerEnderecos, acharCelular, semCitacao, contatosDoGmail, buscaGmail, linkLinkedin, textoDoPayload } from '../lib/contatos-conta.js';
+import { limparDominio, dominioDaEmpresa, dominiosDaEmpresa, lerEnderecos, acharCelular, semCitacao, contatosDoGmail, buscaGmail, linkLinkedin, textoDoPayload } from '../lib/contatos-conta.js';
 let fail = 0, n = 0;
 const ok = (c, m) => { n++; if (c) console.log('  ✓ ' + m); else { fail++; console.log('  ✗ ' + m); } };
 
@@ -25,5 +25,8 @@ ok(linkLinkedin('XP INC S.A.').includes('keywords=XP%20') && !linkLinkedin('XP I
 const b64 = (t) => Buffer.from(t).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
 ok(textoDoPayload({ mimeType: 'multipart/alternative', parts: [{ mimeType: 'text/html', body: { data: b64('<p>x</p>') } }, { mimeType: 'text/plain', body: { data: b64('Olá 11 98765-4321') } }] }) === 'Olá 11 98765-4321', 'lê o texto do e-mail');
 
+ok(JSON.stringify(dominiosDaEmpresa({ website: 'xpinc.com' }, [{ email: 'a@xpi.com.br' }, { email: 'b@gmail.com' }])) === '["xpinc.com","xpi.com.br"]', 'todos os domínios: site e e-mails das pessoas');
+ok(/from:xpinc\.com .*from:xpi\.com\.br/.test(buscaGmail(['xpinc.com', 'xpi.com.br'])), 'busca no Gmail por todos os domínios');
+ok(contatosDoGmail([{ de: 'Ana <ana@xpi.com.br>', para: 'p@g.test' }], ['xpinc.com', 'xpi.com.br'], 'p@g.test').length === 1, 'acha pessoa em qualquer domínio da empresa');
 console.log(`\n${n - fail} ok, ${fail} falha(s)`);
 process.exit(fail ? 1 : 0);
