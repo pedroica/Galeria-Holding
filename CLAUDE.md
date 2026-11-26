@@ -305,6 +305,18 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
   (rascunhos no Gmail; a pausa de primeiros contatos não barra blitz). Enviar = clique com confirmação (`gmail-send`,
   1 a cada 1–2 min); WhatsApp em sequência na Fila › Enviar.
 
+## Cadastro rápido e enriquecimento (26/11/2026)
+
+- Base › **Cadastro rápido** (`CapturaView` em `block_base.js`): texto livre ou arquivo (CSV/XLSX viram texto no
+  navegador; PDF e imagem vão em base64, máx. 3 MB) → `api/enrich?provider=captura-ler` (IA extrai pessoas, `lib/captura.js`
+  acha empresa e pessoa na base) → conferir → `captura-gravar` (cria só o que é novo, completa só campo vazio,
+  `fonte='captura'`) → Lusha dentro do teto → "⚡ Escrever mensagens para eles" abre a blitz com a lista criada.
+- Lusha por pessoa: `lib/lusha.js` (v2 `/person`, nome+empresa ou LinkedIn; `revealPhones=false` por padrão).
+- **Teto diário de créditos** compartilhado: `crm_configuracoes.lusha_daily_limit` (8, decisão do Pedro) e uso do dia em
+  `lusha_creditos_dia` `{data, usados}`. E-mail = 1 crédito, celular = 5 (só quando pedido na tela).
+- Job `enriquecimento-diario` (Vercel, 8h): usa o que sobrar do teto; só e-mail (+cargo/LinkedIn que vêm junto);
+  prioridade: em lista/blitz > cadastro rápido > estrelas; pausa 1,3 s entre consultas; tenta de novo após 60 dias.
+
 ## Fila antiga desligada (26/11/2026)
 
 - O gerador antigo (`gerar-fila-diario`) saiu dos crons da Vercel: não gerava nada desde 17/11 e o agente SDR o substitui.

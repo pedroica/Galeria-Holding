@@ -6,6 +6,9 @@ import { readFileSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import { classificarResposta } from '../lib/sdr-respostas.js';
+import { SCHEMA_CAPTURA, promptCaptura, casarEmpresa, casarPessoa, normalizarCelular, normalizarEmpresa } from '../lib/captura.js';
+import { pessoaLusha, saldoDoDia } from '../lib/lusha.js';
+import { gerarJSON as gerarJSONllm } from '../lib/llm.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
 import { analisarEdicao } from '../lib/sdr-aprendizado.js';
 import { GMAIL_SCOPE, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, credenciaisGoogle, obterTokenGmail, gmailReq, criarRascunhoGmail, enviarRascunhoGmail, atualizarRascunhoGmail, ehRascunhoGmail } from '../lib/gmail-token.js';
@@ -327,6 +330,132 @@ export default async function handler(req, res) {
     if (!okCron && !okJwt) {
       return res.status(401).json({ error: 'Não autenticado. Faça login para usar esta ferramenta.' });
     }
+  }
+
+  // ── Cadastro rápido (Base › Cadastro rápido) ──────────────────────────────
+  // captura-ler: texto livre ou arquivo (PDF/imagem em base64; planilha vira texto no
+  // navegador) → IA extrai pessoas/empresas → acha o que já existe na base.
+  // captura-gravar: cria/atualiza empresa e pessoa (só campos vazios) e enriquece no
+  // Lusha dentro do teto diário (crm_configuracoes.lusha_daily_limit; uso do dia em
+  // lusha_creditos_dia, o mesmo do enriquecimento diário). Só usuário do CRM.
+  if (provider === 'captura-ler' || provider === 'captura-gravar') {
+    const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+    const u = tok ? await fetch(SUPA_URL + '/auth/v1/user', { headers: { apikey: SUPA_ANON, Authorization: 'Bearer ' + tok } }).then(r => r.ok ? r.json() : null).catch(() => null) : null;
+    const emailUser = u && u.email ? String(u.email).toLowerCase() : null;
+    const usr = emailUser ? await supaReq('/rest/v1/crm_usuarios?email=ilike.' + encodeURIComponent(emailUser) + '&select=email,ativo&limit=1') : null;
+    if (!emailUser || !Array.isArray(usr) || !usr[0] || usr[0].ativo === false) return res.status(401).json({ error: 'Faça login com um usuário do CRM.' });
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const cfgRows = await supaReq('/rest/v1/crm_configuracoes?chave=in.(lusha_daily_limit,lusha_creditos_dia)&select=chave,valor');
+    const cfgC = {}; for (const r of (Array.isArray(cfgRows) ? cfgRows : [])) cfgC[r.chave] = r.valor;
+    const teto = Number(cfgC.lusha_daily_limit) || 8;
+    const saldo = saldoDoDia(cfgC.lusha_creditos_dia, hojeStr, teto);
+    const empresas = await supaReq('/rest/v1/crm_empresas?apagado_em=is.null&select=id,nome,dominio,website,site&limit=10000');
+    const listaEmp = Array.isArray(empresas) ? empresas : [];
+
+    if (provider === 'captura-ler') {
+      const content = [];
+      const arq = body.arquivo;
+      if (arq && arq.base64) {
+        if (String(arq.base64).length > 4.2e6) return res.status(413).json({ error: 'Arquivo grande demais (máx. ~3 MB).' });
+        if (/pdf/i.test(arq.tipo || '')) content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: arq.base64 } });
+        else if (/^image\/(png|jpe?g|webp|gif)$/i.test(arq.tipo || '')) content.push({ type: 'image', source: { type: 'base64', media_type: arq.tipo.toLowerCase().replace('jpg', 'jpeg'), data: arq.base64 } });
+        else return res.status(400).json({ error: 'Formato não aceito: use PDF, imagem, planilha (CSV/XLSX) ou texto.' });
+      }
+      const texto = String(body.texto || '').slice(0, 60000);
+      if (texto.trim()) content.push({ type: 'text', text: texto });
+      if (!content.length) return res.status(400).json({ error: 'Escreva algo ou anexe um arquivo.' });
+      content.push({ type: 'text', text: 'Extraia as pessoas e empresas.' });
+      const r = await gerarJSONllm({ system: promptCaptura(), content, schema: SCHEMA_CAPTURA, supaUrl: SUPA_URL, serviceKey: SUPA_SVC, envKey: ANTHROPIC_KEY });
+      if (!r.obj) return res.status(502).json({ error: 'Não consegui ler: ' + (r.erro || 'erro da IA') });
+      const pessoas = (r.obj.pessoas || []).slice(0, 200);
+      const empIds = new Set(); const casadas = pessoas.map(p => { const m = p.empresa ? casarEmpresa(p.empresa, listaEmp) : null; if (m) empIds.add(m.empresa.id); return m; });
+      const emails = pessoas.map(p => String(p.email || '').toLowerCase().trim()).filter(Boolean);
+      const decs = [];
+      if (empIds.size) { const d = await supaReq('/rest/v1/crm_decisores?apagado_em=is.null&empresa_id=in.(' + [...empIds].join(',') + ')&select=id,nome,email,wa,cargo,linkedin_url,empresa_id&limit=5000'); if (Array.isArray(d)) decs.push(...d); }
+      if (emails.length) { const d = await supaReq('/rest/v1/crm_decisores?apagado_em=is.null&email=in.(' + emails.map(e => '"' + e + '"').join(',') + ')&select=id,nome,email,wa,cargo,linkedin_url,empresa_id&limit=500'); if (Array.isArray(d)) decs.push(...d); }
+      const itens = pessoas.map((p, i) => {
+        const m = casadas[i];
+        const dm = casarPessoa(p, decs, m ? m.empresa.id : null);
+        return Object.assign({}, p, { celular: normalizarCelular(p.celular) || p.celular || '',
+          empresa_match: m ? { id: m.empresa.id, nome: m.empresa.nome, confianca: m.confianca } : null,
+          pessoa_match: dm ? { id: dm.id, nome: dm.nome, email: dm.email || '', wa: dm.wa || '', cargo: dm.cargo || '', linkedin: dm.linkedin_url || '' } : null });
+      });
+      return res.status(200).json({ itens, saldo: { teto, usados: saldo.usados, restantes: saldo.restantes } });
+    }
+
+    // captura-gravar
+    const itens = Array.isArray(body.itens) ? body.itens.slice(0, 100) : [];
+    if (!itens.length) return res.status(400).json({ error: 'Nada para cadastrar.' });
+    const inicio = Date.now(); let usados = saldo.usados; const out = [];
+    const chaveLusha = process.env.LUSHA_API_KEY || LUSHA_KEY;
+    const agora = () => new Date().toISOString();
+    const vazio = (v) => v === null || v === undefined || String(v).trim() === '';
+    for (const it of itens) {
+      const r = { nome: it.nome, empresa: it.empresa, criou_empresa: false, criou_pessoa: false, enriquecido: {}, erro: null };
+      try {
+        // Empresa: a escolhida na tela, a que casar agora, ou nova.
+        let emp = it.empresa_id ? listaEmp.find(e => e.id === it.empresa_id) : null;
+        if (!emp && it.empresa) { const m = casarEmpresa(it.empresa, listaEmp); if (m && m.confianca === 'alta') emp = m.empresa; }
+        if (!emp && it.empresa) {
+          const nova = await supaReq('/rest/v1/crm_empresas', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome: String(it.empresa).trim().slice(0, 200), nome_normalizado: normalizarEmpresa(it.empresa), fonte: 'captura' }) });
+          emp = Array.isArray(nova) ? nova[0] : null; if (emp) { listaEmp.push(emp); r.criou_empresa = true; }
+        }
+        if (!emp) { r.erro = 'sem empresa'; out.push(r); continue; }
+        r.empresa_id = emp.id;
+        // Pessoa: a escolhida na tela ou nova (só com nome).
+        let dec = null;
+        if (it.decisor_id) { const d = await supaReq('/rest/v1/crm_decisores?id=eq.' + it.decisor_id + '&select=id,nome,email,wa,cargo,linkedin_url,observacoes&limit=1'); dec = Array.isArray(d) ? d[0] : null; }
+        const cel = normalizarCelular(it.celular);
+        if (!dec && String(it.nome || '').trim()) {
+          const novo = await supaReq('/rest/v1/crm_decisores', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
+            empresa_id: emp.id, nome: String(it.nome).trim().slice(0, 200), cargo: it.cargo || null, email: (it.email || '').toLowerCase().trim() || null, wa: cel || null,
+            linkedin_url: it.linkedin || null, fonte: 'captura', status: 'ativo', observacoes: it.observacao ? ('Cadastro rápido ' + hojeStr + ': ' + it.observacao).slice(0, 1000) : null }) });
+          dec = Array.isArray(novo) ? novo[0] : null; if (dec) r.criou_pessoa = true;
+        } else if (dec) {
+          const patch = {};
+          if (vazio(dec.cargo) && it.cargo) patch.cargo = it.cargo;
+          if (vazio(dec.email) && it.email) patch.email = it.email.toLowerCase().trim();
+          if (vazio(dec.wa) && cel) patch.wa = cel;
+          if (vazio(dec.linkedin_url) && it.linkedin) patch.linkedin_url = it.linkedin;
+          if (it.observacao) patch.observacoes = ((dec.observacoes ? dec.observacoes + '\n' : '') + 'Cadastro rápido ' + hojeStr + ': ' + it.observacao).slice(0, 2000);
+          if (Object.keys(patch).length) { patch.atualizado_em = agora(); await supaReq('/rest/v1/crm_decisores?id=eq.' + dec.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(patch) }); Object.assign(dec, patch); }
+        }
+        if (dec) r.decisor_id = dec.id;
+        // Enriquecer no Lusha, dentro do teto do dia e do tempo da função.
+        const querCel = !!it.celular_lusha;
+        const falta = dec && (vazio(dec.email) || (querCel && vazio(dec.wa)) || vazio(dec.cargo) || vazio(dec.linkedin_url));
+        if (it.enriquecer && dec && falta) {
+          const custo = 1 + (querCel ? 5 : 0);
+          if (teto - usados < custo) r.erro = 'teto de créditos do dia atingido: fica para o enriquecimento diário';
+          else if (Date.now() - inicio > 45000) r.erro = 'sem tempo nesta rodada: fica para o enriquecimento diário';
+          else if (!chaveLusha) r.erro = 'Lusha não configurado';
+          else {
+            if (out.some(x => x.consultou)) await new Promise(ok => setTimeout(ok, 1300));   // respeita o limite de velocidade
+            r.consultou = true;
+            const dominio = emp.dominio || emp.website || emp.site || null;
+            const p = await pessoaLusha({ chave: chaveLusha, nome: dec.nome, empresa: emp.nome, dominio: dominio ? String(dominio).replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] : null, linkedin: dec.linkedin_url || null, celular: querCel });
+            usados += p.creditos || 0;
+            if (!p.achou) r.erro = 'Lusha: ' + (p.erro || 'não achou');
+            else {
+              const patch = {};
+              if (vazio(dec.email) && p.email) patch.email = p.email;
+              if (vazio(dec.wa) && p.celular) patch.wa = p.celular;
+              if (vazio(dec.cargo) && p.cargo) patch.cargo = p.cargo;
+              if (vazio(dec.linkedin_url) && p.linkedin) patch.linkedin_url = p.linkedin;
+              patch.enriquecimento_tentado_em = agora();
+              await supaReq('/rest/v1/crm_decisores?id=eq.' + dec.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(Object.assign({ atualizado_em: agora() }, patch)) });
+              if (p.site && vazio(emp.dominio) && vazio(emp.website) && vazio(emp.site)) await supaReq('/rest/v1/crm_empresas?id=eq.' + emp.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ website: p.site, enriquecido_em: agora() }) });
+              r.enriquecido = { email: !!patch.email, celular: !!patch.wa, cargo: !!patch.cargo, linkedin: !!patch.linkedin_url };
+            }
+          }
+        }
+      } catch (e) { r.erro = String(e.message || e).slice(0, 200); }
+      out.push(r);
+    }
+    if (usados !== saldo.usados) await supaReq('/rest/v1/crm_configuracoes?on_conflict=chave', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ chave: 'lusha_creditos_dia', valor: { data: hojeStr, usados } }) });
+    await supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ origem: 'captura', nivel: 'info', mensagem: 'cadastro rápido', contexto: { por: emailUser, itens: out.length, empresas_novas: out.filter(x => x.criou_empresa).length, pessoas_novas: out.filter(x => x.criou_pessoa).length, creditos: usados - saldo.usados } }) });
+    return res.status(200).json({ resultados: out.map(x => { const c = Object.assign({}, x); delete c.consultou; return c; }), saldo: { teto, usados, restantes: Math.max(0, teto - usados) } });
   }
 
   // ── Hunter ────────────────────────────────────────────────────────────────

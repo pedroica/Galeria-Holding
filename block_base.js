@@ -370,3 +370,128 @@ function BlitzAnteriores(props) {
     }),
     aberta && bbe(BlitzPainel, { blitzId: aberta.id, lista: { nome: (aberta.crm_listas || {}).nome }, linhas: [], navTo: props.navTo, onClose: function () { setAberta(null); } }));
 }
+
+// ── Cadastro rápido ───────────────────────────────────────────────────────────
+// Escreva ("o João Lopes é CMO do Lopes Supermercado") ou anexe lista de evento,
+// planilha, PDF ou foto de cartão. A IA separa pessoas e empresas, acha o que já
+// existe, você confere e cadastra; o Lusha completa e-mail, cargo e LinkedIn
+// (celular só se marcar) dentro do teto diário. Depois: blitz para eles.
+function bbArquivoParaEnvio(file) {
+  return new Promise(function (ok, erro) {
+    var nome = file.name || ''; var tipo = file.type || '';
+    var leitor = new FileReader();
+    if (/\.(xlsx|xls)$/i.test(nome)) {
+      var carregar = window.XLSX ? Promise.resolve() : new Promise(function (r, e) { var s = document.createElement('script'); s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'; s.onload = r; s.onerror = function () { e(new Error('não carregou o leitor de planilha')); }; document.head.appendChild(s); });
+      carregar.then(function () {
+        leitor.onload = function () { try { var wb = window.XLSX.read(new Uint8Array(leitor.result), { type: 'array' }); ok({ texto: wb.SheetNames.slice(0, 3).map(function (n) { return window.XLSX.utils.sheet_to_csv(wb.Sheets[n]); }).join('\n').slice(0, 60000) }); } catch (e) { erro(e); } };
+        leitor.readAsArrayBuffer(file);
+      }).catch(erro);
+    } else if (/\.(csv|txt|tsv)$/i.test(nome) || /^text\//.test(tipo)) {
+      leitor.onload = function () { ok({ texto: String(leitor.result).slice(0, 60000) }); }; leitor.readAsText(file);
+    } else if (/pdf/i.test(tipo) || /\.pdf$/i.test(nome) || /^image\//.test(tipo)) {
+      if (file.size > 3e6) { erro(new Error('arquivo grande demais (máx. 3 MB)')); return; }
+      leitor.onload = function () { ok({ arquivo: { nome: nome, tipo: /\.pdf$/i.test(nome) ? 'application/pdf' : tipo, base64: String(leitor.result).split(',')[1] } }); }; leitor.readAsDataURL(file);
+    } else erro(new Error('formato não aceito: use texto, CSV, XLSX, PDF ou imagem'));
+  });
+}
+
+function CapturaView(props) {
+  var _t = React.useState(''); var texto = _t[0]; var setTexto = _t[1];
+  var _a = React.useState(null); var arq = _a[0]; var setArq = _a[1];
+  var _it = React.useState(null); var itens = _it[0]; var setItens = _it[1];
+  var _s = React.useState(null); var saldo = _s[0]; var setSaldo = _s[1];
+  var _b = React.useState(null); var busy = _b[0]; var setBusy = _b[1];
+  var _e = React.useState(null); var erro = _e[0]; var setErro = _e[1];
+  var _r = React.useState(null); var result = _r[0]; var setResult = _r[1];
+  var _bl = React.useState(null); var blitz = _bl[0]; var setBlitz = _bl[1];
+
+  function ler() {
+    setErro(null); setResult(null);
+    if (!texto.trim() && !arq) { setErro('Escreva algo ou anexe um arquivo.'); return; }
+    setBusy('lendo');
+    (arq ? bbArquivoParaEnvio(arq) : Promise.resolve({})).then(function (extra) {
+      var corpo = { texto: [texto, extra.texto || ''].filter(Boolean).join('\n\n') };
+      if (extra.arquivo) corpo.arquivo = extra.arquivo;
+      return bbApi('/api/enrich?provider=captura-ler', { method: 'POST', body: JSON.stringify(corpo) });
+    }).then(function (r) {
+      setBusy(null);
+      if (!r || r.error) { setErro((r && r.error) || 'Não consegui ler.'); return; }
+      setSaldo(r.saldo);
+      setItens((r.itens || []).map(function (x, i) {
+        var pm = x.pessoa_match;
+        return Object.assign({}, x, { k: i, incluir: !!(x.nome || x.empresa), empresa_id: x.empresa_match && x.empresa_match.confianca !== 'baixa' ? x.empresa_match.id : null,
+          decisor_id: pm ? pm.id : null, enriquecer: !(x.email || (pm && pm.email)), celular_lusha: false });
+      }));
+    }).catch(function (e) { setBusy(null); setErro(e.message); });
+  }
+  function muda(k, campo, v) { setItens(itens.map(function (x) { if (x.k !== k) return x; var n = Object.assign({}, x); n[campo] = v; return n; })); }
+  var escolhidos = (itens || []).filter(function (x) { return x.incluir; });
+  var custo = escolhidos.reduce(function (a, x) { return a + (x.enriquecer ? 1 + (x.celular_lusha ? 5 : 0) : 0); }, 0);
+  function cadastrar() {
+    if (!escolhidos.length) return;
+    setBusy('gravando'); setErro(null);
+    bbApi('/api/enrich?provider=captura-gravar', { method: 'POST', body: JSON.stringify({ itens: escolhidos.map(function (x) {
+      return { nome: x.nome, cargo: x.cargo, empresa: x.empresa, email: x.email, celular: x.celular, linkedin: x.linkedin, observacao: x.observacao,
+        empresa_id: x.empresa_id, decisor_id: x.decisor_id, enriquecer: x.enriquecer, celular_lusha: x.celular_lusha };
+    }) }) }).then(function (r) {
+      setBusy(null);
+      if (!r || r.error) { setErro((r && r.error) || 'Não cadastrou.'); return; }
+      setResult(r.resultados || []); setSaldo(r.saldo); setItens(null); setTexto(''); setArq(null);
+    }).catch(function (e) { setBusy(null); setErro(e.message); });
+  }
+  function blitzParaEles() {
+    var ids = (result || []).filter(function (x) { return x.decisor_id; });
+    if (!ids.length) return;
+    var nome = 'Cadastro rápido ' + new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
+    supaFetch('/rest/v1/crm_listas', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ nome: nome, filtros: { origem: 'cadastro rapido' }, criado_por: bbEmail() }) })
+      .then(function (r) { var l = r && r[0]; if (!l) throw new Error('não criou a lista');
+        return supaFetch('/rest/v1/crm_lista_itens', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(ids.map(function (x) { return { lista_id: l.id, decisor_id: x.decisor_id, empresa_id: x.empresa_id }; })) }).then(function () { return l; }); })
+      .then(function (l) { setBlitz({ lista: l }); })
+      .catch(function (e) { setErro(e.message); });
+  }
+
+  var inp = { background: '#060610', border: '.5px solid #2D2D44', borderRadius: 4, color: '#F5F5F5', fontFamily: BB_MONO, fontSize: 11, padding: '5px 7px', boxSizing: 'border-box', width: '100%' };
+  var celula = function (x, campo, w) { return bbe("td", { style: { padding: '4px 6px', minWidth: w } }, bbe("input", { value: x[campo] || '', onChange: function (e) { muda(x.k, campo, e.target.value); }, style: inp })); };
+  return bbe("div", { style: { flex: 1, overflow: 'auto', padding: '18px 24px', display: 'flex', flexDirection: 'column', gap: 14 } },
+    bbe("div", { style: { fontFamily: BB_MONO, fontSize: 11, color: '#C9C9D6', lineHeight: 1.6 } },
+      'Escreva quem você conheceu ou anexe a lista do evento, uma planilha, um PDF ou a foto de um cartão. Eu acho quem já está na base, cadastro o que é novo e completo no Lusha.'),
+    bbe("textarea", { value: texto, rows: 5, placeholder: 'Ex.: Fui no evento da ABA. O João Lopes é CMO do Lopes Supermercado (joao.lopes@lopes.com.br). A Marina Costa cuida de marca na Natura.',
+      onChange: function (e) { setTexto(e.target.value); setErro(null); }, style: Object.assign({}, inp, { fontSize: 12, padding: '10px 12px', resize: 'vertical' }) }),
+    bbe("div", { style: { display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' } },
+      bbe("label", { style: { fontFamily: BB_MONO, fontSize: 10, color: '#60A5FA', cursor: 'pointer', border: '.5px dashed #2D2D44', borderRadius: 4, padding: '6px 10px' } },
+        arq ? '📎 ' + arq.name : '📎 anexar arquivo (CSV, XLSX, PDF, foto)',
+        bbe("input", { type: 'file', accept: '.csv,.txt,.tsv,.xlsx,.xls,.pdf,image/*', style: { display: 'none' }, onChange: function (e) { setArq(e.target.files && e.target.files[0] || null); setErro(null); } })),
+      arq && bbBotao('tirar arquivo', function () { setArq(null); }),
+      bbBotao(busy === 'lendo' ? 'lendo…' : 'Ler e achar na base', ler, '#FF6B2B', { cheio: true, disabled: !!busy }),
+      saldo && bbe("span", { style: { fontFamily: BB_MONO, fontSize: 10, color: '#6B6B85' } }, 'Lusha hoje: ' + saldo.usados + ' de ' + saldo.teto + ' créditos usados')),
+    erro && bbe("div", { style: { fontFamily: BB_MONO, fontSize: 11, color: '#E24B4A' } }, erro),
+    itens && bbe("div", null,
+      bbe("div", { style: { fontFamily: BB_MONO, fontSize: 10, color: '#6B6B85', marginBottom: 6 } }, itens.length + ' encontrado(s). Confira, corrija o que precisar e cadastre.'),
+      bbe("div", { style: { overflow: 'auto' } }, bbe("table", { style: { borderCollapse: 'collapse', fontFamily: BB_MONO, fontSize: 10, width: '100%' } },
+        bbe("thead", null, bbe("tr", { style: { color: '#6B6B85', textAlign: 'left' } }, ['', 'NOME', 'CARGO', 'EMPRESA', 'NA BASE', 'E-MAIL', 'CELULAR', 'LINKEDIN', 'LUSHA', 'CELULAR (5 cr.)'].map(function (h, i) { return bbe("th", { key: i, style: { padding: '4px 6px', fontWeight: 400 } }, h); }))),
+        bbe("tbody", null, itens.map(function (x) {
+          var em = x.empresa_match, pm = x.pessoa_match;
+          return bbe("tr", { key: x.k, style: { opacity: x.incluir ? 1 : .45, borderTop: '.5px solid #1A1A2E' } },
+            bbe("td", { style: { padding: '4px 6px' } }, bbe("input", { type: 'checkbox', checked: x.incluir, onChange: function (e) { muda(x.k, 'incluir', e.target.checked); } })),
+            celula(x, 'nome', 130), celula(x, 'cargo', 110), celula(x, 'empresa', 140),
+            bbe("td", { style: { padding: '4px 6px', color: pm ? '#34D399' : em ? '#60A5FA' : '#FBBF24', whiteSpace: 'nowrap' } },
+              pm ? 'pessoa já existe' : em ? (x.empresa_id ? 'empresa: ' + em.nome : bbe("label", null, bbe("input", { type: 'checkbox', checked: false, onChange: function () { muda(x.k, 'empresa_id', em.id); } }), ' é "' + em.nome + '"?')) : 'empresa nova'),
+            celula(x, 'email', 150), celula(x, 'celular', 110), celula(x, 'linkedin', 120),
+            bbe("td", { style: { padding: '4px 6px', textAlign: 'center' } }, bbe("input", { type: 'checkbox', checked: x.enriquecer, onChange: function (e) { muda(x.k, 'enriquecer', e.target.checked); } })),
+            bbe("td", { style: { padding: '4px 6px', textAlign: 'center' } }, bbe("input", { type: 'checkbox', checked: x.celular_lusha, disabled: !x.enriquecer, onChange: function (e) { muda(x.k, 'celular_lusha', e.target.checked); } })));
+        })))),
+      bbe("div", { style: { display: 'flex', gap: 12, alignItems: 'center', marginTop: 10, flexWrap: 'wrap' } },
+        bbBotao(busy === 'gravando' ? 'cadastrando e enriquecendo…' : 'Cadastrar (' + escolhidos.length + ')', cadastrar, '#34D399', { cheio: true, disabled: !!busy || !escolhidos.length }),
+        bbe("span", { style: { fontFamily: BB_MONO, fontSize: 10, color: saldo && custo > saldo.restantes ? '#FBBF24' : '#6B6B85' } },
+          'Lusha: até ' + custo + ' crédito(s)' + (saldo ? ' · restam ' + saldo.restantes + ' hoje' + (custo > saldo.restantes ? ' (o que passar fica para o enriquecimento diário)' : '') : '')))),
+    result && bbe("div", { style: { background: '#0A0A14', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '12px 14px' } },
+      bbe("div", { style: { fontFamily: BB_MONO, fontSize: 11, color: '#34D399', marginBottom: 8 } },
+        '✓ ' + result.filter(function (x) { return x.decisor_id; }).length + ' contato(s) na base · ' + result.filter(function (x) { return x.criou_pessoa; }).length + ' novo(s) · ' + result.filter(function (x) { return x.criou_empresa; }).length + ' empresa(s) nova(s)'),
+      result.map(function (x, i) {
+        var en = x.enriquecido || {}; var ganhos = ['email', 'celular', 'cargo', 'linkedin'].filter(function (k) { return en[k]; });
+        return bbe("div", { key: i, style: { fontFamily: BB_MONO, fontSize: 10, color: '#C9C9D6', padding: '2px 0' } },
+          (x.nome || '(só empresa)') + ' · ' + (x.empresa || '') + (ganhos.length ? ' · Lusha trouxe: ' + ganhos.join(', ') : '') + (x.erro ? ' · ' + x.erro : ''));
+      }),
+      result.some(function (x) { return x.decisor_id; }) && bbe("div", { style: { marginTop: 10 } }, bbBotao('⚡ Escrever mensagens para eles', blitzParaEles, '#FF6B2B', { cheio: true }))),
+    blitz && bbe(BlitzPainel, { lista: blitz.lista, linhas: [], navTo: props && props.navTo, onClose: function () { setBlitz(null); } }));
+}
