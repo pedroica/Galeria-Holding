@@ -83,6 +83,12 @@
       }
     },
       temPedido && React.createElement('div', { style: { fontSize: 9, color: '#EF4444', marginBottom: 4, fontFamily: 'IBM Plex Mono,monospace' } }, '⚠ Pedido de atualização'),
+      (function () {
+        const P = window.Prazos; if (!P || !P.precisaPrazo(op.estagio)) return null;
+        const hoje = P.hojeBRT(); const d = op.proximo_passo_em ? String(op.proximo_passo_em).slice(0, 10) : null;
+        const cfg = !d ? { t: '○ sem prazo', c: '#6B6B85' } : d < hoje ? { t: '⏰ atrasado ' + P.diasDeAtraso(d, hoje) + 'd · ' + (op.proximo_passo || ''), c: '#E24B4A' } : d === hoje ? { t: '⏰ hoje · ' + (op.proximo_passo || ''), c: '#FF6B2B' } : null;
+        return cfg && React.createElement('div', { title: op.proximo_passo || '', style: { fontSize: 9, color: cfg.c, marginBottom: 4, fontFamily: 'IBM Plex Mono,monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, cfg.t);
+      })(),
       gmail && gmail.ultima_mensagem_em && React.createElement('div', {
         title: [gmail.resumo, gmail.proximo_passo ? 'Próximo passo: ' + gmail.proximo_passo : '', gmail.evidencia ? '"' + gmail.evidencia + '"' : ''].filter(Boolean).join('\n'),
         style: { fontSize: 9, color: '#60A5FA', marginBottom: 4, fontFamily: 'IBM Plex Mono,monospace', lineHeight: 1.4, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }
@@ -127,6 +133,7 @@
     const [editando, setEditando] = useState(!!initialEditando);
     const [form, setForm] = useState(initialEditando ? { estagio: op.estagio, valor_estimado: op.valor_estimado, proximo_passo: op.proximo_passo, proximo_passo_em: op.proximo_passo_em, oferta: op.oferta, titulo: op.titulo, motivo_perda: op.motivo_perda, agencia_id: op.agencia_id || '' } : {});
     const [salvando, setSalvando] = useState(false);
+    const [erroForm, setErroForm] = useState(op.__pedirPrazo ? 'Nova etapa: defina o próximo passo e a data.' : null);
     const [pedidoOk, setPedidoOk] = useState(false);
     const ehMinha = op.agencia_id === minhaAgenciaId || meuPapel === 'admin';
 
@@ -169,6 +176,10 @@
     }
 
     async function salvarEdicao() {
+      // Oportunidade aberta precisa de próximo passo com data (regra em prazos.js).
+      const erro = window.Prazos ? window.Prazos.validarProximoPasso(form) : null;
+      if (erro) { setErroForm(erro); return; }
+      setErroForm(null);
       setSalvando(true);
       const userEmail = (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || '';
       const patch = Object.assign({}, form, { atualizado_em: new Date().toISOString() });
@@ -332,11 +343,12 @@
             React.createElement('input', {
               type: 'date',
               value: (form.proximo_passo_em || '').slice(0, 10),
-              onChange: e => setForm(prev => Object.assign({}, prev, { proximo_passo_em: e.target.value ? e.target.value + 'T00:00:00.000Z' : null })),
+              onChange: e => { setErroForm(null); setForm(prev => Object.assign({}, prev, { proximo_passo_em: e.target.value || null })); },
               style: { width: '100%', background: '#0d0d1a', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, padding: '4px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono,monospace', boxSizing: 'border-box' }
             })
           ),
           React.createElement('div', { style: { display: 'flex', gap: 8 } },
+            erroForm && React.createElement('span', { style: { fontSize: 10, color: '#E24B4A', ...s, alignSelf: 'center' } }, erroForm),
             React.createElement('button', { onClick: salvarEdicao, disabled: salvando, style: { fontSize: 9, padding: '4px 12px', background: '#FF6B2B', border: 'none', color: '#fff', borderRadius: 4, cursor: 'pointer', ...s } }, salvando ? '…' : 'Salvar'),
             React.createElement('button', { onClick: () => setEditando(false), style: { fontSize: 9, padding: '4px 12px', background: '#1A1A2E', border: '1px solid #2D2D44', color: '#555', borderRadius: 4, cursor: 'pointer', ...s } }, 'Cancelar')
           )
@@ -504,6 +516,7 @@
       const agsArr = Array.isArray(ags) ? ags : [];
       setOportunidades(opsArr);
       setAgencias(agsArr);
+      if (window.__abrirOportunidade) { const alvo = opsArr.find(o => o.id === window.__abrirOportunidade); window.__abrirOportunidade = null; if (alvo) setDetalhe(alvo); }
 
       const empIds = [...new Set(opsArr.filter(o => o.empresa_id).map(o => o.empresa_id))];
       if (empIds.length > 0) {
@@ -583,6 +596,10 @@
       setOportunidades(prev => prev.map(o => o.id === opId ? Object.assign({}, o, { estagio: novoEstagio, atualizado_em: agora }) : o));
       await supa('crm_oportunidades?id=eq.' + opId, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ estagio: novoEstagio, atualizado_em: agora }) });
       supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'estagio', de: op.estagio, para: novoEstagio }) });
+      const P = window.Prazos;
+      if (P && P.precisaPrazo(novoEstagio) && (!op.proximo_passo_em || String(op.proximo_passo_em).slice(0, 10) < P.hojeBRT())) {
+        setDetalhe(Object.assign({}, op, { estagio: novoEstagio, atualizado_em: agora, __pedirPrazo: true }));
+      }
       supa('crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: opId, campo: 'estagio', valor_de: op.estagio, valor_para: novoEstagio, usuario_email: userEmail }) });
       window.dispatchEvent(new CustomEvent('crm-op-updated'));
     }
