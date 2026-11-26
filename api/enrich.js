@@ -309,7 +309,13 @@ export default async function handler(req, res) {
 
   // ── Health check ──────────────────────────────────────────────────────────
   if (health || provider === 'health') {
+    // Número do amigo no WhatsApp (público; só com ?numero=1 para não chamar a Meta a cada health).
+    let numeroWaBot = null;
+    if (req.query && req.query.numero && WA_TOKEN && WA_PHONE_ID) {
+      try { const r = await fetch('https://graph.facebook.com/v21.0/' + WA_PHONE_ID + '?fields=display_phone_number,verified_name', { headers: { Authorization: 'Bearer ' + WA_TOKEN } }); const j = await r.json(); numeroWaBot = j.display_phone_number ? { numero: j.display_phone_number, nome: j.verified_name || null } : { erro: (j.error && j.error.message || '').slice(0, 120) }; } catch (_) {}
+    }
     return res.status(200).json({
+      whatsapp_numero: numeroWaBot,
       ok: true,
       claude: !!ANTHROPIC_KEY, hunter: !!HUNTER_KEY, lusha: !!LUSHA_KEY,
       // Qual chave do Lusha está em uso e uma impressão digital curta (hash), nunca o valor.
