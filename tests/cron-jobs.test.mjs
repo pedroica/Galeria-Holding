@@ -21,6 +21,10 @@ globalThis.fetch = async (url, opts = {}) => {
   const json = (o, ok = true, status = 200) => ({ ok, status, json: async () => o, text: async () => JSON.stringify(o) });
 
   if (u.includes('api.lusha.com/v3/account/usage')) return json({ credits: { remaining: 2520 } });
+  if (u.includes('api.lusha.com/v2/person')) {
+    (LUSHA.pessoaChamadas ||= []).push(u);
+    return json({ contact: { isCreditCharged: true, data: { emailAddresses: [{ address: 'ana@alvo.com.br', type: 'work' }], phoneNumbers: [], jobTitle: { title: 'CMO' }, socialLinks: { linkedin: 'https://linkedin.com/in/ana' }, company: { domains: { homepage: 'alvo.com.br' } } } } });
+  }
   if (u.includes('api.lusha.com/v3/contacts/prospecting')) {
     LUSHA.searchChamadas.push(body);
     return json({ contacts: [{ id: 'v1.abc', firstName: 'Ana', lastName: 'Souza', title: 'CMO' }] });
@@ -108,34 +112,35 @@ r = await run('gerar-fila-diario', 'Bearer service-key-fake');
 ok(r.payload?.motivo !== 'fila_cheia', `não trava mais em fila_cheia (motivo: ${r.payload?.motivo})`);
 ok(r.payload?.higiene?.arquivados === 28, `higiene rodou primeiro e limpou 28 (${r.payload?.higiene?.arquivados})`);
 
-// ── T4 · enriquecimento descobre domínio antes de desistir ─────────────────
-console.log('\nT4 — enriquecimento resolve domínio ausente');
+// ── T4 · enriquecimento diário: teto de créditos, só e-mail, prioridade ────
+// (reescrito em 26/11: v2 /person por nome+empresa, teto compartilhado com o cadastro rápido)
+console.log('\nT4 — enriquecimento diário dentro do teto');
+const hojeT4 = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
 TABELAS = { __escritas: [],
-  crm_configuracoes: () => [{ valor: '10' }],
-  crm_kanban: () => [],
-  crm_decisores: q => q.includes('email=eq.') ? [] : [{ id: 'd1', nome: 'Ana Souza', empresa_id: 'e1' }],
-  crm_empresas: () => [{ id: 'e1', nome: 'Alvo SA', dominio: null, website: null, site: null }],
-  crm_empresa_agencia_estrelas: () => [{ empresa_id: 'e1', estrelas_manual: 5 }] };
-CHAMADAS = []; LUSHA.searchChamadas = []; LUSHA.revealChamadas = []; LUSHA.dominioChamadas = [];
+  crm_configuracoes: () => [{ chave: 'lusha_daily_limit', valor: 2 }, { chave: 'lusha_creditos_dia', valor: { data: hojeT4, usados: 0 } }],
+  crm_decisores: q => q.includes('email=ilike') ? [] : [
+    { id: 'dSemPrio', nome: 'Bia Lima', empresa_id: 'e2', fonte: null, crm_empresas: { nome: 'Outra SA' } },
+    { id: 'd1', nome: 'Ana Souza', empresa_id: 'e1', fonte: null, crm_empresas: { nome: 'Alvo SA', dominio: null } },
+    { id: 'dCaptura', nome: 'Caio Reis', empresa_id: 'e3', fonte: 'captura', crm_empresas: { nome: 'Nova Ltda' } },
+    { id: 'dSoNome', nome: 'Duda', empresa_id: 'e1', crm_empresas: { nome: 'Alvo SA' } }],
+  crm_lista_itens: () => [{ decisor_id: 'd1' }],
+  crm_empresa_agencia_estrelas: () => [{ empresa_id: 'e2', estrelas_manual: 5 }] };
+LUSHA.pessoaChamadas = [];
 r = await run('enriquecimento-diario', 'Bearer service-key-fake');
-ok(LUSHA.dominioChamadas.length === 1, 'chama lusha-domain quando as 3 colunas de web estão vazias');
-ok(LUSHA.searchChamadas[0]?.filters?.companies?.include?.domains?.[0] === 'alvo.com.br',
-   'busca por domains:[...] (array), não pelo filtro name que a API rejeita');
-ok(r.payload?.dominios_descobertos === 1, 'contabiliza domínio descoberto');
-ok(r.payload?.revelados === 1, `revelou o decisor (${r.payload?.revelados})`);
-ok(r.payload?.empresas_tentadas === 1, `empresas_tentadas agora conta tentativa, não sucesso (${r.payload?.empresas_tentadas})`);
-ok(r.payload?.creditos_usados === 6, `custo real 1 email + 5 telefone = 6 (recebeu ${r.payload?.creditos_usados})`);
-ok(r.payload?.creditos_restantes === 2520, 'lê o saldo da Lusha em vez de null');
+ok(LUSHA.pessoaChamadas.length === 2, `para no teto do dia: 2 consultas de 1 crédito (${LUSHA.pessoaChamadas.length})`);
+ok(/firstName=Ana/.test(LUSHA.pessoaChamadas[0] || '') && /firstName=Caio/.test(LUSHA.pessoaChamadas[1] || ''), 'prioridade: quem está em lista, depois cadastro rápido, depois estrelas');
+ok(LUSHA.pessoaChamadas.every(u => /revealPhones=false/.test(u)), 'só e-mail: celular (5 créditos) não é revelado');
+ok(!LUSHA.pessoaChamadas.some(u => /Duda/.test(u)), 'sem sobrenome: não gasta consulta');
 const decPatch = esc().find(e => e.tabela === 'crm_decisores' && e.method === 'PATCH' && e.body?.email);
-ok(decPatch?.body?.email === 'ana@alvo.com.br', 'grava o e-mail no decisor (sobrenome bate)');
+ok(decPatch?.body?.email === 'ana@alvo.com.br' && decPatch?.body?.cargo === 'CMO' && decPatch?.body?.linkedin_url, 'grava e-mail, cargo e LinkedIn');
+ok(r.payload?.usados_depois === 2 && r.payload?.emails === 2, `conta os créditos (${r.payload?.usados_depois})`);
 
-// ── T5 · telefone só nas empresas 4-5 estrelas ─────────────────────────────
-console.log('\nT5 — telefone (5 créditos) só onde vale');
-TABELAS.crm_empresa_agencia_estrelas = () => [{ empresa_id: 'e1', estrelas_manual: 2 }];
-TABELAS.__escritas = []; LUSHA.revealChamadas = [];
+// ── T5 · teto já usado no dia: não consulta nada ───────────────────────────
+console.log('\nT5 — teto do dia já usado');
+TABELAS.crm_configuracoes = () => [{ chave: 'lusha_daily_limit', valor: 2 }, { chave: 'lusha_creditos_dia', valor: { data: hojeT4, usados: 2 } }];
+LUSHA.pessoaChamadas = [];
 r = await run('enriquecimento-diario', 'Bearer service-key-fake');
-ok(!LUSHA.revealChamadas[0]?.reveal.includes('phones'), 'empresa 2 estrelas: não revela telefone');
-ok(r.payload?.creditos_usados === 1, `gasta só 1 crédito (recebeu ${r.payload?.creditos_usados})`);
+ok(LUSHA.pessoaChamadas.length === 0 && /teto/.test(r.payload?.motivo || ''), 'não gasta além do teto');
 
 // ── T6 · no-op não registra sucesso ────────────────────────────────────────
 console.log('\nT6 — no-op deixa de parecer sucesso');

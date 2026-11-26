@@ -24,6 +24,7 @@ import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTempl
 import { obterTokenGraph } from '../lib/graph-token.js';
 import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail, gmailReq, consultaRascunho, filaIdDaFronteira } from '../lib/gmail-token.js';
 import { perfilGmail, historicoGmail, eventosDoHistorico, metadadosMensagem, corpoMensagem, filaIdDoMessageId, textoDoPayload } from '../lib/gmail-sync.js';
+import { pessoaLusha, saldoDoDia } from '../lib/lusha.js';
 import { construirPromptBlitz, checarMensagem, casesDoSetor, SCHEMA_BLITZ } from '../lib/blitz.js';
 import { SETORES, setorDoAntigo, setorValido, SCHEMA_SETORES, promptSetores } from '../lib/setores.js';
 import { montarIndice, casarMensagem, decidirPipeline, construirPromptStatus, SCHEMA_STATUS, semCitacao, respostaReal, substituiSugestao, aplicarPrazoDoEmail } from '../lib/gmail-crm.js';
@@ -463,199 +464,62 @@ function selecionarContatos(contacts) {
 }
 
 async function jobEnriquecimento(req, res) {
-  const inicio = Date.now();
-  const falhas = [];
+  // Reescrito em 26/11: teto de CRÉDITOS do dia compartilhado com o cadastro rápido
+  // (crm_configuracoes.lusha_daily_limit; uso em lusha_creditos_dia), só e-mail
+  // (1 crédito; celular custa 5 e fica para quando o Pedro pede), pausa de 1,3 s
+  // entre consultas (limite de 50/min do Lusha) e prioridade para quem o Pedro vai abordar.
+  const inicio = Date.now(); const LIMITE = 45000;
   await logCron('enriquecimento-diario', 'info', 'início', null);
-  if (!LUSHA_KEY) {
-    await logCron('enriquecimento-diario', 'aviso', 'fim — pulado', { motivo: 'LUSHA_KEY_ausente' });
-    return res.status(200).json({ ok: true, pulado: true, motivo: 'LUSHA_KEY_ausente' });
-  }
+  const chave = LUSHA_KEY;
+  if (!chave) { await logCron('enriquecimento-diario', 'aviso', 'fim — pulado', { motivo: 'LUSHA_KEY_ausente' }); return res.status(200).json({ ok: true, pulado: true }); }
+  const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+  const cfg = await sg('crm_configuracoes?chave=in.(lusha_daily_limit,lusha_creditos_dia)&select=chave,valor');
+  const c = {}; for (const r of (Array.isArray(cfg) ? cfg : [])) c[r.chave] = r.valor;
+  const teto = Number(c.lusha_daily_limit) || 8;
+  let { usados, restantes } = saldoDoDia(c.lusha_creditos_dia, hojeStr, teto);
+  const cont = { teto, usados_antes: usados, consultados: 0, achados: 0, emails: 0, cargos: 0, linkedins: 0, nao_achados: 0, erros: [] };
+  if (restantes < 1) { const ctx = Object.assign(cont, { motivo: 'teto do dia já usado', ms: Date.now() - inicio }); await logCron('enriquecimento-diario', 'aviso', 'fim', ctx); return res.status(200).json({ ok: true, ...ctx }); }
 
-  // Saldo antes: sem isso o job gasta às cegas.
-  const saldoAntes = await lushaCreditsV3(falhas);
-  const creditosDisponiveis = saldoAntes?.credits?.remaining ?? saldoAntes?.credits?.balance ?? null;
-  if (creditosDisponiveis !== null && creditosDisponiveis < PISO_CREDITOS) {
-    const ctx = { motivo: 'creditos_baixos', creditos_restantes: creditosDisponiveis, piso: PISO_CREDITOS, ms: Date.now()-inicio };
-    await logCron('enriquecimento-diario', 'aviso', 'fim — pulado', ctx);
-    return res.status(200).json({ ok: true, pulado: true, ...ctx });
-  }
-
-  const cfgRows = await sg('crm_configuracoes?chave=eq.enriquecimento_diario_max&select=valor&limit=1');
-  const teto = Array.isArray(cfgRows) && cfgRows[0]?.valor ? Number(cfgRows[0].valor) : 10;
-
-  // Teto diário de CRÉDITO (não de revelações), medido contra o saldo real.
-  // Um reveal com telefone custa 6 créditos (1 e-mail + 5 telefone).
-  const cfgLim = await sg('crm_configuracoes?chave=eq.lusha_daily_limit&select=valor&limit=1');
-  const tetoCreditos = Array.isArray(cfgLim) && cfgLim[0]?.valor ? Number(cfgLim[0].valor) : 60;
-
-  // Empresas que a Lusha já respondeu "sem contato": não reconsultar todo dia.
-  const cfgSemContato = await sg('crm_configuracoes?chave=eq.lusha_sem_contato&select=valor&limit=1');
-  const semContatoSet = new Set(lerListaConfig(cfgSemContato));
-  const semContatoNovos = [];
-
-  const kanbanReunioes = await sg('crm_kanban?col=eq.reuniao&select=empresa_id&limit=500');
-  const reunioesPorEmpresa = {};
-  for (const k of (Array.isArray(kanbanReunioes) ? kanbanReunioes : [])) {
-    if (k.empresa_id) reunioesPorEmpresa[k.empresa_id] = (reunioesPorEmpresa[k.empresa_id] || 0) + 1;
-  }
-
-  // Candidatos: decisores ativos sem e-mail. O filtro apagado_em faltava.
-  // Rotação: os menos recentemente tentados vêm primeiro (nullsfirst = nunca
-  // tentados). Antes a mesma janela de 50 era reconsultada todo dia.
-  const semEmail = await sg('crm_decisores?email=is.null&apagado_em=is.null&select=id,nome,empresa_id,linkedin_url,enriquecimento_tentado_em&order=enriquecimento_tentado_em.asc.nullsfirst,ultimo_toque_em.desc.nullslast&limit=50');
-  if (semEmail === null) return erroLeitura('enriquecimento-diario', res, inicio, 'crm_decisores');
-  const decisoresSemEmail = Array.isArray(semEmail) ? semEmail : [];
-  if (decisoresSemEmail.length === 0) {
-    const ctx = { revelados: 0, teto, motivo: 'nenhum_decisor_sem_email', ms: Date.now()-inicio };
-    await logCron('enriquecimento-diario', 'aviso', 'fim', ctx);
-    return res.status(200).json({ ok: true, ...ctx });
-  }
-
-  const empIds = [...new Set(decisoresSemEmail.map(d => d.empresa_id).filter(Boolean))].slice(0, 50);
-  const empRows = empIds.length > 0
-    ? await sg(`crm_empresas?id=in.(${empIds.join(',')})&select=id,nome,dominio,website,site,setor&limit=50`)
-    : [];
-  const empMap = {};
-  for (const e of (Array.isArray(empRows) ? empRows : [])) empMap[e.id] = e;
-
-  // Estrelas por empresa: decide se vale gastar 5 créditos em telefone.
-  const estrelasRows = empIds.length > 0
-    ? await sg(`crm_empresa_agencia_estrelas?empresa_id=in.(${empIds.join(',')})&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=500`)
-    : [];
-  const estrelasPorEmpresa = {};
-  for (const r of (Array.isArray(estrelasRows) ? estrelasRows : [])) {
-    const v = Number(r.estrelas_manual ?? r.estrelas_calculadas ?? 0) || 0;
-    if (v > (estrelasPorEmpresa[r.empresa_id] || 0)) estrelasPorEmpresa[r.empresa_id] = v;
-  }
-
-  decisoresSemEmail.sort((a, b) => {
-    const ra = reunioesPorEmpresa[a.empresa_id] || 0;
-    const rb = reunioesPorEmpresa[b.empresa_id] || 0;
-    if (rb !== ra) return rb - ra;
-    return (estrelasPorEmpresa[b.empresa_id] || 0) - (estrelasPorEmpresa[a.empresa_id] || 0);
-  });
-
-  let revelados = 0;
-  let creditosUsados = 0;
-  let dominiosDescobertos = 0;
-  let empresasTentadas = 0;
-  let semDominio = 0;
-  const reveladosPorEmpresa = {};
-  const empresasVistas = new Set();
-  const LIMITE_MS = 45000;
-
-  for (const dec of decisoresSemEmail) {
-    if (revelados >= teto) break;
-    if (creditosUsados >= tetoCreditos) break;          // teto diário de crédito
-    if (Date.now() - inicio > LIMITE_MS) break;
-    if ((reveladosPorEmpresa[dec.empresa_id] || 0) >= 2) continue;
-    if (semContatoSet.has(dec.empresa_id)) continue;    // empresa já marcada sem contato
-    if (empresasVistas.has(dec.empresa_id)) continue;   // uma busca por empresa por rodada
-
-    const emp = empMap[dec.empresa_id] || {};
-    let dominio = dominioDe(emp);
-
-    // Sem domínio o search não funciona. Descobre antes em vez de desistir calado.
-    if (!dominio && emp.nome) {
-      dominio = await descobrirDominio(dec.empresa_id, emp.nome);
-      if (dominio) { dominiosDescobertos++; emp.website = 'https://' + dominio; }
-      await new Promise(r => setTimeout(r, 200));
-    }
-    if (!dominio) { semDominio++; continue; }
-
-    empresasVistas.add(dec.empresa_id); empresasTentadas++;
-
-    const contacts = await lushaSearchV3(dominio, falhas);
-    await new Promise(r => setTimeout(r, 200));
-    // Rotação: marca a empresa como tentada hoje (vai para o fim da fila amanhã).
-    await sp('crm_decisores?id=eq.' + dec.id, { enriquecimento_tentado_em: new Date().toISOString() }, 'PATCH');
-    if (!contacts.length) {
-      // Sem contato: registra para não reconsultar todo dia (item b).
-      if (!semContatoSet.has(dec.empresa_id)) { semContatoSet.add(dec.empresa_id); semContatoNovos.push(dec.empresa_id); }
-      continue;
-    }
-
-    const comTelefone = (estrelasPorEmpresa[dec.empresa_id] || 0) >= 4;
-    // Máx. 1 de gestão + 1 de marketing (não 2 do mesmo time), waterfall off.
-    const selecionados = selecionarContatos(contacts);
-    const results = await lushaRevealV3(selecionados, comTelefone, falhas);
-    await new Promise(r => setTimeout(r, 200));
-
-    for (const result of results) {
-      const email = result.email || result.emailAddresses?.[0]?.emailAddress || null;
-      const tel   = result.phoneNumber || result.phoneNumbers?.[0]?.internationalNumber || null;
-      const linkedinUrl = result.linkedin_url || result.linkedinUrl || null;
-
-      if (email) creditosUsados += CUSTO_EMAIL;
-      if (tel)   creditosUsados += CUSTO_TELEFONE;
-      if (!email && !tel) continue;
-
-      // E-mail já usado por outro decisor → não duplica, não regrava.
-      if (email) {
-        const jaExiste = await sg('crm_decisores?email=eq.' + encodeURIComponent(email) + '&apagado_em=is.null&select=id&limit=1');
-        if (Array.isArray(jaExiste) && jaExiste.length) { falhas.push({ etapa: 'email_duplicado', empresa_id: dec.empresa_id }); continue; }
+  // Candidatos: sem e-mail, com nome e sobrenome, nunca tentados ou tentados há 60+ dias.
+  const corte = new Date(Date.now() - 60 * 864e5).toISOString();
+  const decs = await sg(`crm_decisores?email=is.null&apagado_em=is.null&or=(enriquecimento_tentado_em.is.null,enriquecimento_tentado_em.lt.${corte})&select=id,nome,empresa_id,linkedin_url,cargo,wa,fonte,crm_empresas(nome,dominio,website,site,apagado_em)&limit=3000`);
+  if (decs === null) return erroLeitura('enriquecimento-diario', res, inicio, 'crm_decisores');
+  const listas = await sg('crm_lista_itens?select=decisor_id,crm_listas!inner(apagado_em)&crm_listas.apagado_em=is.null&limit=10000');
+  const emLista = new Set((Array.isArray(listas) ? listas : []).map(x => x.decisor_id));
+  const est = await sg('crm_empresa_agencia_estrelas?apagado_em=is.null&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=50000');
+  const estrelas = {}; for (const e of (Array.isArray(est) ? est : [])) { const v = Number(e.estrelas_manual ?? e.estrelas_calculadas) || 0; if (v > (estrelas[e.empresa_id] || 0)) estrelas[e.empresa_id] = v; }
+  const cands = decs.filter(d => d.crm_empresas && !d.crm_empresas.apagado_em && String(d.nome || '').trim().split(/\s+/).length >= 2)
+    .map(d => ({ d, prio: (emLista.has(d.id) ? 100 : 0) + (d.fonte === 'captura' ? 50 : 0) + (estrelas[d.empresa_id] || 0) * 5 }))
+    .sort((x, y) => y.prio - x.prio);
+  cont.candidatos = cands.length;
+  for (const { d } of cands) {
+    if (restantes < 1 || Date.now() - inicio > LIMITE) break;
+    if (cont.consultados) await new Promise(ok => setTimeout(ok, 1300));
+    const emp = d.crm_empresas; const dom = emp.dominio || emp.website || emp.site;
+    const p = await pessoaLusha({ chave, nome: d.nome, empresa: emp.nome, linkedin: d.linkedin_url || null,
+      dominio: dom ? String(dom).replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] : null, celular: false });
+    cont.consultados++;
+    usados += p.creditos || 0; restantes = Math.max(0, teto - usados);
+    const patch = { enriquecimento_tentado_em: new Date().toISOString() };
+    if (p.achou) {
+      cont.achados++;
+      if (p.email) {
+        // Nunca grava um e-mail que já é de outro contato (base tem duplicatas).
+        const dono = await sg(`crm_decisores?email=ilike.${encodeURIComponent(p.email)}&apagado_em=is.null&id=neq.${d.id}&select=id&limit=1`);
+        if (Array.isArray(dono) && dono.length) cont.duplicados = (cont.duplicados || 0) + 1;
+        else { patch.email = p.email; cont.emails++; }
       }
-
-      // Só grava num decisor cujo SOBRENOME bate com o do contato revelado.
-      // Sem correspondência, cria um NOVO decisor — jamais escreve o e-mail de
-      // uma pessoa em cima de outra (o antigo "|| dec" fazia exatamente isso).
-      const nomeCompleto = [result.firstName, result.lastName].filter(Boolean).join(' ');
-      const match = (nomeCompleto && result.lastName) ? decisoresSemEmail.find(d =>
-        d.empresa_id === dec.empresa_id && d.nome && !d.email &&
-        d.nome.toLowerCase().includes(result.lastName.toLowerCase())
-      ) : null;
-
-      let gravou;
-      if (match) {
-        const patch = { atualizado_em: new Date().toISOString(), fonte: 'lusha_v3' };
-        if (email) patch.email = email;
-        if (tel)   patch.wa   = tel;
-        if (linkedinUrl && !match.linkedin_url) patch.linkedin_url = linkedinUrl;
-        gravou = await sp('crm_decisores?id=eq.' + match.id, patch, 'PATCH');
-        if (gravou && email) match.email = email;        // não reusar o mesmo match
-      } else if (nomeCompleto) {
-        gravou = await sp('crm_decisores', {
-          empresa_id: dec.empresa_id, nome: nomeCompleto,
-          cargo: result.title || result.jobTitle || null,
-          email: email || null, wa: tel || null, linkedin_url: linkedinUrl || null,
-          fonte: 'lusha_v3', atualizado_em: new Date().toISOString()
-        }, 'POST');
-      } else {
-        falhas.push({ etapa: 'reveal_sem_nome', empresa_id: dec.empresa_id });
-        continue;
-      }
-
-      if (!gravou) { falhas.push({ etapa: 'grava_decisor', empresa_id: dec.empresa_id }); continue; }
-      revelados++;
-      reveladosPorEmpresa[dec.empresa_id] = (reveladosPorEmpresa[dec.empresa_id] || 0) + 1;
-      if (revelados >= teto) break;
-    }
+      if (!d.cargo && p.cargo) { patch.cargo = p.cargo; cont.cargos++; }
+      if (!d.linkedin_url && p.linkedin) { patch.linkedin_url = p.linkedin; cont.linkedins++; }
+      if (p.site && !dom) await sp(`crm_empresas?id=eq.${d.empresa_id}`, { website: p.site, enriquecido_em: new Date().toISOString() }, 'PATCH');
+    } else { cont.nao_achados++; if (p.status === 429 || p.status === 402 || p.status === 403) { cont.erros.push(p.erro); break; } }
+    await sp(`crm_decisores?id=eq.${d.id}`, patch, 'PATCH');
   }
-
-  // Persiste as empresas recém-marcadas "sem contato" (item b).
-  if (semContatoNovos.length) await upsertConfig('lusha_sem_contato', [...semContatoSet]);
-
-  const saldoDepois = await lushaCreditsV3(falhas);
-  const saldoDepoisNum = saldoDepois?.credits?.remaining ?? saldoDepois?.credits?.balance ?? null;
-  const creditosReais = (creditosDisponiveis != null && saldoDepoisNum != null) ? (creditosDisponiveis - saldoDepoisNum) : null;
-  const ctx_enrich = {
-    revelados, teto, teto_creditos: tetoCreditos,
-    creditos_usados: creditosUsados,
-    creditos_reais_gastos: creditosReais,
-    creditos_restantes: saldoDepoisNum,
-    empresas_tentadas: empresasTentadas,
-    dominios_descobertos: dominiosDescobertos,
-    sem_dominio: semDominio,
-    sem_contato_novos: semContatoNovos.length,
-    falhas: falhas.slice(0, 10),
-    ms: Date.now()-inicio
-  };
-  console.log('[cron:enriquecimento-diario]', revelados, 'revelações,', creditosUsados, 'créditos');
-  // 'aviso' quando não revelou nada: um no-op deixa de parecer sucesso.
-  await logCron('enriquecimento-diario', nivelTrabalho(revelados), 'fim', ctx_enrich);
-  return res.status(200).json({ ok: true, ...ctx_enrich });
+  await upsertConfig('lusha_creditos_dia', { data: hojeStr, usados });
+  const ctx = Object.assign(cont, { usados_depois: usados, ms: Date.now() - inicio });
+  await logCron('enriquecimento-diario', nivelTrabalho(cont.emails + cont.cargos + cont.linkedins), 'fim', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
 }
-
 // ── job: noticias-semanal ────────────────────────────────────────────────────
 function inicioSemanaISO() {
   const brt = new Date(new Date().toLocaleString('en-US', {timeZone:'America/Sao_Paulo'}));
