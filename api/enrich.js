@@ -1556,6 +1556,7 @@ export default async function handler(req, res) {
   if (provider === 'telegram') {
     const TG = (process.env.TELEGRAM_BOT_TOKEN || '').trim();
     if (!TG) return res.status(200).json({ ok: true, ignorado: 'sem TELEGRAM_BOT_TOKEN' });
+    // (a IA do amigo usa a chave do Vault se a da Vercel for recusada: ver chaveIA em api/copiloto.js)
     const tgApi = (metodo, corpo) => fetch('https://api.telegram.org/bot' + TG + '/' + metodo, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(corpo || {}) }).then(r => r.json()).catch(e => ({ ok: false, description: String(e && e.message || e) }));
     const segredoTg = createHash('sha256').update('tg:' + TG).digest('hex').slice(0, 48);
     const cfgTg = async (chave) => { const r = await supaReq('/rest/v1/crm_configuracoes?chave=eq.' + chave + '&select=valor&limit=1').catch(() => null); return Array.isArray(r) && r[0] ? r[0].valor : null; };
@@ -1604,7 +1605,7 @@ export default async function handler(req, res) {
       const okPar = par && par.hash && new Date(par.expira) > new Date() && createHash('sha256').update(mStart[1].toLowerCase()).digest('hex') === par.hash;
       if (okPar) {
         await gravaCfg('telegram_dono_id', String(userId));
-        await gravaCfg('telegram_pareamento', null);
+        await gravaCfg('telegram_pareamento', { usado_em: new Date().toISOString() });
         await enviarTg('Oi, Pedro! 👋 Agora sou seu braço direito comercial aqui no Telegram.\n\nPode me pedir coisas como:\n• *bom dia* (sua agenda do dia)\n• *como está a XP?*\n• *o que o Marcelo me falou no WhatsApp?*\n• *escreve um zap pro Marcelo cobrando o café*\n• *prepara um e-mail pra Camila da Livelo*\n\nE-mail só sai quando você responder *manda*.');
         return res.status(200).json({ ok: true, pareado: true });
       }

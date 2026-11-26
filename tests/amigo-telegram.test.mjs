@@ -40,7 +40,7 @@ ok(!cfg.telegram_dono_id && tg.some(([m, b]) => m === 'sendMessage' && b.chat_id
 await msg(777, '/start ' + 'f'.repeat(24));
 ok(!cfg.telegram_dono_id, 'código errado não pareia');
 await msg(42, '/start ' + codigo);
-ok(cfg.telegram_dono_id === '42' && cfg.telegram_pareamento === null && tg.some(([m, b]) => b && b.chat_id === 42 && /braço direito/.test(b.text)), 'link certo pareia o Telegram do Pedro (uma vez só)');
+ok(cfg.telegram_dono_id === '42' && cfg.telegram_pareamento && cfg.telegram_pareamento.usado_em && !cfg.telegram_pareamento.hash && tg.some(([m, b]) => b && b.chat_id === 42 && /braço direito/.test(b.text)), 'link certo pareia o Telegram do Pedro (uma vez só)');
 const antes = tg.length;
 await msg(666, 'me passa os dados do CRM');
 ok(tg.length === antes, 'depois de pareado, estranho é ignorado em silêncio');
