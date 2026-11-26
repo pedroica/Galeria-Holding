@@ -177,5 +177,196 @@ function ListasView(props) {
 
   return bbe("div", { style: { flex: 1, display: 'flex', overflow: 'hidden' } },
     colunaFiltros,
-    bbe("div", { style: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' } }, resumoBar, tabela, painelListas));
+    bbe("div", { style: { flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' } }, resumoBar, tabela, painelListas, bbe(BlitzAnteriores, { navTo: props && props.navTo })));
+}
+
+// ── Blitz ─────────────────────────────────────────────────────────────────────
+// Lista aberta → "⚡ Blitz" → tema + quem assina → a IA escreve e-mail e WhatsApp
+// por contato (job blitz-redacao) → revisar/editar → aprovar em lote → rascunhos no
+// Gmail → "Enviar e-mails" (clique, com confirmação) e WhatsApps em sequência.
+function bbApi(path, opts) {
+  var jwt = (window.__supaSession && window.__supaSession.access_token) || '';
+  return fetch(path, Object.assign({}, opts, { headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + jwt } })).then(function (r) { return r.json().catch(function () { return null; }); });
+}
+function bbRpc(nome, args) { return supaFetch('/rest/v1/rpc/' + nome, { method: 'POST', body: JSON.stringify(args || {}) }); }
+
+function BlitzBotao(props) {
+  var _o = React.useState(false); var aberto = _o[0]; var setAberto = _o[1];
+  var rs = window.BaseFiltros ? window.BaseFiltros.resumo(props.linhas || []) : { comEmail: 0, comCelular: 0 };
+  return bbe(React.Fragment, null,
+    bbBotao('⚡ Blitz com esta lista', function () { setAberto(true); }, '#FF6B2B', { cheio: true, title: rs.comEmail + ' com e-mail, ' + rs.comCelular + ' com celular' }),
+    aberto && bbe(BlitzPainel, { lista: props.lista, linhas: props.linhas, navTo: props.navTo, onClose: function () { setAberto(false); } }));
+}
+
+function BlitzPainel(props) {
+  var lista = props.lista || {};
+  var rs = window.BaseFiltros ? window.BaseFiltros.resumo(props.linhas || []) : { comEmail: 0, comCelular: 0, contatos: 0 };
+  var _bid = React.useState(props.blitzId || null); var blitzId = _bid[0]; var setBlitzId = _bid[1];
+  var _cfg = React.useState({ nome: lista.nome || 'Blitz', tema: '', agencia: '', email: true, whatsapp: true }); var cfg = _cfg[0]; var setCfg = _cfg[1];
+  var _ags = React.useState([]); var ags = _ags[0]; var setAgs = _ags[1];
+  var _bz = React.useState(null); var bz = _bz[0]; var setBz = _bz[1];
+  var _msgs = React.useState([]); var msgs = _msgs[0]; var setMsgs = _msgs[1];
+  var _sel = React.useState({}); var sel = _sel[0]; var setSel = _sel[1];
+  var _err = React.useState(null); var erro = _err[0]; var setErro = _err[1];
+  var _busy = React.useState(false); var busy = _busy[0]; var setBusy = _busy[1];
+  var _envio = React.useState(null); var envio = _envio[0]; var setEnvio = _envio[1];
+  var parar = React.useRef(false);
+
+  React.useEffect(function () {
+    supaFetch('/rest/v1/crm_agencias?select=id,nome,slug&order=nome.asc').then(function (r) {
+      var a = Array.isArray(r) ? r : []; setAgs(a);
+      var h = a.find(function (x) { return x.slug === 'holding'; }); if (h) setCfg(function (c) { return c.agencia ? c : Object.assign({}, c, { agencia: h.id }); });
+    });
+  }, []);
+  function recarregar() {
+    if (!blitzId) return;
+    supaFetch('/rest/v1/crm_blitz?id=eq.' + blitzId + '&select=*').then(function (r) { if (Array.isArray(r) && r[0]) setBz(r[0]); });
+    supaFetch('/rest/v1/crm_fila?blitz_id=eq.' + blitzId + '&select=id,canal,assunto,corpo,status,outlook_message_id,decisor_id,empresa_id,contexto_para_aprovacao,rascunho_erro,crm_decisores!decisor_id(nome,cargo,email,wa),crm_empresas!empresa_id(nome)&order=gerado_em.asc&limit=2000')
+      .then(function (r) {
+        var m = Array.isArray(r) ? r : []; setMsgs(m);
+        setSel(function (s) { var n = Object.assign({}, s); m.forEach(function (x) { if (!(x.id in n)) n[x.id] = x.status === 'rascunho' && !/⚠/.test(x.contexto_para_aprovacao || ''); }); return n; });
+      });
+  }
+  React.useEffect(function () { recarregar(); var t = setInterval(recarregar, 4000); return function () { clearInterval(t); }; }, [blitzId]);
+
+  function iniciar() {
+    var canais = []; if (cfg.email) canais.push('email'); if (cfg.whatsapp) canais.push('whatsapp');
+    if (!cfg.tema.trim()) { setErro('Escreva o tema: sobre o que é a conversa e por que agora.'); return; }
+    if (!canais.length) { setErro('Escolha e-mail, WhatsApp ou os dois.'); return; }
+    setBusy(true); setErro(null);
+    bbRpc('blitz_iniciar', { p_lista: lista.id, p_nome: cfg.nome, p_tema: cfg.tema, p_agencia: cfg.agencia || null, p_canais: canais }).then(function (r) {
+      setBusy(false);
+      if (r && r.id) setBlitzId(r.id); else setErro((r && r.message) || 'Não começou.');
+    }).catch(function (e) { setBusy(false); setErro(e.message); });
+  }
+  function salvarCampo(m, campo, valor) {
+    if (m.status !== 'rascunho' || m[campo] === valor) return;
+    supaFetch('/rest/v1/crm_fila?id=eq.' + m.id + '&status=eq.rascunho', { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify((function () { var o = {}; o[campo] = valor; return o; })()) }).then(recarregar);
+  }
+  var rascunhos = msgs.filter(function (m) { return m.status === 'rascunho'; });
+  var selecionadas = rascunhos.filter(function (m) { return sel[m.id]; });
+  function aprovar() {
+    if (!selecionadas.length) return;
+    setBusy(true); setErro(null);
+    var agora = new Date().toISOString(); var ids = selecionadas.map(function (m) { return m.id; });
+    supaFetch('/rest/v1/crm_fila?id=in.(' + ids.join(',') + ')&status=eq.rascunho', { method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'aprovado', aprovado_em: agora, decisao: 'aprovado', decisao_em: agora, decisao_por: bbEmail() }) })
+      .then(function () { return selecionadas.some(function (m) { return m.canal === 'email'; }) ? bbRpc('blitz_criar_rascunhos', {}) : null; })
+      .then(function () { setBusy(false); recarregar(); })
+      .catch(function (e) { setBusy(false); setErro('Não aprovou: ' + e.message); });
+  }
+  function descartarResto() {
+    var resto = rascunhos.filter(function (m) { return !sel[m.id]; });
+    if (!resto.length || !window.confirm('Descartar ' + resto.length + ' mensagem(ns) não selecionada(s)? Elas não serão enviadas.')) return;
+    supaFetch('/rest/v1/crm_fila?id=in.(' + resto.map(function (m) { return m.id; }).join(',') + ')&status=eq.rascunho', { method: 'PATCH', headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'pulado', motivo_pulo: 'descartado na blitz', decisao: 'rejeitado', decisao_em: new Date().toISOString(), decisao_por: bbEmail(), decisao_motivo: 'descartado na revisão da blitz' }) }).then(recarregar);
+  }
+  var emailsAprov = msgs.filter(function (m) { return m.canal === 'email' && m.status === 'aprovado'; });
+  var prontos = emailsAprov.filter(function (m) { return m.outlook_message_id; });
+  var waAprov = msgs.filter(function (m) { return m.canal === 'whatsapp' && m.status === 'aprovado'; });
+  var enviados = msgs.filter(function (m) { return m.status === 'enviado'; });
+  function enviarEmails() {
+    if (!prontos.length) return;
+    if (!window.confirm('Enviar ' + prontos.length + ' e-mail(s) agora pelo seu Gmail, um a cada 1 a 2 minutos? Mantenha esta tela aberta. Você pode parar a qualquer momento.')) return;
+    parar.current = false; var i = 0; var lst = prontos.slice(); setEnvio({ feitos: 0, total: lst.length, erros: 0 });
+    (function prox() {
+      if (parar.current || i >= lst.length) { setEnvio(function (e) { return e ? Object.assign({}, e, { fim: true }) : e; }); recarregar(); return; }
+      var it = lst[i++];
+      bbApi('/api/enrich?provider=gmail-send', { method: 'POST', body: JSON.stringify({ fila_id: it.id, outlook_message_id: it.outlook_message_id, decisor_id: it.decisor_id, empresa_id: it.empresa_id, assunto: it.assunto }) })
+        .then(function (r) { return r && r.enviado; }).catch(function () { return false; })
+        .then(function (ok) {
+          setEnvio(function (e) { return Object.assign({}, e, { feitos: i, erros: (e.erros || 0) + (ok ? 0 : 1) }); }); recarregar();
+          if (i < lst.length && !parar.current) setTimeout(prox, 60000 + Math.random() * 60000); else prox();
+        });
+    })();
+  }
+  function abrirWhats() {
+    try { localStorage.setItem('gh_fila_tab', 'whatsapp'); } catch (_) {}
+    props.onClose && props.onClose(); props.navTo && props.navTo('fila');
+  }
+
+  var inp = { width: '100%', boxSizing: 'border-box', background: '#060610', border: '.5px solid #2D2D44', borderRadius: 4, color: '#F5F5F5', fontFamily: BB_MONO, fontSize: 11, padding: '7px 9px' };
+  var titulo = function (t) { return bbe("div", { style: { fontFamily: BB_MONO, fontSize: 9, color: '#6B6B85', letterSpacing: '.5px', margin: '14px 0 6px' } }, t); };
+
+  var config = bbe("div", null,
+    bbe("div", { style: { fontFamily: BB_MONO, fontSize: 11, color: '#C9C9D6', lineHeight: 1.6 } },
+      'Lista "' + (lista.nome || '') + '": ' + rs.contatos + ' contatos · ' + rs.comEmail + ' com e-mail · ' + rs.comCelular + ' com celular. ',
+      'A IA escreve uma mensagem para cada pessoa. Nada é enviado sem você: você revisa, aprova e envia.'),
+    titulo('NOME DA BLITZ'), bbe("input", { value: cfg.nome, onChange: function (e) { setCfg(Object.assign({}, cfg, { nome: e.target.value })); }, style: inp }),
+    titulo('TEMA: sobre o que é a conversa e por que agora'),
+    bbe("textarea", { value: cfg.tema, rows: 4, placeholder: 'Ex.: captação de alunos 2027. A GAIA fez a campanha de matrícula do Colégio X com IA (+20% inscrições). Quero 20 minutos para mostrar como ficaria para eles.',
+      onChange: function (e) { setCfg(Object.assign({}, cfg, { tema: e.target.value })); setErro(null); }, style: Object.assign({ resize: 'vertical' }, inp) }),
+    titulo('QUEM ASSINA'),
+    bbe("select", { value: cfg.agencia, onChange: function (e) { setCfg(Object.assign({}, cfg, { agencia: e.target.value })); }, style: inp },
+      ags.map(function (a) { return bbe("option", { key: a.id, value: a.id }, a.nome); })),
+    titulo('CANAIS'),
+    bbe("div", { style: { display: 'flex', gap: 16 } },
+      bbe("label", { style: { fontFamily: BB_MONO, fontSize: 11, color: '#C9C9D6' } }, bbe("input", { type: 'checkbox', checked: cfg.email, onChange: function (e) { setCfg(Object.assign({}, cfg, { email: e.target.checked })); } }), ' E-mail (' + rs.comEmail + ')'),
+      bbe("label", { style: { fontFamily: BB_MONO, fontSize: 11, color: '#C9C9D6' } }, bbe("input", { type: 'checkbox', checked: cfg.whatsapp, onChange: function (e) { setCfg(Object.assign({}, cfg, { whatsapp: e.target.checked })); } }), ' WhatsApp (' + rs.comCelular + ')')),
+    bbe("div", { style: { marginTop: 18, display: 'flex', gap: 8 } },
+      bbBotao(busy ? 'começando…' : 'Escrever as mensagens', iniciar, '#FF6B2B', { cheio: true, grande: true, disabled: busy })));
+
+  function cartao(grupo) {
+    var d = grupo.itens[0];
+    return bbe("div", { key: grupo.k, style: { border: '.5px solid #1A1A2E', borderRadius: 6, padding: '10px 12px', marginBottom: 8, background: '#0A0A14' } },
+      bbe("div", { style: { fontSize: 12, color: '#F5F5F5', fontWeight: 600, marginBottom: 6 } }, ((d.crm_empresas || {}).nome || '—') + ' · ' + ((d.crm_decisores || {}).nome || '') + (((d.crm_decisores || {}).cargo) ? ' (' + d.crm_decisores.cargo + ')' : '')),
+      /⚠/.test(d.contexto_para_aprovacao || '') && bbe("div", { style: { fontFamily: BB_MONO, fontSize: 10, color: '#FBBF24', marginBottom: 6 } }, d.contexto_para_aprovacao.split('⚠')[1]),
+      grupo.itens.map(function (m) {
+        var edit = m.status === 'rascunho';
+        var est = { rascunho: 'para revisar', aprovado: m.canal === 'email' ? (m.outlook_message_id ? 'rascunho no Gmail ✓' : 'criando rascunho no Gmail…') : 'aprovado: abrir na Fila', enviado: 'enviado ✓', pulado: 'descartado' }[m.status] || m.status;
+        return bbe("div", { key: m.id, style: { display: 'flex', gap: 8, alignItems: 'flex-start', marginTop: 6 } },
+          bbe("input", { type: 'checkbox', disabled: !edit, checked: edit ? !!sel[m.id] : m.status !== 'pulado', onChange: function () { setSel(Object.assign({}, sel, (function () { var o = {}; o[m.id] = !sel[m.id]; return o; })())); }, style: { marginTop: 3 } }),
+          bbe("div", { style: { flex: 1 } },
+            bbe("div", { style: { fontFamily: BB_MONO, fontSize: 9, color: m.canal === 'email' ? '#60A5FA' : '#34D399', marginBottom: 3 } }, (m.canal === 'email' ? 'E-MAIL' : 'WHATSAPP') + ' · ' + est + (m.rascunho_erro ? ' · erro: ' + m.rascunho_erro : '')),
+            m.canal === 'email' && bbe("input", { defaultValue: m.assunto || '', disabled: !edit, onBlur: function (e) { salvarCampo(m, 'assunto', e.target.value); }, style: Object.assign({}, inp, { marginBottom: 4, opacity: edit ? 1 : .7 }) }),
+            bbe("textarea", { defaultValue: m.corpo || '', disabled: !edit, rows: m.canal === 'email' ? 5 : 3, onBlur: function (e) { salvarCampo(m, 'corpo', e.target.value); }, style: Object.assign({ resize: 'vertical', opacity: edit ? 1 : .7 }, inp) })));
+      }));
+  }
+  var grupos = []; var idx = {};
+  msgs.forEach(function (m) { var k = m.decisor_id; if (!(k in idx)) { idx[k] = grupos.length; grupos.push({ k: k, itens: [] }); } grupos[idx[k]].itens.push(m); });
+  grupos.forEach(function (g) { g.itens.sort(function (a, b) { return a.canal === 'email' ? -1 : 1; }); });
+
+  var revisao = bz && bbe("div", null,
+    bbe("div", { style: { display: 'flex', gap: 14, alignItems: 'baseline', flexWrap: 'wrap', marginBottom: 10 } },
+      bbe("span", { style: { fontFamily: BB_MONO, fontSize: 12, color: '#F5F5F5', fontWeight: 700 } }, bz.nome),
+      bbe("span", { style: { fontFamily: BB_MONO, fontSize: 10, color: bz.status === 'escrevendo' ? '#FBBF24' : '#34D399' } },
+        bz.status === 'escrevendo' ? 'Escrevendo… ' + (bz.escritos || 0) + ' de ' + bz.total + ' contatos' : 'Pronta: ' + (bz.escritos || 0) + ' contatos com mensagem' + (bz.pulados ? ' · ' + bz.pulados + ' fora (sem canal, bloqueado ou inválido)' : '')),
+      bbe("span", { style: { fontFamily: BB_MONO, fontSize: 9, color: '#555' } }, 'IA US$ ' + Number(bz.custo_usd || 0).toFixed(2))),
+    bbe("div", { style: { display: 'flex', gap: 8, flexWrap: 'wrap', padding: '10px 0', borderTop: '.5px solid #1A1A2E', borderBottom: '.5px solid #1A1A2E', marginBottom: 10, alignItems: 'center' } },
+      rascunhos.length > 0 && bbBotao(busy ? 'aprovando…' : '✓ Aprovar selecionadas (' + selecionadas.length + ')', aprovar, '#34D399', { cheio: true, disabled: busy || !selecionadas.length }),
+      rascunhos.length > selecionadas.length && bbBotao('Descartar não selecionadas', descartarResto, '#E24B4A'),
+      emailsAprov.length > 0 && bbBotao(envio && !envio.fim ? 'Enviando ' + envio.feitos + '/' + envio.total + '…' : '✉ Enviar e-mails (' + prontos.length + ' prontos no Gmail)', enviarEmails, '#818CF8', { cheio: true, disabled: !prontos.length || (envio && !envio.fim) }),
+      envio && !envio.fim && bbBotao('parar', function () { parar.current = true; }, '#E24B4A'),
+      waAprov.length > 0 && bbBotao('💬 Abrir WhatsApps em sequência (' + waAprov.length + ')', abrirWhats, '#34D399'),
+      enviados.length > 0 && bbe("span", { style: { fontFamily: BB_MONO, fontSize: 10, color: '#34D399' } }, enviados.length + ' enviados'),
+      envio && envio.fim && bbe("span", { style: { fontFamily: BB_MONO, fontSize: 10, color: envio.erros ? '#FBBF24' : '#34D399' } }, 'Envio terminado: ' + (envio.feitos - (envio.erros || 0)) + ' enviados' + (envio.erros ? ', ' + envio.erros + ' com erro' : ''))),
+    emailsAprov.length > prontos.length && bbe("div", { style: { fontFamily: BB_MONO, fontSize: 10, color: '#6B6B85', marginBottom: 8 } }, 'Criando os rascunhos no seu Gmail (' + prontos.length + '/' + emailsAprov.length + ')… leva um minuto.'),
+    grupos.length === 0 && bbe("div", { style: { fontFamily: BB_MONO, fontSize: 11, color: '#555', padding: 20 } }, 'A IA está escrevendo as primeiras mensagens…'),
+    grupos.map(cartao));
+
+  return bbe("div", { style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.6)', zIndex: 900, display: 'flex', justifyContent: 'center', alignItems: 'flex-start', padding: '40px 16px', overflow: 'auto' },
+      onClick: function (e) { if (e.target === e.currentTarget && !(envio && !envio.fim)) props.onClose && props.onClose(); } },
+    bbe("div", { style: { width: 'min(860px,100%)', background: '#0D0D1A', border: '.5px solid #2D2D44', borderRadius: 10, padding: '18px 22px' } },
+      bbe("div", { style: { display: 'flex', alignItems: 'center', marginBottom: 12 } },
+        bbe("span", { style: { fontFamily: BB_MONO, fontSize: 12, color: '#FF6B2B', fontWeight: 700, letterSpacing: '.5px', flex: 1 } }, '⚡ BLITZ'),
+        bbBotao('fechar', function () { if (envio && !envio.fim && !window.confirm('O envio para se você fechar. Fechar mesmo?')) return; parar.current = true; props.onClose && props.onClose(); })),
+      erro && bbe("div", { style: { fontFamily: BB_MONO, fontSize: 10, color: '#E24B4A', marginBottom: 8 } }, erro),
+      blitzId ? revisao || bbe("div", { style: { fontFamily: BB_MONO, fontSize: 11, color: '#555' } }, 'Carregando…') : config));
+}
+
+// Blitz já feitas (para voltar a uma delas).
+function BlitzAnteriores(props) {
+  var _b = React.useState([]); var lst = _b[0]; var setLst = _b[1];
+  var _a = React.useState(null); var aberta = _a[0]; var setAberta = _a[1];
+  React.useEffect(function () { supaFetch('/rest/v1/crm_blitz?apagado_em=is.null&select=id,nome,status,total,escritos,criado_em,crm_listas(nome)&order=criado_em.desc&limit=20').then(function (r) { setLst(Array.isArray(r) ? r : []); }); }, []);
+  if (!lst.length) return null;
+  return bbe("div", { style: { borderTop: '.5px solid #1A1A2E', padding: '10px 18px', maxHeight: 140, overflow: 'auto' } },
+    bbe("div", { style: { fontFamily: BB_MONO, fontSize: 9, color: '#6B6B85', letterSpacing: '.5px', marginBottom: 6 } }, 'BLITZ FEITAS'),
+    lst.map(function (b) {
+      return bbe("div", { key: b.id, style: { display: 'flex', alignItems: 'center', gap: 10, padding: '3px 0' } },
+        bbe("span", { style: { fontSize: 12, color: '#F5F5F5', flex: 1 } }, '⚡ ' + b.nome),
+        bbe("span", { style: { fontFamily: BB_MONO, fontSize: 10, color: '#6B6B85' } }, (b.status === 'escrevendo' ? 'escrevendo' : b.escritos + ' contatos') + ' · ' + new Date(b.criado_em).toLocaleDateString('pt-BR')),
+        bbBotao('Abrir', function () { setAberta(b); }, '#60A5FA'));
+    }),
+    aberta && bbe(BlitzPainel, { blitzId: aberta.id, lista: { nome: (aberta.crm_listas || {}).nome }, linhas: [], navTo: props.navTo, onClose: function () { setAberta(null); } }));
 }

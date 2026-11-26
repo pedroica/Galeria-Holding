@@ -24,6 +24,7 @@ import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTempl
 import { obterTokenGraph } from '../lib/graph-token.js';
 import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail, gmailReq, consultaRascunho, filaIdDaFronteira } from '../lib/gmail-token.js';
 import { perfilGmail, historicoGmail, eventosDoHistorico, metadadosMensagem, corpoMensagem, filaIdDoMessageId, textoDoPayload } from '../lib/gmail-sync.js';
+import { construirPromptBlitz, checarMensagem, casesDoSetor, SCHEMA_BLITZ } from '../lib/blitz.js';
 import { SETORES, setorDoAntigo, setorValido, SCHEMA_SETORES, promptSetores } from '../lib/setores.js';
 import { montarIndice, casarMensagem, decidirPipeline, construirPromptStatus, SCHEMA_STATUS, semCitacao, respostaReal, substituiSugestao, aplicarPrazoDoEmail } from '../lib/gmail-crm.js';
 import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
@@ -985,7 +986,8 @@ async function jobRascunhosMatinais(req, res) {
     // A pausa de primeiros contatos (13/11) vale para a fila genérica antiga. O SDR
     // (dossiê + estrategista + QC) é o que o Pedro pediu para receber todo dia, e
     // criar rascunho não envia nada: o envio continua sendo o clique dele.
-    if (pausado && Number(it.etapa_cadencia || 1) <= 1 && it.origem !== 'sdr') return false;
+    // Blitz também passa: é o Pedro que montou a lista e aprovou cada mensagem.
+    if (pausado && Number(it.etapa_cadencia || 1) <= 1 && it.origem !== 'sdr' && it.origem !== 'blitz') return false;
     return true;
   });
 
@@ -2622,6 +2624,93 @@ async function jobClassificarSetores(req, res) {
   return res.status(200).json({ ok: true, ...cont });
 }
 
+// ── job: blitz-redacao ───────────────────────────────────────────────────────
+// Escreve, para cada contato da lista da blitz, um e-mail e um WhatsApp (lib/blitz.js)
+// e põe na crm_fila como RASCUNHO (origem 'blitz'). Nada é enviado: o Pedro revisa,
+// aprova, o rascunho vai para o Gmail e o envio é clique dele.
+// Uma blitz por vez, com trava (lease_ate) para duas execuções não escreverem juntas;
+// o índice único (blitz, contato, canal) impede mensagem duplicada mesmo assim.
+async function jobBlitzRedacao(req, res) {
+  const inicio = Date.now(); const LIMITE = 40000;
+  const cont = { escritos: 0, pulados: 0, revisar: 0, custo_usd: 0 };
+  const agora = new Date();
+  const abertas = await sg('crm_blitz?status=eq.escrevendo&apagado_em=is.null&select=*&order=criado_em.asc&limit=1');
+  if (abertas === null) return erroLeitura('blitz-redacao', res, inicio, 'crm_blitz');
+  const bz = abertas[0];
+  if (!bz) return res.status(200).json({ ok: true, nada: true });
+  // Trava: só segue quem conseguir marcar a blitz por 55 s.
+  const pego = await spPatchRet(`crm_blitz?id=eq.${bz.id}&or=(lease_ate.is.null,lease_ate.lt.${agora.toISOString()})`, { lease_ate: new Date(Date.now() + 55000).toISOString() });
+  if (!pego.length) return res.status(200).json({ ok: true, ocupado: true });
+
+  const itens = await sg(`crm_lista_itens?lista_id=eq.${bz.lista_id}&select=decisor_id,crm_decisores(id,nome,cargo,email,wa,opt_out,status,empresa_id,crm_empresas(id,nome,setor,setor_canonico,dominio,website,site,apagado_em))&limit=2000`);
+  const feitos = await sg(`crm_fila?blitz_id=eq.${bz.id}&select=decisor_id,canal&limit=5000`);
+  if (itens === null || feitos === null) return erroLeitura('blitz-redacao', res, inicio, 'lista/fila');
+  const jaTem = new Set(feitos.map(f => f.decisor_id + '|' + f.canal));
+  const canais = Array.isArray(bz.canais) && bz.canais.length ? bz.canais : ['email', 'whatsapp'];
+  const blRows = await sg('crm_blocklist?ativo=eq.true&apagado_em=is.null&select=nome_canonico,aliases,dominios,grupo_economico,ativo&limit=2000');
+  const blocklist = makeBlocklist(blRows || []);
+  const KV = await knowledgeVivo();
+  const agencias = KV.agencias || [];
+  const agRow = bz.agencia_id ? await sg(`crm_agencias?id=eq.${bz.agencia_id}&select=slug,nome&limit=1`) : null;
+  const slug = Array.isArray(agRow) && agRow[0] ? agRow[0].slug : 'holding';
+  const agencia = agencias.find(a => a.slug === slug) || { nome: (Array.isArray(agRow) && agRow[0] && agRow[0].nome) || 'Galeria Holding' };
+  const holding = agencias.find(a => a.slug === 'holding') || null;
+  const modelo = MODELO_SDR;
+
+  // Quem ainda falta: contato válido, empresa ativa, não bloqueado, e algum canal pedido que ele tenha e ainda não foi escrito.
+  const pendentes = []; let invalidos = 0;
+  for (const it of itens) {
+    const d = it.crm_decisores; const e = d && d.crm_empresas;
+    const canaisDele = canais.filter(c => (c === 'email' ? !!d?.email : !!d?.wa) && !jaTem.has(d.id + '|' + c));
+    if (!d || !e || e.apagado_em || d.opt_out || ['saiu_da_empresa', 'invalido'].includes(d.status)) { invalidos++; continue; }
+    if (blocklist.isBlocked({ name: e.nome, domain: e.dominio || e.website || e.site, email: d.email })) { invalidos++; continue; }
+    if (!canais.some(c => c === 'email' ? d.email : d.wa)) { invalidos++; continue; }
+    if (canaisDele.length) pendentes.push({ d, e, canaisDele });
+  }
+
+  async function escrever(p) {
+    const setor = p.e.setor_canonico || p.e.setor || '';
+    const memoria = await memoriaParaPrompt({ setor });
+    const { system, user } = construirPromptBlitz({ tema: bz.tema, agencia, holding, cases: casesDoSetor(KV.cases_destaque, setor), memoria,
+      contato: p.d, empresa: { nome: p.e.nome, setor, site: p.e.dominio || p.e.website || p.e.site } });
+    let r = await gerarJSON({ system, user, schema: SCHEMA_BLITZ, effort: 'low', model: modelo });
+    let custo = r.custo || 0;
+    let problemas = checarMensagem(r.obj);
+    if (problemas.length && r.obj) {   // uma segunda tentativa, dizendo o que corrigir
+      const r2 = await gerarJSON({ system, user: user + '\n\nCORRIJA: ' + problemas.join('; '), schema: SCHEMA_BLITZ, effort: 'low', model: modelo });
+      custo += r2.custo || 0;
+      const p2 = checarMensagem(r2.obj);
+      if (r2.obj && p2.length < problemas.length) { r = r2; problemas = p2; }
+    }
+    cont.custo_usd += custo;
+    if (!r.obj) { cont.pulados++; return; }
+    const aviso = problemas.length ? ' ⚠ revisar: ' + problemas.join('; ') : '';
+    if (aviso) cont.revisar++;
+    const base = { decisor_id: p.d.id, empresa_id: p.e.id, status: 'rascunho', origem: 'blitz', blitz_id: bz.id, etapa_cadencia: 1, etapa: 'blitz',
+      agencia_id: bz.agencia_id || null, agencia_slug: slug, modelo: r.modelo || modelo, custo_usd: Math.round(custo / p.canaisDele.length * 10000) / 10000,
+      contexto_para_aprovacao: ('Blitz "' + bz.nome + '" · ' + (r.obj.gancho || '') + aviso).slice(0, 500), gerado_em: new Date().toISOString() };
+    for (const canal of p.canaisDele) {
+      const linha = canal === 'email'
+        ? Object.assign({}, base, { canal, assunto: String(r.obj.assunto).slice(0, 200), corpo: String(r.obj.email).slice(0, 4000) })
+        : Object.assign({}, base, { canal, assunto: null, corpo: String(r.obj.whatsapp).slice(0, 2000) });
+      if (await sp('crm_fila', linha)) cont.escritos++;   // duplicata: o índice único recusa (409) e nada muda
+    }
+  }
+  for (let i = 0; i < pendentes.length && Date.now() - inicio < LIMITE - 18000; i += 4) {
+    await Promise.all(pendentes.slice(i, i + 4).map(p => escrever(p).catch(() => { cont.pulados++; })));
+  }
+
+  const depois = await sg(`crm_fila?blitz_id=eq.${bz.id}&select=decisor_id&limit=5000`);
+  const contatosEscritos = new Set((Array.isArray(depois) ? depois : []).map(x => x.decisor_id)).size;
+  const terminou = pendentes.length === 0 || contatosEscritos + invalidos >= (bz.total || 0) ||
+    (Date.now() - new Date(bz.criado_em).getTime() > 3 * 3600e3);   // passa de 3 h: encerra com o que tem
+  await sp(`crm_blitz?id=eq.${bz.id}`, { escritos: contatosEscritos, pulados: invalidos, custo_usd: Math.round(((Number(bz.custo_usd) || 0) + cont.custo_usd) * 10000) / 10000,
+    status: terminou ? 'pronta' : 'escrevendo', lease_ate: null, atualizado_em: new Date().toISOString() }, 'PATCH');
+  cont.custo_usd = Math.round(cont.custo_usd * 10000) / 10000; cont.terminou = terminou; cont.ms = Date.now() - inicio;
+  await logCron('blitz-redacao', nivelTrabalho(cont.escritos), 'fim', Object.assign({ blitz_id: bz.id }, cont));
+  return res.status(200).json({ ok: true, ...cont });
+}
+
 // PATCH que devolve as linhas alteradas: o filtro de status garante que só uma
 // execução registra o envio (idempotência entre o cron e o clique no app).
 async function spPatchRet(path, body) {
@@ -2783,6 +2872,7 @@ export default async function handler(req, res) {
     if (job === 'sdr-aprendizado')       return await jobSdrAprendizado(req, res);
     if (job === 'gmail-crm')             return await jobGmailCrm(req, res);
     if (job === 'classificar-setores')   return await jobClassificarSetores(req, res);
+    if (job === 'blitz-redacao')         return await jobBlitzRedacao(req, res);
     if (job === 'sdr-envios') {
       const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null);
       const ctx = await sincronizarEnvios(gm);
