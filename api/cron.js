@@ -24,7 +24,7 @@ import { enviarEmailGraph, enviarWhatsAppTemplate, normalizarWa, parametrosTempl
 import { obterTokenGraph } from '../lib/graph-token.js';
 import { obterTokenGmail, criarRascunhoGmail, lerEntradaGmail, estadoDoRascunhoGmail, ehRascunhoGmail, gmailReq, consultaRascunho, filaIdDaFronteira } from '../lib/gmail-token.js';
 import { perfilGmail, historicoGmail, eventosDoHistorico, metadadosMensagem, corpoMensagem, filaIdDoMessageId, textoDoPayload } from '../lib/gmail-sync.js';
-import { montarIndice, casarMensagem, decidirPipeline, construirPromptStatus, SCHEMA_STATUS, semCitacao, respostaReal, substituiSugestao } from '../lib/gmail-crm.js';
+import { montarIndice, casarMensagem, decidirPipeline, construirPromptStatus, SCHEMA_STATUS, semCitacao, respostaReal, substituiSugestao, aplicarPrazoDoEmail } from '../lib/gmail-crm.js';
 import { MODELOS_WA, payloadMeta } from '../lib/wa-templates.js';
 import { tokenSdrValido } from '../lib/sdr-auth.js';
 import { crossSell, sinaisDeCompra } from '../lib/sdr-topo.js';
@@ -2478,7 +2478,7 @@ async function jobGmailCrm(req, res) {
       const h2 = (x.payload && x.payload.headers) || [];
       return { direcao: (x.labelIds || []).includes('SENT') ? 'enviado' : 'recebido', data: new Date(Number(x.internalDate || 0)).toISOString(), de: hdrV(h2, 'from'), assunto: hdrV(h2, 'subject'), texto: semCitacao(textoDoPayload(x.payload)) };
     });
-    const ops = await sg(`crm_oportunidades?empresa_id=eq.${c.empresa_id}&apagado_em=is.null&select=id,estagio,proximo_passo&order=atualizado_em.desc.nullslast&limit=5`);
+    const ops = await sg(`crm_oportunidades?empresa_id=eq.${c.empresa_id}&apagado_em=is.null&select=id,estagio,proximo_passo,proximo_passo_em,atualizado_em&order=atualizado_em.desc.nullslast&limit=5`);
     const abertas = (Array.isArray(ops) ? ops : []);
     const op = abertas.find(o => !['Perdido', 'Cliente ativo', 'Pausado'].includes(o.estagio)) || abertas[0] || null;
     const { system, user } = construirPromptStatus({ empresa: nomeEmp[c.empresa_id], estagioAtual: op ? op.estagio : null, mensagens, hoje: new Date().toISOString().slice(0, 10) });
@@ -2491,8 +2491,28 @@ async function jobGmailCrm(req, res) {
     await spUpsert('crm_gmail_status', { empresa_id: c.empresa_id, sinal: st.sinal, confianca: st.confianca, resumo: String(st.resumo || '').slice(0, 400),
       proximo_passo: String(st.proximo_passo || '').slice(0, 300), proximo_passo_em: dataPP, evidencia: String(st.evidencia || '').slice(0, 300),
       thread_id: c.threadId, ultima_mensagem_em: c.ultima, ultima_direcao: c.direcao, atualizado_em: new Date().toISOString() }, 'empresa_id');
+    const respondeu = respostaReal(mensagens, proprios);
+    const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    // Prazo combinado no e-mail vira o próximo passo da oportunidade aberta.
+    if (aplicarPrazoDoEmail({ dataPP, hojeStr, op, respondeu, ultimaMsgEm: c.ultima })) {
+      const passo = String(st.proximo_passo || st.resumo || '').slice(0, 300);
+      if (await sp(`crm_oportunidades?id=eq.${op.id}`, { proximo_passo: passo, proximo_passo_em: dataPP, atualizado_em: new Date().toISOString() }, 'PATCH')) {
+        await sp('crm_oportunidade_eventos', { oportunidade_id: op.id, tipo: 'nota', texto: ('Prazo pelo Gmail: ' + passo + ' até ' + dataPP.split('-').reverse().join('/') + (st.evidencia ? ' — "' + st.evidencia + '"' : '')).slice(0, 600), autor_email: 'agente-gmail' });
+        op.proximo_passo = passo; op.proximo_passo_em = dataPP; cont.prazos = (cont.prazos || 0) + 1;
+      }
+    }
+    // Reunião marcada com data: registra (meta semanal e lista de próximas reuniões), uma por empresa e dia.
+    if (respondeu && st.sinal === 'reuniao_marcada' && dataPP && dataPP >= hojeStr) {
+      const ja = await sg(`crm_toques?empresa_id=eq.${c.empresa_id}&reuniao_em=gte.${dataPP}T00:00:00-03:00&reuniao_em=lte.${dataPP}T23:59:59-03:00&apagado_em=is.null&select=id&limit=1`);
+      if (Array.isArray(ja) && !ja.length) {
+        const ultimaRec = [...mensagens].reverse().find(x => x.direcao === 'recebido');
+        if (await sp('crm_toques', { empresa_id: c.empresa_id, canal: 'email', direcao: 'recebido', assunto: String((ultimaRec && ultimaRec.assunto) || '').slice(0, 500),
+          resumo: ('Gmail: reunião marcada para ' + dataPP.split('-').reverse().join('/') + ' — ' + (st.resumo || '')).slice(0, 500), data: new Date().toISOString(),
+          fonte: 'sistema', resultado: 'reuniao_marcada', reuniao_em: dataPP + 'T00:00:00-03:00' })) cont.reunioes = (cont.reunioes || 0) + 1;
+      }
+    }
     const dec = decidirPipeline({ sinal: st.sinal, confianca: st.confianca, estagioAtual: op ? op.estagio : null,
-      clienteRespondeu: respostaReal(mensagens, proprios) });
+      clienteRespondeu: respondeu });
     if (dec.acao === 'nada') { cont.sem_mudanca++; continue; }
     const base = { empresa_id: c.empresa_id, thread_id: c.threadId, sinal: st.sinal, confianca: st.confianca, estagio_para: dec.para,
       resumo: String(st.resumo || '').slice(0, 400), evidencia: String(st.evidencia || '').slice(0, 300), motivo: dec.motivo };

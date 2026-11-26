@@ -6,7 +6,7 @@ process.env.SUPA_CRM_URL = 'https://fake.supabase.co';
 process.env.CRON_SECRET = 'cron-vercel';
 process.env.ANTHROPIC_API_KEY = 'sk-fake';
 
-import { parseEnderecos, montarIndice, casarMensagem, decidirPipeline, semCitacao, construirPromptStatus, respostaReal, nomeDoEmail, substituiSugestao } from '../lib/gmail-crm.js';
+import { parseEnderecos, montarIndice, casarMensagem, decidirPipeline, semCitacao, construirPromptStatus, respostaReal, nomeDoEmail, substituiSugestao, aplicarPrazoDoEmail } from '../lib/gmail-crm.js';
 
 let pass = 0, fail = 0;
 const ok = (c, m) => { c ? pass++ : fail++; console.log((c ? '  ✓ ' : '  ✗ FALHOU: ') + m); };
@@ -63,6 +63,15 @@ ok(substituiSugestao(null, { estagio_para: 'Contato direto' }), 'sem pendente: g
 ok(!substituiSugestao({ estagio_para: 'Concorrências' }, { estagio_para: 'Contato direto' }), 'pendente mais avançada fica (não troca Concorrências por Contato direto)');
 ok(substituiSugestao({ estagio_para: 'Contato direto' }, { estagio_para: 'Concorrências' }), 'sugestão mais avançada substitui a pendente');
 ok(substituiSugestao({ estagio_para: 'Negociação' }, { estagio_para: 'Negociação' }), 'mesma etapa: a mais recente vence');
+const pz = (o) => aplicarPrazoDoEmail(Object.assign({ dataPP: '2026-12-03', hojeStr: '2026-11-26', respondeu: true, ultimaMsgEm: '2026-11-26T10:00:00Z', op: { estagio: 'Negociação', proximo_passo_em: null, atualizado_em: '2026-11-20T10:00:00Z' } }, o));
+ok(pz({}), 'data combinada e oportunidade sem prazo: preenche');
+ok(!pz({ respondeu: false }), 'empresa não respondeu (só proposta de data): não preenche');
+ok(!pz({ dataPP: '2026-11-20' }), 'data no passado: não preenche');
+ok(!pz({ op: { estagio: 'Cliente ativo' } }), 'oportunidade encerrada: não mexe');
+ok(!pz({ op: { estagio: 'Negociação', proximo_passo_em: '2026-12-03' } }), 'mesma data: nada a fazer');
+ok(pz({ op: { estagio: 'Negociação', proximo_passo_em: '2026-11-21', atualizado_em: '2026-11-25T10:00:00Z' } }), 'prazo do CRM já venceu: troca pela data do e-mail');
+ok(!pz({ ultimaMsgEm: '2026-11-24T10:00:00Z', op: { estagio: 'Negociação', proximo_passo_em: '2026-12-10', atualizado_em: '2026-11-25T10:00:00Z' } }), 'Pedro definiu prazo depois do e-mail: mantém o dele');
+ok(pz({ op: { estagio: 'Negociação', proximo_passo_em: '2026-12-10', atualizado_em: '2026-11-25T10:00:00Z' } }), 'e-mail mais novo que a edição: atualiza');
 
 console.log('Texto da conversa');
 ok(semCitacao('Pode ser quinta 10h.\n\nEm seg., 24 de nov. de 2026 às 10:00, Pedro <p@x.com> escreveu:\n> texto antigo') === 'Pode ser quinta 10h.', 'tira a citação da mensagem anterior');

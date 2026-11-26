@@ -2651,7 +2651,7 @@ function App() {
   // valendo e caem na aba certa (botões da tela Hoje, retorno do OAuth etc.).
   const [subAba, setSubAba] = useState({ fila: 'enviar', inteligencia: 'inteligencia', pipeline: 'pipeline', admin: null });
   const NAV_ALIAS = { aprovar: ['fila', 'aprovar'], sdr: ['fila', 'agente'], fila: ['fila', 'enviar'], atividade: ['inteligencia', 'atividade'],
-    inteligencia: ['inteligencia', 'inteligencia'], holding: ['pipeline', 'pipeline'], blocklist: ['admin', 'blocklist'], templates: ['admin', 'templates'], copiloto: ['admin', 'copiloto'] };
+    inteligencia: ['inteligencia', 'inteligencia'], holding: ['pipeline', 'pipeline'], pipeline: ['pipeline', 'pipeline'], blocklist: ['admin', 'blocklist'], templates: ['admin', 'templates'], copiloto: ['admin', 'copiloto'] };
   const SUBABAS = {
     fila: [['aprovar', 'Aprovar'], ['enviar', 'Enviar'], ['agente', 'Agente']],
     pipeline: [['pipeline', 'Pipeline'], ['metas', 'Metas semanais'], ['legado', 'Kanban legado']],
@@ -3766,6 +3766,157 @@ function PainelAgente(props) {
   );
 }
 
+// ── Prazos dos próximos passos (missão: nada combinado fica esquecido) ─────────
+// Lê as oportunidades abertas, separa em vencidos / hoje / esta semana / sem prazo
+// (regras em prazos.js) e deixa resolver na hora: Feito (pede o próximo passo com
+// data), Adiar, Definir prazo, Abrir no Pipeline. Toda mudança vira nota no
+// histórico da oportunidade e linha em crm_auditoria.
+function PainelPrazos(props) {
+  var mono = "'IBM Plex Mono',monospace";
+  var P = window.Prazos;
+  var podeEditar = !props || props.meuPapel !== 'leitor';
+  var _o = React.useState(null); var ops = _o[0]; var setOps = _o[1];
+  var _e = React.useState(null); var edit = _e[0]; var setEdit = _e[1];   // { id, modo: 'feito'|'definir', passo, data, erro }
+  var _b = React.useState(null); var busy = _b[0]; var setBusy = _b[1];
+  var _v = React.useState(false); var verSem = _v[0]; var setVerSem = _v[1];
+  var _vt = React.useState(10); var limiteSem = _vt[0]; var setLimiteSem = _vt[1];
+  function carregar() {
+    supaFetch('/rest/v1/crm_oportunidades?apagado_em=is.null&estagio=not.in.(%22Perdido%22,%22Cliente%20ativo%22,%22Pausado%22)&select=id,titulo,estagio,proximo_passo,proximo_passo_em,atualizado_em,empresa_id,crm_empresas(nome)&limit=500')
+      .then(function (r) { setOps(Array.isArray(r) ? r : []); }).catch(function () { setOps([]); });
+  }
+  React.useEffect(function () { carregar(); var h = function () { carregar(); }; window.addEventListener('crm-op-updated', h); return function () { window.removeEventListener('crm-op-updated', h); }; }, []);
+  if (!P) return null;
+  var hoje = P.hojeBRT();
+  var g = ops ? P.agruparPrazos(ops, hoje) : null;
+  var email = function () { return (window.__supaSession && window.__supaSession.user && window.__supaSession.user.email) || ''; };
+  function gravar(op, patch, nota) {
+    setBusy(op.id);
+    var corpo = Object.assign({}, patch, { atualizado_em: new Date().toISOString() });
+    return supaFetch('/rest/v1/crm_oportunidades?id=eq.' + op.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(corpo) })
+      .then(function (r) { if (r && r.code) throw new Error(r.message || r.code); })
+      .then(function () {
+        var regs = [supaFetch('/rest/v1/crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'nota', texto: nota, autor_email: email() }) })];
+        ['proximo_passo', 'proximo_passo_em'].forEach(function (c) {
+          if (c in patch && String(op[c] || '') !== String(patch[c] || '')) regs.push(supaFetch('/rest/v1/crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_oportunidades', registro_id: op.id, campo: c, valor_de: op[c] || null, valor_para: patch[c] || null, usuario_email: email() }) }));
+        });
+        return Promise.all(regs);
+      })
+      .then(function () { setEdit(null); setBusy(null); window.dispatchEvent(new CustomEvent('crm-op-updated')); })
+      .catch(function (e) { setBusy(null); setEdit(function (x) { return x ? Object.assign({}, x, { erro: 'Não salvou: ' + e.message }) : x; }); });
+  }
+  function adiar(op, dias, uteis) {
+    var base = op.proximo_passo_em && op.proximo_passo_em >= hoje ? op.proximo_passo_em : hoje;
+    var nova = uteis ? P.somaDiasUteis(base, dias) : P.somaDias(base, dias);
+    gravar(op, { proximo_passo_em: nova }, 'Prazo adiado' + (op.proximo_passo_em ? ' de ' + fmt(op.proximo_passo_em) : '') + ' para ' + fmt(nova) + (op.proximo_passo ? ' — ' + op.proximo_passo : ''));
+  }
+  function salvarEdit(op) {
+    var form = { estagio: op.estagio, proximo_passo: edit.passo, proximo_passo_em: edit.data };
+    var erro = P.validarProximoPasso(form);
+    if (erro) { setEdit(Object.assign({}, edit, { erro: erro })); return; }
+    var nota = edit.modo === 'feito'
+      ? 'Feito: ' + (op.proximo_passo || 'próximo passo') + '. Próximo: ' + edit.passo.trim() + ' até ' + fmt(edit.data)
+      : 'Prazo definido: ' + edit.passo.trim() + ' até ' + fmt(edit.data);
+    gravar(op, { proximo_passo: edit.passo.trim().slice(0, 300), proximo_passo_em: edit.data }, nota);
+  }
+  function fmt(d) { var p = String(d).slice(0, 10).split('-'); return p[2] + '/' + p[1]; }
+  function rotuloData(d) {
+    var x = String(d).slice(0, 10);
+    if (x < hoje) { var n = P.diasDeAtraso(x, hoje); return { t: 'há ' + n + (n === 1 ? ' dia' : ' dias'), c: '#E24B4A' }; }
+    if (x === hoje) return { t: 'hoje', c: '#FF6B2B' };
+    var dia = new Date(x + 'T12:00:00Z').toLocaleDateString('pt-BR', { weekday: 'short', timeZone: 'UTC' }).replace('.', '');
+    return { t: dia + ' ' + fmt(x), c: '#60A5FA' };
+  }
+  var btn = function (label, fn, cor, titulo) { return React.createElement("button", { onClick: fn, disabled: !!busy, title: titulo || '', style: { padding: '3px 8px', borderRadius: 4, border: '.5px solid ' + (cor || '#2D2D44'), background: 'transparent', color: cor || '#9B9BB4', fontFamily: mono, fontSize: 9, cursor: busy ? 'wait' : 'pointer', whiteSpace: 'nowrap' } }, label); };
+  function abrir(op) { window.__abrirOportunidade = op.id; props && props.navTo && props.navTo('pipeline'); }
+  function editor(op) {
+    var chip = function (label, d) { return React.createElement("button", { key: label, onClick: function () { setEdit(Object.assign({}, edit, { data: d, erro: null })); }, style: { padding: '2px 7px', borderRadius: 10, border: '.5px solid ' + (edit.data === d ? '#FF6B2B' : '#2D2D44'), background: 'transparent', color: edit.data === d ? '#FF6B2B' : '#9B9BB4', fontFamily: mono, fontSize: 9, cursor: 'pointer' } }, label); };
+    var inp = { background: '#060610', border: '.5px solid #2D2D44', borderRadius: 4, color: '#F5F5F5', fontFamily: mono, fontSize: 11, padding: '6px 8px' };
+    return React.createElement("div", { style: { display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 0 4px 14px' } },
+      React.createElement("div", { style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+        React.createElement("input", { autoFocus: true, value: edit.passo, placeholder: 'Próximo passo (ex.: enviar proposta revisada)', onChange: function (e) { setEdit(Object.assign({}, edit, { passo: e.target.value, erro: null })); }, onKeyDown: function (e) { if (e.key === 'Enter') salvarEdit(op); if (e.key === 'Escape') setEdit(null); }, style: Object.assign({ flex: 1, minWidth: 220 }, inp) }),
+        React.createElement("input", { type: 'date', value: edit.data || '', onChange: function (e) { setEdit(Object.assign({}, edit, { data: e.target.value, erro: null })); }, style: inp })),
+      React.createElement("div", { style: { display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' } },
+        chip('amanhã', P.somaDiasUteis(hoje, 1)), chip('+3 dias úteis', P.somaDiasUteis(hoje, 3)), chip('+1 semana', P.somaDias(hoje, 7)), chip('+2 semanas', P.somaDias(hoje, 14)),
+        React.createElement("span", { style: { flex: 1 } }),
+        btn(busy === op.id ? 'salvando…' : 'Salvar', function () { salvarEdit(op); }, '#34D399'), btn('Cancelar', function () { setEdit(null); })),
+      edit.erro && React.createElement("div", { style: { fontFamily: mono, fontSize: 10, color: '#E24B4A' } }, edit.erro));
+  }
+  function linha(op, semPrazo) {
+    var r = !semPrazo && rotuloData(op.proximo_passo_em);
+    var nome = (op.crm_empresas && op.crm_empresas.nome) || op.titulo || '—';
+    var editando = edit && edit.id === op.id;
+    return React.createElement("div", { key: op.id, style: { borderBottom: '.5px solid #1A1A2E', padding: '7px 0' } },
+      React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' } },
+        r && React.createElement("span", { style: { fontFamily: mono, fontSize: 10, color: r.c, minWidth: 74, fontWeight: 700 } }, r.t),
+        React.createElement("span", { style: { fontSize: 12, color: '#F5F5F5', fontWeight: 600 } }, nome),
+        React.createElement("span", { style: { fontFamily: mono, fontSize: 8, color: '#9B9BB4', border: '.5px solid #2D2D44', borderRadius: 3, padding: '1px 5px' } }, op.estagio),
+        React.createElement("span", { style: { fontSize: 11, color: semPrazo ? '#555' : '#C9C9D6', flex: 1, minWidth: 160 } }, op.proximo_passo || (semPrazo ? 'sem próximo passo definido' : '—')),
+        podeEditar && !editando && (semPrazo
+          ? React.createElement("span", { style: { display: 'flex', gap: 4 } }, btn('Definir prazo', function () { setEdit({ id: op.id, modo: 'definir', passo: op.proximo_passo || '', data: P.somaDiasUteis(hoje, 3) }); }, '#FF6B2B'), btn('Abrir', function () { abrir(op); }))
+          : React.createElement("span", { style: { display: 'flex', gap: 4 } },
+              btn('✓ Feito', function () { setEdit({ id: op.id, modo: 'feito', passo: '', data: P.somaDiasUteis(hoje, 3) }); }, '#34D399', 'Marca como feito e pede o próximo passo'),
+              btn('+1 dia', function () { adiar(op, 1, true); }, null, 'Adia para o próximo dia útil'),
+              btn('+1 sem', function () { adiar(op, 7, false); }, null, 'Adia uma semana'),
+              btn('Abrir', function () { abrir(op); })))),
+      editando && editor(op));
+  }
+  function bloco(titulo, cor, lista, semPrazo) {
+    if (!lista.length) return null;
+    return React.createElement("div", { style: { marginTop: 10 } },
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: cor, letterSpacing: '.5px', marginBottom: 2 } }, titulo + ' (' + lista.length + ')'),
+      lista.map(function (o) { return linha(o, semPrazo); }));
+  }
+  var cont = function (label, n, cor) { return React.createElement("div", { style: { display: 'flex', alignItems: 'baseline', gap: 6 } }, React.createElement("span", { style: { fontFamily: mono, fontSize: 20, fontWeight: 700, color: n ? cor : '#333' } }, n), React.createElement("span", { style: { fontFamily: mono, fontSize: 9, color: '#555' } }, label)); };
+  return React.createElement("div", { style: { background: '#0D0D1A', border: '.5px solid ' + (g && g.vencidos.length ? 'rgba(226,75,74,.45)' : '#1A1A2E'), borderRadius: 8, padding: '14px 18px' } },
+    React.createElement("div", { style: { display: 'flex', alignItems: 'center', gap: 18, flexWrap: 'wrap' } },
+      React.createElement("span", { style: { fontFamily: mono, fontSize: 10, color: '#F5F5F5', letterSpacing: '.5px', fontWeight: 700, marginRight: 'auto' } }, 'PRAZOS DOS PRÓXIMOS PASSOS'),
+      g && cont('vencidos', g.vencidos.length, '#E24B4A'), g && cont('hoje', g.hoje.length, '#FF6B2B'), g && cont('esta semana', g.semana.length, '#60A5FA'), g && cont('sem prazo', g.semPrazo.length, '#9B9BB4')),
+    !g ? React.createElement("div", { style: { fontFamily: mono, fontSize: 10, color: '#555', marginTop: 10 } }, 'Carregando prazos…')
+    : React.createElement(React.Fragment, null,
+        !g.vencidos.length && !g.hoje.length && !g.semana.length && React.createElement("div", { style: { fontFamily: mono, fontSize: 10, color: '#555', marginTop: 10 } }, 'Nada vencido nem para esta semana.'),
+        bloco('VENCIDOS', '#E24B4A', g.vencidos), bloco('HOJE', '#FF6B2B', g.hoje), bloco('ESTA SEMANA', '#60A5FA', g.semana),
+        g.semPrazo.length > 0 && React.createElement("div", { style: { marginTop: 12 } },
+          React.createElement("button", { onClick: function () { setVerSem(!verSem); }, style: { background: 'transparent', border: 'none', color: '#9B9BB4', fontFamily: mono, fontSize: 10, cursor: 'pointer', padding: 0 } },
+            (verSem ? '▾ ' : '▸ ') + g.semPrazo.length + ' oportunidade(s) abertas sem prazo — mais perto de fechar primeiro'),
+          verSem && React.createElement("div", null, g.semPrazo.slice(0, limiteSem).map(function (o) { return linha(o, true); }),
+            g.semPrazo.length > limiteSem && React.createElement("button", { onClick: function () { setLimiteSem(limiteSem + 20); }, style: { marginTop: 6, background: 'transparent', border: 'none', color: '#60A5FA', fontFamily: mono, fontSize: 10, cursor: 'pointer', padding: 0 } }, 'ver mais ' + Math.min(20, g.semPrazo.length - limiteSem))))));
+}
+
+// ── Reuniões: meta da semana + próximas reuniões (crm_reunioes_v) ─────────────
+var META_REUNIOES_SEMANA = 40;
+function PainelReunioes(props) {
+  var mono = "'IBM Plex Mono',monospace";
+  var P = window.Prazos;
+  var linhas = (props && props.linhas) || [];
+  if (!P) return null;
+  var hoje = P.hojeBRT();
+  var semana = P.reunioesDaSemana(linhas, hoje);
+  var prox = P.proximasReunioes(linhas).slice(0, 8);
+  var meta = META_REUNIOES_SEMANA; var n = semana.length;
+  var quando = function (iso) { var d = new Date(iso); var dia = P.dataBRT(iso); var hm = d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', timeZone: P.FUSO });
+    var rot = dia === hoje ? 'hoje' : dia === P.somaDias(hoje, 1) ? 'amanhã' : d.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', timeZone: P.FUSO }).replace('.', '');
+    return rot + (hm !== '00:00' ? ' ' + hm : ''); };
+  var lista = function (itens, render) { return itens.map(function (r) { return React.createElement("div", { key: r.id, style: { display: 'flex', gap: 8, alignItems: 'center', padding: '5px 0', borderBottom: '.5px solid #1A1A2E' } }, render(r)); }); };
+  return React.createElement("div", { style: { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px', display: 'flex', gap: 24, flexWrap: 'wrap' } },
+    React.createElement("div", { style: { flex: 1, minWidth: 260 } },
+      React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 } },
+        React.createElement("span", { style: { fontFamily: mono, fontSize: 10, color: '#F5F5F5', letterSpacing: '.5px', fontWeight: 700 } }, 'REUNIÕES MARCADAS NESTA SEMANA'),
+        React.createElement("span", { style: { fontFamily: mono, fontSize: 15, fontWeight: 700, color: n >= meta ? '#34D399' : '#FF6B2B' } }, n + '/' + meta)),
+      React.createElement("div", { style: { width: '100%', height: 6, background: '#1A1A2E', borderRadius: 3, overflow: 'hidden', marginBottom: 8 } },
+        React.createElement("div", { style: { width: Math.min(100, n / meta * 100) + '%', height: '100%', background: n >= meta ? '#34D399' : '#FF6B2B' } })),
+      n === 0 ? React.createElement("div", { style: { fontFamily: mono, fontSize: 10, color: '#555' } }, 'Nenhuma ainda nesta semana.')
+      : lista(semana, function (r) { return [
+          React.createElement("span", { key: 'e', style: { fontSize: 12, color: '#F5F5F5', flex: 1 } }, r.empresa || r.titulo || '—'),
+          React.createElement("span", { key: 'o', style: { fontFamily: mono, fontSize: 9, color: '#555' } }, r.origem === 'pipeline' ? 'pipeline' : 'registrada')]; })),
+    React.createElement("div", { style: { flex: 1, minWidth: 260 } },
+      React.createElement("div", { style: { fontFamily: mono, fontSize: 10, color: '#F5F5F5', letterSpacing: '.5px', fontWeight: 700, marginBottom: 8 } }, 'PRÓXIMAS REUNIÕES'),
+      prox.length === 0 ? React.createElement("div", { style: { fontFamily: mono, fontSize: 10, color: '#555' } }, 'Nenhuma reunião com data marcada.')
+      : lista(prox, function (r) { return [
+          React.createElement("span", { key: 'q', style: { fontFamily: mono, fontSize: 10, color: P.dataBRT(r.reuniao_em) === hoje ? '#FF6B2B' : '#60A5FA', minWidth: 92 } }, quando(r.reuniao_em)),
+          React.createElement("span", { key: 'e', style: { fontSize: 12, color: '#F5F5F5' } }, r.empresa || '—'),
+          React.createElement("span", { key: 't', style: { fontSize: 10, color: '#9B9BB4', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' } }, r.titulo || '')]; })));
+}
+
 function TelaHoje(props) {
   var mono = "'IBM Plex Mono',monospace";
   var jwt = function() { return (window.__supaSession && window.__supaSession.access_token) || SUPA_ANON; };
@@ -3785,8 +3936,10 @@ function TelaHoje(props) {
     var pending = sj('/rest/v1/crm_fila?status=eq.rascunho&select=id,canal,custo_usd');
     var enviados = sj('/rest/v1/crm_fila?status=in.(aprovado,enviado)&enviado_em=gte.' + hojeIso + '&select=id,canal');
     var respondeu = sj('/rest/v1/crm_toques?data=gte.' + hojeIso + '&resultado=in.(respondeu,resposta,reuniao_marcada)&select=id,empresa_id');
-    var reunioes = sj('/rest/v1/crm_kanban?col=eq.reuniao&atualizado_em=gte.' + hojeIso + '&select=id,nome,produto');
-    var kanbanAll = sj('/rest/v1/crm_kanban?select=id,col,atualizado_em,agencia_id');
+    // Reuniões de fontes reais (crm_reunioes_v): conseguidas nos últimos 10 dias ou com data daqui para frente.
+    var desde = new Date(Date.now() - 10 * 864e5).toISOString(); var agoraIso = new Date(Date.now() - 2 * 3600e3).toISOString();
+    var reunioes = sj('/rest/v1/crm_reunioes_v?or=(marcada_em.gte.' + desde + ',reuniao_em.gte.' + agoraIso + ')&select=*&limit=500');
+    var kanbanAll = Promise.resolve([]);
     // Card "Semana fechada": busca relatório da semana corrente
     sj('/rest/v1/crm_relatorios?tipo=eq.semanal&order=gerado_em.desc&limit=1&select=token,dados,semana_inicio,gerado_em').then(function(rows) {
       var r = Array.isArray(rows) && rows[0] ? rows[0] : null;
@@ -3805,9 +3958,7 @@ function TelaHoje(props) {
         liPend: p.filter(function(x){return x.canal==='linkedin_convite'||x.canal==='linkedin_mensagem';}).length,
       });
       setKanban(re);
-      // also store all kanban for week progress
-      var semSeg = new Date(); semSeg.setDate(semSeg.getDate() - (semSeg.getDay() === 0 ? 6 : semSeg.getDay() - 1)); semSeg.setHours(0,0,0,0);
-      var reunSem = ka.filter(function(c){ return c.col === 'reuniao' && new Date(c.atualizado_em) >= semSeg; });
+      var reunSem = window.Prazos ? window.Prazos.reunioesDaSemana(re, window.Prazos.hojeBRT()) : [];
       setStats(function(prev) { return Object.assign({}, prev, { reunioesSemana: reunSem.length }); });
       setLoading(false);
     }).catch(function() { setLoading(false); });
@@ -3844,6 +3995,9 @@ function TelaHoje(props) {
         React.createElement("div", { style: { fontFamily: mono, fontSize: 8, color: '#555' } }, hBRT + 'h' + String(minBRT).padStart(2,'0') + ' BRT')
       )
     ),
+    // Missão: reuniões e prazos primeiro
+    React.createElement(PainelReunioes, { linhas: kanban }),
+    React.createElement(PainelPrazos, { navTo: props && props.navTo, meuPapel: props && props.meuPapel }),
     // Agente: o que fez, o que está pendente e o que precisa de você
     React.createElement(PainelAgenteSeguro, { navTo: props && props.navTo, meuPapel: props && props.meuPapel }),
     // Stats
@@ -3851,28 +4005,7 @@ function TelaHoje(props) {
       StatCard('Aprovações pendentes', stats ? stats.pending : '—', stats ? stats.emailPend + ' email · ' + stats.waPend + ' WA · ' + stats.liPend + ' LI' : null, stats && stats.pending > 0 ? '#FF6B2B' : '#34D399'),
       StatCard('Enviados hoje', stats ? stats.enviados : '—', 'emails + WA + LI', '#60A5FA'),
       StatCard('Responderam', stats ? stats.respondeu : '—', 'hoje', '#34D399'),
-      StatCard('Reuniões nesta semana', stats ? (stats.reunioesSemana || 0) : '—', 'meta: 40', (stats && stats.reunioesSemana >= 40) ? '#34D399' : '#E24B4A')
-    ),
-    // Semana progress
-    stats && React.createElement("div", { style: { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px' } },
-      React.createElement("div", { style: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 } },
-        React.createElement("span", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4', letterSpacing: '.5px' } }, 'META SEMANAL DE REUNIÕES'),
-        React.createElement("span", { style: { fontFamily: mono, fontSize: 13, fontWeight: 700, color: (stats.reunioesSemana || 0) >= 40 ? '#34D399' : '#E24B4A' } }, (stats.reunioesSemana || 0) + '/40')
-      ),
-      React.createElement("div", { style: { width: '100%', height: 6, background: '#1A1A2E', borderRadius: 3, overflow: 'hidden' } },
-        React.createElement("div", { style: { width: Math.min(100, ((stats.reunioesSemana || 0) / 40) * 100) + '%', height: '100%', background: (stats.reunioesSemana || 0) >= 40 ? '#34D399' : '#FF6B2B', transition: 'width .3s' } })
-      )
-    ),
-    // Reuniões de hoje
-    kanban.length > 0 && React.createElement("div", { style: { background: '#0D0D1A', border: '.5px solid #1A1A2E', borderRadius: 8, padding: '14px 18px' } },
-      React.createElement("div", { style: { fontFamily: mono, fontSize: 9, color: '#9B9BB4', letterSpacing: '.5px', marginBottom: 10 } }, 'REUNIÕES HOJE (' + kanban.length + ')'),
-      kanban.map(function(c) {
-        return React.createElement("div", { key: c.id, style: { display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0', borderBottom: '.5px solid #1A1A2E' } },
-          React.createElement("span", { style: { width: 6, height: 6, borderRadius: '50%', background: '#60A5FA', flexShrink: 0, display: 'block' } }),
-          React.createElement("span", { style: { fontSize: 12, color: '#F5F5F5', flex: 1 } }, c.nome || '—'),
-          c.produto && React.createElement("span", { style: { fontSize: 10, color: '#9B9BB4', fontFamily: mono } }, c.produto)
-        );
-      })
+      StatCard('Reuniões nesta semana', stats ? (stats.reunioesSemana || 0) : '—', 'meta: ' + META_REUNIOES_SEMANA, (stats && stats.reunioesSemana >= META_REUNIOES_SEMANA) ? '#34D399' : '#E24B4A')
     ),
     // Card "Semana fechada"
     relatorio && React.createElement("div", { style: { background: '#0D1A0D', border: '1px solid #34D399', borderRadius: 8, padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 } },
