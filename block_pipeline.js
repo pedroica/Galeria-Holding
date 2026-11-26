@@ -126,118 +126,217 @@
   }
 
   // ── OportunidadeDetalhe ─────────────────────────────────────────────────────
-  // ── Follow-up com pesquisa na internet (por oportunidade): WhatsApp ou e-mail ──
-  // A IA lê a oportunidade, pesquisa a empresa/pessoa na web e escreve no estilo do
-  // Pedro. WhatsApp: abre o app com o texto. E-mail: cria RASCUNHO no Gmail. Quem
-  // envia é sempre o Pedro.
-  function WhatsappComInternet({ op }) {
-    const [aberto, setAberto] = useState(false);
-    const [canal, setCanal] = useState('whatsapp');
-    const [instrucao, setInstrucao] = useState('');
-    const [decisorId, setDecisorId] = useState('');
-    const [gerando, setGerando] = useState(false);
-    const [erro, setErro] = useState(null);
-    const [res, setRes] = useState(null);
-    const [texto, setTexto] = useState('');
-    const [assunto, setAssunto] = useState('');
-    const [registrado, setRegistrado] = useState(false);
-    const [rascunho, setRascunho] = useState(null);
-    const [criando, setCriando] = useState(false);
+  // ── Follow-up da oportunidade ────────────────────────────────────────────────
+  // Abre com as pessoas da conta (CRM; dá para procurar no Gmail, no Lusha, no LinkedIn
+  // ou digitar) e com o WhatsApp e o e-mail já escritos (IA + pesquisa na internet,
+  // guardados em crm_oportunidade_mensagens). E-mail: sai pelo Gmail no clique do Pedro.
+  // WhatsApp: abre o app com o texto; o Pedro aperta enviar.
+  function FollowUpPainel({ op }) {
     const s = { fontFamily: 'IBM Plex Mono,monospace' };
     const caixa = { width: '100%', background: '#0d0d1a', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, padding: '6px 8px', fontSize: 10, fontFamily: 'IBM Plex Mono,monospace', boxSizing: 'border-box' };
-    const ehEmail = canal === 'email';
-    const cor = ehEmail ? '#60A5FA' : '#34D399';
+    const btn = (extra) => Object.assign({ fontSize: 10, padding: '6px 10px', background: '#0d0d1a', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, cursor: 'pointer' }, s, extra || {});
+    const rot = { fontSize: 9, color: '#555', marginBottom: 6, letterSpacing: 0.5, fontFamily: 'IBM Plex Mono,monospace' };
+
+    const [info, setInfo] = useState(null);          // {empresa, dominio, contatos, prontas, linkedin_busca}
+    const [carregando, setCarregando] = useState(true);
+    const [selId, setSelId] = useState('');
+    const [candidatos, setCandidatos] = useState(null); // {fonte, lista, aviso}
+    const [buscando, setBuscando] = useState('');
+    const [form, setForm] = useState(null);          // {id?, nome, cargo, email, wa}
+    const [canal, setCanal] = useState('whatsapp');
+    const [msgs, setMsgs] = useState({});            // chave canal|contato → {id, assunto, corpo, fato_usado, fontes, alertas}
+    const [gerando, setGerando] = useState({});
+    const [instrucao, setInstrucao] = useState('');
+    const [aviso, setAviso] = useState(null);         // {tipo:'ok'|'erro', texto}
+    const [enviando, setEnviando] = useState(false);
+    const [enviados, setEnviados] = useState({});
 
     async function chamar(payload) {
       const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 90000);
       let r;
       try {
-        r = await fetch('/api/enrich?provider=wa-pipeline', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getJwt() }, body: JSON.stringify(Object.assign({ oportunidade_id: op.id, canal }, payload)) });
-      } catch (e) { throw new Error(e && e.name === 'AbortError' ? 'Demorou demais (mais de 1 min). Tente de novo.' : 'Sem conexão com o servidor. Tente de novo.'); }
+        r = await fetch('/api/enrich?provider=wa-pipeline', { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getJwt() }, body: JSON.stringify(Object.assign({ oportunidade_id: op.id }, payload)) });
+      } catch (e) { throw new Error(e && e.name === 'AbortError' ? 'Demorou demais. Tente de novo.' : 'Sem conexão com o servidor. Tente de novo.'); }
       finally { clearTimeout(timer); }
       const j = await r.json().catch(() => ({}));
       if (r.status === 401) throw new Error('Sua sessão expirou: saia e entre de novo no CRM.');
-      if (r.status === 504) throw new Error('A pesquisa demorou demais. Tente de novo (ou escreva um objetivo mais direto).');
+      if (r.status === 504) throw new Error('Demorou demais. Tente de novo.');
       if (!r.ok) throw new Error(j.error || ('Erro ' + r.status + '. Tente de novo.'));
       return j;
     }
-    async function gerar() {
-      setGerando(true); setErro(null); setRegistrado(false); setRascunho(null);
+    const chave = (c, id) => c + '|' + (id || '');
+    const contatos = (info && info.contatos) || [];
+    const sel = contatos.find(c => c.id === selId) || null;
+
+    async function carregar(manterSel) {
       try {
-        const j = await chamar({ decisor_id: decisorId || undefined, instrucao: instrucao.trim() || undefined });
-        setRes(j); setTexto(j.mensagem || ''); setAssunto(j.assunto || '');
-        if (j.contato && !decisorId) setDecisorId(j.contato.id);
-      } catch (e) { setErro(String(e.message || e)); }
-      setGerando(false);
+        const j = await chamar({ acao: 'contatos' });
+        setInfo(j);
+        const m = {};
+        (j.prontas || []).forEach(p => { m[chave(p.canal, p.decisor_id)] = { id: p.id, assunto: p.assunto || '', corpo: p.corpo, fato_usado: p.fato_usado, fontes: p.fontes || [] }; });
+        setMsgs(prev => Object.assign({}, m, prev));
+        const alvo = (manterSel && j.contatos.find(c => c.id === manterSel)) || j.contatos.find(c => c.tem_email || c.tem_wa) || j.contatos[0];
+        setSelId(alvo ? alvo.id : '');
+      } catch (e) { setAviso({ tipo: 'erro', texto: e.message }); }
+      setCarregando(false);
     }
-    function trocarCanal(c) { if (c === canal) return; setCanal(c); setRes(null); setTexto(''); setAssunto(''); setErro(null); setRegistrado(false); setRascunho(null); }
-    function abrirWa() {
-      const d = ((res && res.contato && res.contato.wa) || '').replace(/\D/g, '');
+    useEffect(() => { carregar(); }, [op.id]);
+
+    async function gerar(c, contatoId, instr) {
+      const k = chave(c, contatoId);
+      setGerando(g => Object.assign({}, g, { [k]: true }));
+      try {
+        const j = await chamar({ canal: c, decisor_id: contatoId || undefined, instrucao: instr || undefined });
+        setMsgs(m => Object.assign({}, m, { [k]: { id: j.id, assunto: j.assunto || '', corpo: j.mensagem, fato_usado: j.fato_usado, fontes: j.fontes || [], alertas: j.alertas || [] } }));
+      } catch (e) { setMsgs(m => Object.assign({}, m, { [k]: { erro: e.message } })); }
+      setGerando(g => Object.assign({}, g, { [k]: false }));
+    }
+    // Já deixa os dois prontos para a pessoa escolhida.
+    useEffect(() => {
+      if (carregando) return;
+      ['whatsapp', 'email'].forEach(c => { const k = chave(c, selId); if (!msgs[k] && !gerando[k]) gerar(c, selId); });
+    }, [selId, carregando]);
+
+    function editar(campo, v) {
+      const k = chave(canal, selId);
+      setMsgs(m => Object.assign({}, m, { [k]: Object.assign({}, m[k], { [campo]: v }) }));
+    }
+
+    async function procurar(fonte) {
+      setBuscando(fonte); setAviso(null); setCandidatos(null);
+      try {
+        const j = await chamar({ acao: fonte === 'gmail' ? 'gmail-contatos' : 'lusha-pessoas' });
+        setCandidatos({ fonte, lista: (j.candidatos || []).filter(c => !c.ja_no_crm || (fonte === 'gmail' && c.wa)), aviso: j.aviso || null });
+      } catch (e) { setAviso({ tipo: 'erro', texto: e.message }); }
+      setBuscando('');
+    }
+    async function gravar(contato, acao) {
+      setAviso(null); setBuscando('gravar');
+      try {
+        const j = await chamar({ acao: acao || 'gravar-contato', contato });
+        if (j.lusha && j.lusha.erro) setAviso({ tipo: 'erro', texto: j.lusha.erro });
+        else if (j.lusha && j.lusha.achou) setAviso({ tipo: 'ok', texto: 'E-mail achado no Lusha (' + j.lusha.restantes + ' crédito(s) restantes hoje).' });
+        else setAviso({ tipo: 'ok', texto: 'Contato gravado.' });
+        setForm(null);
+        if (candidatos) setCandidatos(c => Object.assign({}, c, { lista: c.lista.filter(x => x !== contato.__orig) }));
+        await carregar(j.contato && j.contato.id);
+      } catch (e) { setAviso({ tipo: 'erro', texto: e.message }); }
+      setBuscando('');
+    }
+
+    const atual = msgs[chave(canal, selId)];
+    const gerandoAtual = gerando[chave(canal, selId)];
+
+    async function enviarEmail() {
+      if (!sel || !sel.tem_email || !atual) return;
+      if (!window.confirm('Enviar agora este e-mail para ' + sel.nome + ' <' + sel.email + '>?\n\nAssunto: ' + atual.assunto)) return;
+      setEnviando(true); setAviso(null);
+      try {
+        await chamar({ acao: 'enviar-email', decisor_id: sel.id, assunto: atual.assunto, corpo: atual.corpo, mensagem_id: atual.id });
+        setEnviados(e => Object.assign({}, e, { [chave('email', selId)]: true }));
+        setAviso({ tipo: 'ok', texto: '✓ E-mail enviado para ' + sel.email + ' e registrado no histórico.' });
+        window.dispatchEvent(new Event('crm-op-updated'));
+      } catch (e) { setAviso({ tipo: 'erro', texto: e.message }); }
+      setEnviando(false);
+    }
+    async function rascunhoEmail() {
+      setEnviando(true); setAviso(null);
+      try { const j = await chamar({ acao: 'rascunho', decisor_id: sel.id, assunto: atual.assunto, corpo: atual.corpo }); if (j.link) window.open(j.link, '_blank', 'noopener,noreferrer'); setAviso({ tipo: 'ok', texto: 'Rascunho criado no seu Gmail.' }); }
+      catch (e) { setAviso({ tipo: 'erro', texto: e.message }); }
+      setEnviando(false);
+    }
+    async function enviarWa() {
+      if (!atual) return;
+      const d = String((sel && sel.wa) || '').replace(/\D/g, '');
       const n = d.length < 10 ? '' : ((d.length >= 12 && d.slice(0, 2) === '55') ? d : '55' + d);
-      window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(texto), '_blank', 'noopener,noreferrer');
+      window.open('https://wa.me/' + n + '?text=' + encodeURIComponent(atual.corpo), '_blank', 'noopener,noreferrer');
+      setEnviados(e => Object.assign({}, e, { [chave('whatsapp', selId)]: true }));
+      await supa('crm_toques', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ empresa_id: op.empresa_id || null, decisor_id: sel ? sel.id : null, canal: 'whatsapp', direcao: 'enviado', resumo: 'WhatsApp do Pipeline (com pesquisa na internet)', texto_enviado: atual.corpo.slice(0, 4000), data: new Date().toISOString(), fonte: 'manual', resultado: 'enviado' }) });
+      if (sel) await supa('crm_decisores?id=eq.' + sel.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ ultimo_toque_em: new Date().toISOString() }) });
+      await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'nota', texto: ('WhatsApp enviado' + (sel ? ' para ' + sel.nome : '') + ': ' + atual.corpo).slice(0, 400) }) });
+      if (atual.id) chamar({ acao: 'marcar-enviado', mensagem_id: atual.id, corpo: atual.corpo }).catch(() => {});
+      setAviso({ tipo: 'ok', texto: 'WhatsApp aberto com o texto. Aperte enviar lá; já registrei no histórico.' });
     }
-    async function criarRascunho() {
-      setCriando(true); setErro(null);
-      try {
-        const j = await chamar({ acao: 'rascunho', decisor_id: res.contato && res.contato.id, assunto, corpo: texto });
-        setRascunho(j);
-        if (j.link) window.open(j.link, '_blank', 'noopener,noreferrer');
-      } catch (e) { setErro(String(e.message || e)); }
-      setCriando(false);
-    }
-    async function registrar() {
-      const c = res && res.contato;
-      await supa('crm_toques', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ empresa_id: op.empresa_id || null, decisor_id: c ? c.id : null, canal: ehEmail ? 'email' : 'whatsapp', direcao: 'enviado', assunto: ehEmail ? assunto.slice(0, 500) : null, resumo: (ehEmail ? 'E-mail' : 'WhatsApp') + ' do Pipeline (com pesquisa na internet)', texto_enviado: texto.slice(0, 4000), data: new Date().toISOString(), fonte: 'manual', resultado: 'enviado' }) });
-      if (c) await supa('crm_decisores?id=eq.' + c.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ ultimo_toque_em: new Date().toISOString() }) });
-      await supa('crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: op.id, tipo: 'nota', texto: (ehEmail ? 'E-mail' : 'WhatsApp') + ' enviado' + (c ? ' para ' + c.nome : '') + ': ' + (ehEmail && assunto ? '[' + assunto + '] ' : '') + texto.slice(0, 300) }) });
-      setRegistrado(true);
-    }
-    const btn = (extra) => Object.assign({ fontSize: 10, padding: '6px 12px', background: '#0d0d1a', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, cursor: 'pointer' }, s, extra || {});
 
-    if (!aberto) return React.createElement('button', {
-      onClick: () => setAberto(true),
-      style: Object.assign({ width: '100%', fontSize: 10, padding: '8px 12px', background: 'rgba(52,211,153,.08)', border: '1px solid #34D399', color: '#34D399', borderRadius: 6, cursor: 'pointer', marginBottom: 16, textAlign: 'left' }, s)
-    }, '💬 Follow-up com pesquisa na internet (WhatsApp ou e-mail)');
+    if (carregando) return React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#555', marginBottom: 16 }, s) }, 'Carregando contatos da conta…');
 
-    const contatos = (res && res.contatos) || [];
-    const temCanal = (c) => ehEmail ? c.tem_email : c.tem_wa;
-    return React.createElement('div', { style: { background: '#1A1A2E', border: '1px solid ' + cor, borderRadius: 8, padding: 12, marginBottom: 16 } },
-      React.createElement('div', { style: Object.assign({ fontSize: 9, marginBottom: 8, display: 'flex', gap: 6, alignItems: 'center' }, s) },
-        ['whatsapp', 'email'].map(c => React.createElement('button', { key: c, onClick: () => trocarCanal(c), style: btn({ fontSize: 9, padding: '4px 10px', background: canal === c ? (c === 'email' ? '#60A5FA' : '#34D399') : '#0d0d1a', color: canal === c ? '#060606' : '#aaa', fontWeight: canal === c ? 700 : 400 }) }, c === 'email' ? '✉ E-mail' : '💬 WhatsApp')),
-        React.createElement('span', { onClick: () => setAberto(false), style: { cursor: 'pointer', color: '#555', marginLeft: 'auto' } }, 'fechar')
+    const linhaContato = (c) => React.createElement('div', { key: c.id, onClick: () => setSelId(c.id), style: { display: 'flex', alignItems: 'center', gap: 6, padding: '6px 8px', borderRadius: 4, cursor: 'pointer', background: c.id === selId ? 'rgba(255,107,43,.12)' : 'transparent', border: '1px solid ' + (c.id === selId ? '#FF6B2B' : 'transparent') } },
+      React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+        React.createElement('div', { style: Object.assign({ fontSize: 11, color: '#eee', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }, s) }, c.nome),
+        React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#777', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }, s) }, [c.cargo, c.email, c.wa].filter(Boolean).join(' · ') || 'sem e-mail e sem WhatsApp')
       ),
-      contatos.length > 1 && React.createElement('select', {
-        value: decisorId, onChange: e => setDecisorId(e.target.value), style: Object.assign({}, caixa, { marginBottom: 6 })
-      }, contatos.map(c => React.createElement('option', { key: c.id, value: c.id }, c.nome + (c.cargo ? ' · ' + c.cargo : '') + (temCanal(c) ? '' : (ehEmail ? ' (sem e-mail)' : ' (sem WhatsApp)'))))),
-      React.createElement('textarea', {
-        value: instrucao, onChange: e => setInstrucao(e.target.value), rows: 2,
-        placeholder: 'Opcional: o que você quer com esse follow-up (ex.: cobrar a proposta, marcar o café, parabenizar pelo lançamento)',
-        style: Object.assign({}, caixa, { resize: 'vertical', marginBottom: 6 })
-      }),
-      React.createElement('button', {
-        onClick: gerar, disabled: gerando,
-        style: btn({ background: gerando ? '#2D2D44' : cor, border: 'none', color: '#060606', fontWeight: 700, cursor: gerando ? 'default' : 'pointer' })
-      }, gerando ? '🌐 Pesquisando e escrevendo… (até 1 min)' : (res ? '↻ Gerar outra' : '🌐 Pesquisar e escrever')),
-      erro && React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#EF4444', marginTop: 6 }, s) }, erro),
-      res && React.createElement('div', { style: { marginTop: 10 } },
-        res.contato && React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#888', marginBottom: 4 }, s) }, 'Para ' + res.contato.nome + (ehEmail
-          ? (res.contato.tem_email ? ' · ' + res.contato.email : ' · sem e-mail cadastrado: copie o texto')
-          : (res.contato.tem_wa ? '' : ' · sem número cadastrado: o WhatsApp abre para você escolher o contato'))),
-        ehEmail && React.createElement('input', { value: assunto, onChange: e => { setAssunto(e.target.value); setRascunho(null); }, placeholder: 'Assunto', style: Object.assign({}, caixa, { fontSize: 11, marginBottom: 4 }) }),
-        React.createElement('textarea', { value: texto, onChange: e => { setTexto(e.target.value); setRegistrado(false); setRascunho(null); }, rows: ehEmail ? 9 : 7, style: Object.assign({}, caixa, { fontSize: 11, lineHeight: 1.5, resize: 'vertical' }) }),
-        (res.alertas || []).length > 0 && React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#FBBF24', marginTop: 4 }, s) }, '⚠ ' + res.alertas.join(' · ')),
-        res.fato_usado && React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#aaa', marginTop: 6 }, s) }, '🌐 Fato usado: ' + res.fato_usado),
-        (res.fontes || []).length > 0 && React.createElement('div', { style: { marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 } },
-          res.fontes.map((u, i) => React.createElement('a', { key: i, href: u, target: '_blank', rel: 'noopener noreferrer', style: Object.assign({ fontSize: 9, color: '#60A5FA', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, s) }, u.replace(/^https?:\/\/(www\.)?/, '')))
+      React.createElement('span', { title: c.tem_email ? c.email : 'sem e-mail', style: { fontSize: 11, opacity: c.tem_email ? 1 : 0.2 } }, '✉'),
+      React.createElement('span', { title: c.tem_wa ? c.wa : 'sem WhatsApp', style: { fontSize: 11, opacity: c.tem_wa ? 1 : 0.2 } }, '💬'),
+      React.createElement('button', { onClick: (e) => { e.stopPropagation(); setForm({ id: c.id, nome: c.nome, cargo: c.cargo, email: c.email || '', wa: c.wa || '' }); }, style: btn({ fontSize: 9, padding: '2px 6px' }) }, 'editar'),
+      !c.tem_email && React.createElement('button', { onClick: (e) => { e.stopPropagation(); gravar({ id: c.id, nome: c.nome }, 'lusha-email'); }, disabled: !!buscando, title: 'Gasta 1 crédito do Lusha', style: btn({ fontSize: 9, padding: '2px 6px', color: '#818CF8' }) }, 'e-mail no Lusha')
+    );
+
+    return React.createElement('div', { style: { marginBottom: 16 } },
+      // Contatos
+      React.createElement('div', { style: { background: '#1A1A2E', border: '1px solid #2D2D44', borderRadius: 8, padding: 10, marginBottom: 10 } },
+        React.createElement('div', { style: rot }, 'PESSOAS DA CONTA' + (info && info.dominio ? ' · ' + info.dominio : '')),
+        contatos.length === 0 && React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#FBBF24', marginBottom: 6 }, s) }, 'Não achei ninguém desta conta no CRM. Procure no seu Gmail, no Lusha, no LinkedIn ou digite o contato.'),
+        contatos.length > 0 && !contatos.some(c => c.tem_email || c.tem_wa) && React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#FBBF24', marginBottom: 6 }, s) }, 'Ninguém aqui tem e-mail ou WhatsApp ainda. Procure abaixo ou edite o contato.'),
+        contatos.map(linhaContato),
+        React.createElement('div', { style: { display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 } },
+          React.createElement('button', { onClick: () => procurar('gmail'), disabled: !!buscando, style: btn() }, buscando === 'gmail' ? 'Procurando…' : '🔎 Meu Gmail'),
+          React.createElement('button', { onClick: () => procurar('lusha'), disabled: !!buscando, style: btn() }, buscando === 'lusha' ? 'Procurando…' : '🔎 Lusha'),
+          info && info.linkedin_busca && React.createElement('a', { href: info.linkedin_busca, target: '_blank', rel: 'noopener noreferrer', style: btn({ textDecoration: 'none', color: '#60A5FA' }) }, 'LinkedIn ↗'),
+          React.createElement('button', { onClick: () => setForm({ nome: '', cargo: '', email: '', wa: '' }), style: btn({ color: '#34D399' }) }, '+ Digitar contato')
         ),
-        React.createElement('div', { style: { display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' } },
-          ehEmail
-            ? (rascunho
-              ? React.createElement('a', { href: rascunho.link, target: '_blank', rel: 'noopener noreferrer', style: btn({ background: '#60A5FA', border: 'none', color: '#060606', fontWeight: 700, textDecoration: 'none' }) }, '✓ Rascunho no Gmail: abrir')
-              : React.createElement('button', { onClick: criarRascunho, disabled: criando || !texto.trim() || !(res.contato && res.contato.tem_email), style: btn({ background: '#60A5FA', border: 'none', color: '#060606', fontWeight: 700, opacity: (res.contato && res.contato.tem_email) ? 1 : 0.4 }) }, criando ? 'Criando…' : 'Criar rascunho no Gmail'))
-            : React.createElement('button', { onClick: abrirWa, disabled: !texto.trim(), style: btn({ background: '#25D366', border: 'none', color: '#060606', fontWeight: 700 }) }, 'Abrir no WhatsApp'),
-          React.createElement('button', { onClick: () => { try { navigator.clipboard.writeText(ehEmail && assunto ? assunto + '\n\n' + texto : texto); } catch (_) {} }, style: btn() }, 'Copiar'),
-          React.createElement('button', { onClick: registrar, disabled: registrado || !texto.trim(), style: btn({ border: '1px solid ' + (registrado ? '#34D399' : '#2D2D44'), color: registrado ? '#34D399' : '#eee', cursor: registrado ? 'default' : 'pointer' }) }, registrado ? '✓ Registrado no histórico' : 'Enviei: registrar')
+        candidatos && React.createElement('div', { style: { marginTop: 8, borderTop: '1px solid #2D2D44', paddingTop: 8 } },
+          React.createElement('div', { style: rot }, (candidatos.fonte === 'gmail' ? 'ACHADOS NO SEU GMAIL' : 'ACHADOS NO LUSHA') + ' (' + candidatos.lista.length + ')'),
+          candidatos.aviso && React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#FBBF24' }, s) }, candidatos.aviso),
+          !candidatos.aviso && candidatos.lista.length === 0 && React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#777' }, s) }, 'Ninguém novo encontrado.'),
+          candidatos.lista.map((c, i) => React.createElement('div', { key: i, style: { display: 'flex', alignItems: 'center', gap: 6, padding: '4px 0' } },
+            React.createElement('div', { style: { flex: 1, minWidth: 0 } },
+              React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#eee' }, s) }, c.nome),
+              React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#777' }, s) }, [c.cargo, c.email, c.wa ? 'WhatsApp ' + c.wa : '', c.trocas ? c.trocas + ' e-mail(s)' : ''].filter(Boolean).join(' · '))
+            ),
+            candidatos.fonte === 'gmail'
+              ? React.createElement('button', { onClick: () => gravar({ id: c.decisor_id || undefined, nome: c.nome, email: c.email, wa: c.wa, origem: 'gmail', __orig: c }), disabled: !!buscando, style: btn({ fontSize: 9, padding: '3px 8px', color: '#34D399' }) }, c.ja_no_crm ? 'completar' : 'adicionar')
+              : React.createElement('button', { onClick: () => gravar({ nome: c.nome, cargo: c.cargo, linkedin_url: c.linkedin_url, origem: 'lusha', __orig: c }, 'lusha-email'), disabled: !!buscando, title: 'Gasta 1 crédito do Lusha', style: btn({ fontSize: 9, padding: '3px 8px', color: '#818CF8' }) }, 'adicionar + e-mail')
+          ))
+        ),
+        form && React.createElement('div', { style: { marginTop: 8, borderTop: '1px solid #2D2D44', paddingTop: 8, display: 'grid', gap: 4 } },
+          ['nome', 'cargo', 'email', 'wa'].map(k => React.createElement('input', { key: k, value: form[k] || '', placeholder: { nome: 'Nome e sobrenome', cargo: 'Cargo', email: 'E-mail', wa: 'WhatsApp com DDD' }[k], onChange: e => setForm(f => Object.assign({}, f, { [k]: e.target.value })), style: caixa })),
+          React.createElement('div', { style: { display: 'flex', gap: 6 } },
+            React.createElement('button', { onClick: () => gravar(Object.assign({ origem: 'manual' }, form)), disabled: !!buscando || !(form.nome || '').trim(), style: btn({ background: '#34D399', color: '#060606', border: 'none', fontWeight: 700 }) }, 'Salvar contato'),
+            React.createElement('button', { onClick: () => setForm(null), style: btn({ color: '#777' }) }, 'Cancelar')
+          )
+        )
+      ),
+
+      aviso && React.createElement('div', { style: Object.assign({ fontSize: 10, color: aviso.tipo === 'erro' ? '#EF4444' : '#34D399', marginBottom: 8 }, s) }, aviso.texto),
+
+      // Mensagens prontas
+      React.createElement('div', { style: { background: '#1A1A2E', border: '1px solid ' + (canal === 'email' ? '#60A5FA' : '#34D399'), borderRadius: 8, padding: 10 } },
+        React.createElement('div', { style: { display: 'flex', gap: 6, marginBottom: 8, alignItems: 'center' } },
+          ['whatsapp', 'email'].map(c => React.createElement('button', { key: c, onClick: () => setCanal(c), style: btn({ flex: 1, fontSize: 11, padding: '8px 10px', fontWeight: 700, background: canal === c ? (c === 'email' ? '#60A5FA' : '#34D399') : '#0d0d1a', color: canal === c ? '#060606' : '#aaa', border: 'none' }) },
+            (c === 'email' ? '✉ E-mail' : '💬 WhatsApp') + (gerando[chave(c, selId)] ? ' …' : (msgs[chave(c, selId)] && msgs[chave(c, selId)].corpo ? ' ✓' : ''))))
+        ),
+        React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#888', marginBottom: 6 }, s) }, sel ? ('Para ' + sel.nome + (canal === 'email' ? (sel.tem_email ? ' · ' + sel.email : ' · sem e-mail: adicione acima para enviar') : (sel.tem_wa ? ' · ' + sel.wa : ' · sem WhatsApp: o app abre para você escolher o contato'))) : 'Sem contato escolhido: a mensagem sai sem nome.'),
+        gerandoAtual && !(atual && atual.corpo) && React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#aaa', padding: '18px 0' }, s) }, '🌐 Pesquisando na internet e escrevendo… (uns 20 segundos)'),
+        atual && atual.erro && !gerandoAtual && React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#EF4444' }, s) }, atual.erro),
+        atual && atual.corpo && React.createElement('div', null,
+          canal === 'email' && React.createElement('input', { value: atual.assunto || '', onChange: e => editar('assunto', e.target.value), placeholder: 'Assunto', style: Object.assign({}, caixa, { fontSize: 11, marginBottom: 4 }) }),
+          React.createElement('textarea', { value: atual.corpo, onChange: e => editar('corpo', e.target.value), rows: canal === 'email' ? 10 : 7, style: Object.assign({}, caixa, { fontSize: 11, lineHeight: 1.5, resize: 'vertical' }) }),
+          (atual.alertas || []).length > 0 && React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#FBBF24', marginTop: 4 }, s) }, '⚠ ' + atual.alertas.join(' · ')),
+          atual.fato_usado && React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#aaa', marginTop: 6 }, s) }, '🌐 ' + atual.fato_usado),
+          (atual.fontes || []).length > 0 && React.createElement('div', { style: { marginTop: 4, display: 'flex', flexDirection: 'column', gap: 2 } },
+            atual.fontes.slice(0, 3).map((u, i) => React.createElement('a', { key: i, href: u, target: '_blank', rel: 'noopener noreferrer', style: Object.assign({ fontSize: 9, color: '#60A5FA', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, s) }, u.replace(/^https?:\/\/(www\.)?/, '')))
+          ),
+          React.createElement('div', { style: { display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' } },
+            canal === 'email'
+              ? React.createElement('button', { onClick: enviarEmail, disabled: enviando || !(sel && sel.tem_email) || enviados[chave('email', selId)], style: btn({ background: '#60A5FA', border: 'none', color: '#060606', fontWeight: 700, opacity: (sel && sel.tem_email) ? 1 : 0.4 }) }, enviados[chave('email', selId)] ? '✓ Enviado' : (enviando ? 'Enviando…' : 'Enviar agora'))
+              : React.createElement('button', { onClick: enviarWa, style: btn({ background: '#25D366', border: 'none', color: '#060606', fontWeight: 700 }) }, enviados[chave('whatsapp', selId)] ? '✓ Aberto no WhatsApp' : 'Enviar pelo WhatsApp'),
+            canal === 'email' && React.createElement('button', { onClick: rascunhoEmail, disabled: enviando || !(sel && sel.tem_email), style: btn() }, 'Só rascunho'),
+            React.createElement('button', { onClick: () => { try { navigator.clipboard.writeText(canal === 'email' && atual.assunto ? atual.assunto + '\n\n' + atual.corpo : atual.corpo); setAviso({ tipo: 'ok', texto: 'Copiado.' }); } catch (_) {} }, style: btn() }, 'Copiar')
+          )
+        ),
+        React.createElement('div', { style: { display: 'flex', gap: 6, marginTop: 8 } },
+          React.createElement('input', { value: instrucao, onChange: e => setInstrucao(e.target.value), placeholder: 'Reescrever pedindo… (ex.: cobrar a proposta)', style: Object.assign({}, caixa, { flex: 1 }) }),
+          React.createElement('button', { onClick: () => gerar(canal, selId, instrucao.trim()), disabled: !!gerandoAtual, style: btn() }, gerandoAtual ? '…' : '↻ Reescrever')
         )
       )
     );
@@ -333,7 +432,7 @@
     const s = { fontFamily: 'IBM Plex Mono,monospace' };
 
     return React.createElement('div', {
-      style: { position: 'fixed', top: 0, right: 0, width: 'min(400px, 100vw)', height: '100vh', background: '#0d0d1a', borderLeft: '1px solid #2D2D44', zIndex: 200, display: 'flex', flexDirection: 'column', overflowY: 'auto' }
+      style: { position: 'fixed', top: 0, right: 0, width: 'min(520px, 100vw)', height: '100vh', background: '#0d0d1a', borderLeft: '1px solid #2D2D44', zIndex: 200, display: 'flex', flexDirection: 'column', overflowY: 'auto' }
     },
       // Header
       React.createElement('div', { style: { padding: '14px 16px', borderBottom: '1px solid #1A1A2E', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' } },
@@ -383,7 +482,7 @@
         ),
 
         // Follow-up (WhatsApp ou e-mail) com pesquisa na internet
-        React.createElement(WhatsappComInternet, { key: 'wa-' + op.id, op }),
+        React.createElement(FollowUpPainel, { key: 'fu-' + op.id, op }),
 
         // Ações
         meuPapel === 'admin' && React.createElement('div', { style: { display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' } },

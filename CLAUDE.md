@@ -331,6 +331,18 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
   (Opus; `checarParabens` barra número fora da fonte). Com e-mail: `crm_fila` `origem='movimentacao'`, `status='aprovado'` →
   rascunho no Gmail (nunca envia). Sem e-mail: fica para o LinkedIn. Painel na tela Hoje (`PainelMovimentacoes`).
 
+## Follow-up na oportunidade (Pipeline, 26/11/2026)
+
+- Abrir a oportunidade mostra `FollowUpPainel` (block_pipeline.js): **pessoas da conta** (CRM; botões 🔎 Meu Gmail,
+  🔎 Lusha, LinkedIn ↗ e + Digitar contato) e o **WhatsApp e o e-mail já escritos** para a pessoa escolhida.
+- Rota única `api/enrich?provider=wa-pipeline` (JWT de usuário do CRM), por `acao`: `contatos`, `gmail-contatos`
+  (cabeçalhos + celular da assinatura, `lib/contatos-conta.js`), `lusha-pessoas`, `lusha-email` (1 crédito, dentro de
+  `lusha_daily_limit`), `gravar-contato` (`fonte='pipeline'`; digitado sobrescreve, Gmail/Lusha só completa),
+  `gerar` (IA + `web_search`, `lib/wa-pipeline.js`, estilo do Pedro), `rascunho`, `enviar-email`, `marcar-enviado`.
+- Mensagens prontas ficam em `crm_oportunidade_mensagens` (uma por canal/contato; reaproveitadas ao reabrir).
+- **E-mail sai pelo Gmail só no clique "Enviar agora" do Pedro (com confirmação)**; WhatsApp abre o app com o texto
+  (wa.me) e o Pedro aperta enviar. Os dois gravam toque em `crm_toques` e nota em `crm_oportunidade_eventos`.
+
 ## Fila antiga desligada (26/11/2026)
 
 - O gerador antigo (`gerar-fila-diario`) saiu dos crons da Vercel: não gerava nada desde 17/11 e o agente SDR o substitui.

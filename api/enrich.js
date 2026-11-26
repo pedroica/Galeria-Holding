@@ -10,6 +10,7 @@ import { SCHEMA_CAPTURA, promptCaptura, casarEmpresa, casarPessoa, normalizarCel
 import { pessoaLusha, saldoDoDia } from '../lib/lusha.js';
 import { gerarJSON as gerarJSONllm, gerarComBusca } from '../lib/llm.js';
 import { promptWhatsappPipeline, lerResposta, checarWhatsapp, escolherContato, numeroWa, linkWhatsapp } from '../lib/wa-pipeline.js';
+import { dominioDaEmpresa, contatosDoGmail, lerEnderecos, buscaGmail, linkLinkedin, textoDoPayload } from '../lib/contatos-conta.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
 import { analisarEdicao } from '../lib/sdr-aprendizado.js';
 import { GMAIL_SCOPE, GOOGLE_AUTH_URL, GOOGLE_TOKEN_URL, credenciaisGoogle, obterTokenGmail, gmailReq, criarRascunhoGmail, enviarRascunhoGmail, atualizarRascunhoGmail, ehRascunhoGmail } from '../lib/gmail-token.js';
@@ -343,9 +344,17 @@ export default async function handler(req, res) {
   // captura-gravar: cria/atualiza empresa e pessoa (só campos vazios) e enriquece no
   // Lusha dentro do teto diário (crm_configuracoes.lusha_daily_limit; uso do dia em
   // lusha_creditos_dia, o mesmo do enriquecimento diário). Só usuário do CRM.
-  // ── WhatsApp do Pipeline: mensagem com pesquisa na internet ───────────────
-  // POST {oportunidade_id, decisor_id?, instrucao?} → {mensagem, fontes, contato, contatos, link}.
-  // Só escreve: quem envia é o Pedro, abrindo o WhatsApp pelo link (regra 3).
+  // ── Follow-up do Pipeline (provider wa-pipeline) ──────────────────────────
+  // POST {oportunidade_id, acao, ...}. Ações:
+  //  contatos       → pessoas da conta no CRM + mensagens já prontas (cache)
+  //  gmail-contatos → pessoas do domínio da empresa na caixa do Gmail (com celular da assinatura)
+  //  lusha-pessoas  → líderes de marketing/direção da empresa no Lusha (sem revelar)
+  //  lusha-email    → revela o e-mail de uma pessoa no Lusha (1 crédito, dentro do teto do dia)
+  //  gravar-contato → cria/completa pessoa na empresa (manual, Gmail ou Lusha)
+  //  gerar (padrão) → escreve WhatsApp ou e-mail com pesquisa na internet e guarda pronto
+  //  rascunho       → cria rascunho no Gmail
+  //  enviar-email   → envia o e-mail revisado pelo Gmail (clique do Pedro na tela)
+  // WhatsApp nunca sai pelo sistema: a tela abre o app com o texto e o Pedro envia.
   if (provider === 'wa-pipeline') {
     if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
     const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
@@ -354,49 +363,189 @@ export default async function handler(req, res) {
     const usr = emailUser ? await supaReq('/rest/v1/crm_usuarios?email=ilike.' + encodeURIComponent(emailUser) + '&select=email,ativo&limit=1') : null;
     if (!emailUser || !Array.isArray(usr) || !usr[0] || usr[0].ativo === false) return res.status(401).json({ error: 'Faça login com um usuário do CRM.' });
     const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
-    const opId = String(body.oportunidade_id || '').replace(/[^0-9a-zA-Z-]/g, '');
+    const limpaId = (v) => String(v || '').replace(/[^0-9a-zA-Z-]/g, '');
+    const opId = limpaId(body.oportunidade_id);
     if (!opId) return res.status(400).json({ error: 'oportunidade_id obrigatório' });
     const canal = body.canal === 'email' ? 'email' : 'whatsapp';
-    // acao 'rascunho': cria o e-mail (já revisado na tela) como RASCUNHO no Gmail. Nunca envia.
-    if (body.acao === 'rascunho') {
-      const decId = String(body.decisor_id || '').replace(/[^0-9a-zA-Z-]/g, '');
-      const dd = decId ? await supaReq('/rest/v1/crm_decisores?id=eq.' + decId + '&select=id,nome,email&limit=1') : null;
-      const para = Array.isArray(dd) && dd[0] && dd[0].email;
-      if (!para) return res.status(400).json({ error: 'Esse contato não tem e-mail cadastrado.' });
-      if (!String(body.assunto || '').trim() || !String(body.corpo || '').trim()) return res.status(400).json({ error: 'Assunto e texto são obrigatórios.' });
-      const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_SVC });
-      if (!gm) return res.status(409).json({ error: 'Gmail não conectado. Conecte em Fila › Enviar.' });
-      try {
-        const d = await criarRascunhoGmail(gm.token, { conta: gm.email, para, assunto: String(body.assunto).slice(0, 200), corpo: String(body.corpo).slice(0, 6000) });
-        supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ origem: 'wa-pipeline', nivel: 'info', mensagem: 'rascunho de e-mail do pipeline criado', contexto: { oportunidade_id: opId, decisor_id: decId, draft_id: d.id, por: emailUser } }) }).catch(() => {});
-        return res.status(200).json({ ok: true, rascunho_id: d.id, link: d.link, para });
-      } catch (e) { return res.status(502).json({ error: 'Gmail recusou o rascunho: ' + String(e && e.message || e).slice(0, 160) }); }
-    }
+    const acao = String(body.acao || 'gerar');
+    const agoraIso = () => new Date().toISOString();
+    const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const log = (mensagem, contexto) => supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ origem: 'wa-pipeline', nivel: 'info', mensagem, contexto: Object.assign({ oportunidade_id: opId, por: emailUser }, contexto || {}) }) }).catch(() => {});
+
     const ops = await supaReq('/rest/v1/crm_oportunidades?id=eq.' + opId + '&select=*&limit=1');
     const op = Array.isArray(ops) && ops[0];
     if (!op) return res.status(404).json({ error: 'Oportunidade não encontrada' });
-    const empId = op.empresa_id ? String(op.empresa_id).replace(/[^0-9a-zA-Z-]/g, '') : null;
-    const [emps, decs, toques, eventos, ags] = await Promise.all([
-      empId ? supaReq('/rest/v1/crm_empresas?id=eq.' + empId + '&select=nome,setor,setor_canonico,website,dominio&limit=1') : null,
-      empId ? supaReq('/rest/v1/crm_decisores?empresa_id=eq.' + empId + '&apagado_em=is.null&select=id,nome,cargo,wa,email,linkedin_url,observacoes,status&order=ultimo_toque_em.desc.nullslast&limit=30') : null,
+    const empId = op.empresa_id ? limpaId(op.empresa_id) : null;
+    const emps = empId ? await supaReq('/rest/v1/crm_empresas?id=eq.' + empId + '&select=id,nome,setor,setor_canonico,website,dominio,site&limit=1') : null;
+    const empresa = Array.isArray(emps) && emps[0] ? Object.assign({}, emps[0], { setor: emps[0].setor_canonico || emps[0].setor }) : null;
+    const lerContatos = async () => {
+      const d = empId ? await supaReq('/rest/v1/crm_decisores?empresa_id=eq.' + empId + '&apagado_em=is.null&select=id,nome,cargo,wa,email,linkedin_url,observacoes,status,fonte&order=ultimo_toque_em.desc.nullslast&limit=40') : null;
+      return (Array.isArray(d) ? d : []).filter(x => x.status !== 'saiu_da_empresa' && x.status !== 'opt_out');
+    };
+    const pub = (d) => ({ id: d.id, nome: d.nome, cargo: d.cargo || '', email: d.email || null, wa: d.wa || null, linkedin_url: d.linkedin_url || null, tem_wa: !!numeroWa(d.wa), tem_email: /@/.test(d.email || ''), fonte: d.fonte || null });
+    let contatos = await lerContatos();
+    const dominio = dominioDaEmpresa(empresa, contatos);
+
+    if (acao === 'contatos') {
+      const cache = await supaReq('/rest/v1/crm_oportunidade_mensagens?oportunidade_id=eq.' + opId + '&apagado_em=is.null&enviado_em=is.null&select=id,decisor_id,canal,assunto,corpo,fato_usado,fontes,gerado_em&order=gerado_em.desc&limit=20');
+      const prontas = {};
+      for (const m of (Array.isArray(cache) ? cache : [])) { const k = m.canal + '|' + (m.decisor_id || ''); if (!prontas[k]) prontas[k] = m; }
+      const ordem = contatos.slice().sort((a, b) => ((/@/.test(b.email || '') || numeroWa(b.wa) ? 1 : 0) - (/@/.test(a.email || '') || numeroWa(a.wa) ? 1 : 0)));
+      return res.status(200).json({ empresa: empresa ? empresa.nome : op.titulo, dominio, contatos: ordem.map(pub), prontas: Object.values(prontas), linkedin_busca: linkLinkedin(empresa ? empresa.nome : op.titulo) });
+    }
+
+    if (acao === 'gmail-contatos') {
+      if (!dominio) return res.status(200).json({ candidatos: [], aviso: 'Não sei o site da empresa. Cadastre o site na Base ou adicione o contato à mão.' });
+      const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_SVC });
+      if (!gm) return res.status(409).json({ error: 'Gmail não conectado. Conecte em Fila › Enviar.' });
+      try {
+        const lista = await gmailReq('GET', '/messages?maxResults=40&q=' + encodeURIComponent(buscaGmail(dominio)), null, gm.token);
+        const ids = ((lista && lista.messages) || []).map(m => m.id).slice(0, 40);
+        const metas = await Promise.all(ids.map(id => gmailReq('GET', '/messages/' + id + '?format=metadata&metadataHeaders=From&metadataHeaders=To&metadataHeaders=Cc&metadataHeaders=Date', null, gm.token).catch(() => null)));
+        const H = (m, n) => (((m && m.payload && m.payload.headers) || []).find(h => h.name.toLowerCase() === n.toLowerCase()) || {}).value || '';
+        const msgs = metas.filter(Boolean).map(m => ({ id: m.id, de: H(m, 'From'), para: H(m, 'To'), cc: H(m, 'Cc'), data: H(m, 'Date'), texto: '' }));
+        // Assinaturas: corpo das mensagens mais novas que vieram do domínio (até 10).
+        const doDominio = msgs.filter(m => lerEnderecos(m.de).some(a => (a.email.split('@')[1] || '').endsWith(dominio))).slice(0, 10);
+        await Promise.all(doDominio.map(async m => { const f = await gmailReq('GET', '/messages/' + m.id + '?format=full', null, gm.token).catch(() => null); if (f) m.texto = textoDoPayload(f.payload).slice(0, 8000); }));
+        const achados = contatosDoGmail(msgs, dominio, gm.email);
+        const ja = new Set(contatos.map(c => String(c.email || '').toLowerCase()).filter(Boolean));
+        const candidatos = achados.map(p => Object.assign(p, { ja_no_crm: ja.has(p.email), decisor_id: (contatos.find(c => String(c.email || '').toLowerCase() === p.email) || {}).id || null }));
+        log('contatos achados no Gmail', { dominio, mensagens: msgs.length, pessoas: candidatos.length });
+        return res.status(200).json({ dominio, candidatos });
+      } catch (e) { return res.status(502).json({ error: 'Gmail: ' + String(e && e.message || e).slice(0, 160) }); }
+    }
+
+    if (acao === 'lusha-pessoas') {
+      const chave = process.env.LUSHA_API_KEY || LUSHA_KEY;
+      if (!chave) return res.status(500).json({ error: 'Lusha não configurado.' });
+      if (!dominio) return res.status(200).json({ candidatos: [], aviso: 'Não sei o site da empresa para buscar no Lusha. Cadastre o site na Base.' });
+      try {
+        const r = await fetch('https://api.lusha.com/v3/contacts/prospecting', { method: 'POST', headers: { api_key: chave, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filters: { contacts: { include: { seniority: [9, 10, 8, 6], departments: ['Marketing', 'General Management'] } }, companies: { include: { domains: [dominio] } } }, pagination: { page: 0, size: 6 } }) });
+        const raw = await r.json().catch(() => ({}));
+        if (!r.ok) return res.status(r.status).json({ error: 'Lusha: ' + (raw.message || r.status) });
+        let cs = (raw.results || raw.data || []).filter(c => c.firstName && c.lastName).map(c => ({ lusha_id: c.id, nome: c.firstName + ' ' + c.lastName, cargo: '' }));
+        if (cs.length) {
+          const er = await fetch('https://api.lusha.com/v3/contacts/enrich', { method: 'POST', headers: { api_key: chave, 'Content-Type': 'application/json' }, body: JSON.stringify({ ids: cs.map(c => c.lusha_id) }) }).catch(() => null);
+          const ed = er && er.ok ? await er.json().catch(() => ({})) : {};
+          const by = {}; (ed.results || []).forEach(c => { by[c.id] = c; });
+          cs = cs.map(c => Object.assign(c, { cargo: (by[c.lusha_id] && by[c.lusha_id].jobTitle && by[c.lusha_id].jobTitle.title) || '', linkedin_url: (by[c.lusha_id] && by[c.lusha_id].socialLinks && by[c.lusha_id].socialLinks.linkedin) || null }));
+        }
+        const nomes = new Set(contatos.map(c => normalizarEmpresa(c.nome)));
+        cs = cs.map(c => Object.assign(c, { ja_no_crm: nomes.has(normalizarEmpresa(c.nome)) }));
+        log('pessoas buscadas no Lusha', { dominio, achadas: cs.length });
+        return res.status(200).json({ dominio, candidatos: cs });
+      } catch (e) { return res.status(502).json({ error: 'Lusha: ' + String(e && e.message || e).slice(0, 160) }); }
+    }
+
+    if (acao === 'gravar-contato' || acao === 'lusha-email') {
+      if (!empId) return res.status(400).json({ error: 'A oportunidade não tem empresa ligada.' });
+      const c = body.contato || {};
+      const nome = String(c.nome || '').trim().slice(0, 200);
+      const email = String(c.email || '').trim().toLowerCase();
+      const wa = normalizarCelular(c.wa);
+      if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'E-mail inválido.' });
+      let dec = c.id ? contatos.find(x => x.id === limpaId(c.id)) : null;
+      if (!dec && email) dec = contatos.find(x => String(x.email || '').toLowerCase() === email);
+      if (!dec && nome) dec = contatos.find(x => normalizarEmpresa(x.nome) === normalizarEmpresa(nome));
+      if (!dec) {
+        if (!nome) return res.status(400).json({ error: 'Informe o nome da pessoa.' });
+        const novo = await supaReq('/rest/v1/crm_decisores', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({
+          empresa_id: empId, nome, cargo: c.cargo || null, email: email || null, wa: wa || null, linkedin_url: c.linkedin_url || null, fonte: 'pipeline', status: 'ativo',
+          observacoes: c.origem ? ('Achado pelo Pipeline (' + c.origem + ') em ' + hojeStr).slice(0, 500) : null }) });
+        dec = Array.isArray(novo) ? novo[0] : null;
+        if (!dec) return res.status(500).json({ error: 'Não consegui gravar o contato.' });
+      } else {
+        // Digitado pelo Pedro vale mais que o cadastro; o que veio do Gmail/Lusha só completa.
+        const manual = !c.origem || c.origem === 'manual';
+        const patch = {};
+        if (email && (manual || !dec.email)) patch.email = email;
+        if (wa && (manual || !dec.wa)) patch.wa = wa;
+        if (c.cargo && (manual || !dec.cargo)) patch.cargo = c.cargo;
+        if (c.linkedin_url && !dec.linkedin_url) patch.linkedin_url = c.linkedin_url;
+        if (Object.keys(patch).length) {
+          await supaReq('/rest/v1/crm_decisores?id=eq.' + dec.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(Object.assign({ atualizado_em: agoraIso() }, patch)) });
+          for (const [campo, v] of Object.entries(patch)) supaReq('/rest/v1/crm_auditoria', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ tabela: 'crm_decisores', registro_id: dec.id, campo, valor_de: dec[campo] || null, valor_para: v, usuario_email: emailUser }) }).catch(() => {});
+          Object.assign(dec, patch);
+        }
+      }
+      let lusha = null;
+      if (acao === 'lusha-email' && !dec.email) {
+        const chave = process.env.LUSHA_API_KEY || LUSHA_KEY;
+        const cfgRows = await supaReq('/rest/v1/crm_configuracoes?chave=in.(lusha_daily_limit,lusha_creditos_dia)&select=chave,valor');
+        const cfgC = {}; for (const r of (Array.isArray(cfgRows) ? cfgRows : [])) cfgC[r.chave] = r.valor;
+        const teto = Number(cfgC.lusha_daily_limit) || 8;
+        const saldo = saldoDoDia(cfgC.lusha_creditos_dia, hojeStr, teto);
+        if (!chave) lusha = { erro: 'Lusha não configurado' };
+        else if (teto - saldo.usados < 1) lusha = { erro: 'Teto de créditos do Lusha de hoje atingido (' + teto + ').' };
+        else {
+          const p = await pessoaLusha({ chave, nome: dec.nome, empresa: empresa && empresa.nome, dominio, linkedin: dec.linkedin_url || null });
+          const usados = saldo.usados + (p.creditos || 0);
+          if (usados !== saldo.usados) await supaReq('/rest/v1/crm_configuracoes?on_conflict=chave', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ chave: 'lusha_creditos_dia', valor: { data: hojeStr, usados } }) });
+          const patch = {};
+          if (p.achou && p.email) patch.email = p.email;
+          if (p.achou && p.cargo && !dec.cargo) patch.cargo = p.cargo;
+          if (p.achou && p.linkedin && !dec.linkedin_url) patch.linkedin_url = p.linkedin;
+          patch.enriquecimento_tentado_em = agoraIso();
+          await supaReq('/rest/v1/crm_decisores?id=eq.' + dec.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify(Object.assign({ atualizado_em: agoraIso() }, patch)) });
+          Object.assign(dec, patch);
+          lusha = { achou: !!patch.email, creditos: p.creditos || 0, restantes: Math.max(0, teto - usados), erro: patch.email ? null : 'O Lusha não tem o e-mail dessa pessoa.' };
+          log('e-mail buscado no Lusha', { decisor_id: dec.id, achou: !!patch.email, creditos: p.creditos || 0 });
+        }
+      }
+      return res.status(200).json({ contato: pub(dec), lusha });
+    }
+
+    if (acao === 'rascunho' || acao === 'enviar-email') {
+      const dec = contatos.find(x => x.id === limpaId(body.decisor_id));
+      const para = dec && dec.email;
+      if (!para) return res.status(400).json({ error: 'Esse contato não tem e-mail cadastrado.' });
+      const assunto = String(body.assunto || '').trim().slice(0, 200), corpo = String(body.corpo || '').trim().slice(0, 6000);
+      if (!assunto || !corpo) return res.status(400).json({ error: 'Assunto e texto são obrigatórios.' });
+      const gm = await obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_SVC });
+      if (!gm) return res.status(409).json({ error: 'Gmail não conectado. Conecte em Fila › Enviar.' });
+      let d;
+      try { d = await criarRascunhoGmail(gm.token, { conta: gm.email, para, assunto, corpo }); }
+      catch (e) { return res.status(502).json({ error: 'Gmail recusou o rascunho: ' + String(e && e.message || e).slice(0, 160) }); }
+      if (acao === 'rascunho') { log('rascunho de e-mail do pipeline criado', { decisor_id: dec.id, draft_id: d.id }); return res.status(200).json({ ok: true, rascunho_id: d.id, link: d.link, para }); }
+      // Envio: só com o clique do Pedro nesta tela (JWT de usuário, nunca cron).
+      let env;
+      try { env = await enviarRascunhoGmail(gm.token, d.id); }
+      catch (e) { return res.status(502).json({ error: 'O Gmail não enviou (ficou como rascunho): ' + String(e && e.message || e).slice(0, 160), link: d.link }); }
+      const agora = agoraIso();
+      await supaReq('/rest/v1/crm_toques', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ empresa_id: empId, decisor_id: dec.id, canal: 'email', direcao: 'enviado', assunto, resumo: 'E-mail do Pipeline (com pesquisa na internet)', texto_enviado: corpo.slice(0, 4000), data: agora, fonte: 'manual', resultado: 'enviado' }) });
+      await supaReq('/rest/v1/crm_decisores?id=eq.' + dec.id, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ ultimo_toque_em: agora }) });
+      await supaReq('/rest/v1/crm_oportunidade_eventos', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ oportunidade_id: opId, tipo: 'nota', texto: ('E-mail enviado para ' + dec.nome + ': [' + assunto + '] ' + corpo).slice(0, 400), autor_email: emailUser }) });
+      if (body.mensagem_id) await supaReq('/rest/v1/crm_oportunidade_mensagens?id=eq.' + limpaId(body.mensagem_id), { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ enviado_em: agora, gmail_message_id: env && env.id || null, assunto, corpo }) });
+      log('e-mail do pipeline enviado pelo Pedro', { decisor_id: dec.id, gmail_id: env && env.id });
+      return res.status(200).json({ ok: true, enviado: true, para, gmail_id: env && env.id || null });
+    }
+
+    if (acao === 'marcar-enviado') {
+      const m = limpaId(body.mensagem_id);
+      if (m) await supaReq('/rest/v1/crm_oportunidade_mensagens?id=eq.' + m, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ enviado_em: agoraIso(), corpo: String(body.corpo || '').slice(0, 6000) || undefined }) });
+      return res.status(200).json({ ok: true });
+    }
+
+    // gerar
+    const [toques, eventos, ags] = await Promise.all([
       empId ? supaReq('/rest/v1/crm_toques?empresa_id=eq.' + empId + '&select=canal,direcao,resultado,assunto,resumo,data,criado_em&order=criado_em.desc&limit=10') : null,
       supaReq('/rest/v1/crm_oportunidade_eventos?oportunidade_id=eq.' + opId + '&select=tipo,de,para,texto,criado_em&order=criado_em.desc&limit=10'),
       op.agencia_id ? supaReq('/rest/v1/crm_agencias?id=eq.' + op.agencia_id + '&select=nome&limit=1') : null
     ]);
-    const empresa = Array.isArray(emps) && emps[0] ? Object.assign({}, emps[0], { setor: emps[0].setor_canonico || emps[0].setor }) : null;
-    const contatos = (Array.isArray(decs) ? decs : []).filter(d => d.status !== 'saiu_da_empresa');
-    const contato = escolherContato(contatos, body.decisor_id, canal);
-    const hojeStr = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
+    const contato = escolherContato(contatos, limpaId(body.decisor_id), canal);
     const pr = promptWhatsappPipeline({ op, empresa, contato, toques: Array.isArray(toques) ? toques : [], eventos: Array.isArray(eventos) ? eventos : [], instrucao: body.instrucao, agencia: Array.isArray(ags) && ags[0] ? ags[0].nome : '', hoje: hojeStr, canal });
     const g = await gerarComBusca({ system: pr.system, content: pr.user, supaUrl: SUPA_URL, serviceKey: SUPA_SVC, envKey: ANTHROPIC_KEY });
     const r = lerResposta(g.texto);
     if (!r) return res.status(502).json({ error: 'A IA não devolveu a mensagem. Tente de novo.' + (g.erro ? ' (' + g.erro + ')' : '') });
-    const fontes = (r.fontes.length ? r.fontes : []).concat((g.urls || []).filter(x => !r.fontes.includes(x))).slice(0, 6);
-    supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ origem: 'wa-pipeline', nivel: 'info', mensagem: 'mensagem do pipeline gerada', contexto: { canal, oportunidade_id: opId, buscas: g.buscas || 0, por: emailUser } }) }).catch(() => {});
+    const fontes = r.fontes.concat((g.urls || []).filter(x => !r.fontes.includes(x))).slice(0, 6);
+    const salvo = await supaReq('/rest/v1/crm_oportunidade_mensagens', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ oportunidade_id: opId, decisor_id: contato ? contato.id : null, canal, assunto: r.assunto || null, corpo: r.mensagem, fato_usado: r.fato_usado || null, fontes, instrucao: body.instrucao ? String(body.instrucao).slice(0, 500) : null }) }).catch(() => null);
+    log('mensagem do pipeline gerada', { canal, buscas: g.buscas || 0 });
     return res.status(200).json({
+      id: Array.isArray(salvo) && salvo[0] ? salvo[0].id : null,
       canal, assunto: r.assunto, mensagem: r.mensagem, fato_usado: r.fato_usado, fontes, alertas: checarWhatsapp(r.mensagem, canal, r.assunto), buscas: g.buscas || 0,
-      contato: contato ? { id: contato.id, nome: contato.nome, cargo: contato.cargo, wa: contato.wa || null, tem_wa: !!numeroWa(contato.wa), email: contato.email || null, tem_email: /@/.test(contato.email || '') } : null,
-      contatos: contatos.map(d => ({ id: d.id, nome: d.nome, cargo: d.cargo, tem_wa: !!numeroWa(d.wa), tem_email: /@/.test(d.email || '') })),
+      contato: contato ? pub(contato) : null,
+      contatos: contatos.map(pub),
       link: linkWhatsapp(contato && contato.wa, r.mensagem)
     });
   }
