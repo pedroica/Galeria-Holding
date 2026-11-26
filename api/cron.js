@@ -1080,12 +1080,12 @@ async function jobSdrSelecao(req, res) {
   // Conta também os leads reais do SDR desta semana (não só a crm_fila): sem isso,
   // dois decisores da mesma empresa entravam em dias seguidos. Sombra não conta,
   // porque não falou com ninguém.
-  const sdrSemana = await sg(`crm_sdr_estado?criado_em=gte.${semanaISO}&sombra=eq.false&dia_cadencia=eq.0&select=empresa_id&limit=5000`);
+  const sdrSemana = await sg(`crm_sdr_estado?criado_em=gte.${semanaISO}&sombra=eq.false&dia_cadencia=eq.0&fila_id=not.is.null&select=empresa_id&limit=5000`);   // só quem virou mensagem (26/11: descartados bloqueavam a empresa)
   const primeirosContatoSemana = [...new Set([...(Array.isArray(filaSemana) ? filaSemana : []), ...(Array.isArray(sdrSemana) ? sdrSemana : [])].map(r => r.empresa_id).filter(Boolean))];
 
   // Bloco G: candidatos de topo de funil aceitos pelo Pedro passam à frente.
   const corteCurso = new Date(Date.now() - 14 * 86400000).toISOString();
-  const cursoRows = await sg(`crm_sdr_estado?criado_em=gte.${corteCurso}&etapa=neq.aguardando&select=decisor_id&limit=10000`);
+  const cursoRows = await sg(`crm_sdr_estado?criado_em=gte.${corteCurso}&etapa=neq.aguardando&or=(etapa.neq.avaliado,motivo.not.like.sem%20sinal*)&select=decisor_id&limit=10000`);
   const emCurso = new Set((Array.isArray(cursoRows) ? cursoRows : []).map(r => r.decisor_id));
   const topoRows = await sg('crm_sdr_topo?status=eq.aceito&empresa_id=not.is.null&select=empresa_id,fonte,agencia_slug,motivo&limit=1000');
   const topoAceitos = {};
@@ -1314,7 +1314,7 @@ async function emOndas(lista, fn) {
 }
 
 async function configSdr() {
-  const rows = await sg('crm_configuracoes?chave=in.(sdr_expressoes_proibidas,sdr_aprendizados,sdr_angulos,sdr_cadencia,sdr_qualidade_nota_minima,sdr_rodada,sdr_estrategista,sdr_modelo_estrategia,sdr_modelo_redacao,sdr_modelo_qc,sdr_oferta_blitz,sdr_nota_encaixe_min,sdr_modo_rascunho,sdr_mix_whatsapp,sdr_refacoes_max,sdr_effort_estrategia,sdr_effort_redacao,sdr_meta_rascunhos_dia,sdr_custo_dia_max_usd,sdr_trilha_contexto,sdr_nota_encaixe_min_contexto)&select=chave,valor');
+  const rows = await sg('crm_configuracoes?chave=in.(sdr_expressoes_proibidas,sdr_aprendizados,sdr_angulos,sdr_cadencia,sdr_qualidade_nota_minima,sdr_qualidade_nota_minima_rascunho,sdr_rodada,sdr_estrategista,sdr_modelo_estrategia,sdr_modelo_redacao,sdr_modelo_qc,sdr_oferta_blitz,sdr_nota_encaixe_min,sdr_modo_rascunho,sdr_mix_whatsapp,sdr_refacoes_max,sdr_effort_estrategia,sdr_effort_redacao,sdr_meta_rascunhos_dia,sdr_custo_dia_max_usd,sdr_trilha_contexto,sdr_nota_encaixe_min_contexto)&select=chave,valor');
   const m = {}; for (const r of (Array.isArray(rows) ? rows : [])) m[r.chave] = r.valor;
   return {
     proibidas: Array.isArray(m.sdr_expressoes_proibidas) ? m.sdr_expressoes_proibidas : null,
@@ -1322,6 +1322,8 @@ async function configSdr() {
     angulos: Array.isArray(m.sdr_angulos) && m.sdr_angulos.length ? m.sdr_angulos : ['fato', 'ideia', 'case'],
     cadencia: Array.isArray(m.sdr_cadencia) ? m.sdr_cadencia : [{ dia: 0, canal: 'email' }],
     notaMinima: Number(m.sdr_qualidade_nota_minima) || 8,
+    // Rascunho (o Pedro revisa antes de enviar) aceita 7 em tudo; o Piloto continua exigindo 8.
+    notaMinimaRascunho: Number(m.sdr_qualidade_nota_minima_rascunho) || 7,
     rodada: Number(m.sdr_rodada) || 1,
     // Fase 3. Sem a chave no banco, tudo fica como antes (3 versões, sem estrategista).
     estrategista: m.sdr_estrategista === true || m.sdr_estrategista === 'true',
@@ -1367,11 +1369,21 @@ async function contextoDosLeads(estados, cfg) {
   const corte = new Date(Date.now() - 548 * 86400000).toISOString();   // 18 meses
   const tq = decIds.length ? await sg(`crm_toques?decisor_id=in.(${decIds.join(',')})&data=gte.${corte}&apagado_em=is.null&select=decisor_id,canal,direcao,assunto,resumo,data,resultado&order=data.desc&limit=3000`) : [];
   const op = empIds.length ? await sg(`crm_oportunidades?empresa_id=in.(${empIds.join(',')})&apagado_em=is.null&estagio=in.(Wishlist,Pausado)&select=empresa_id,titulo,oferta,estagio,atualizado_em,criado_em&limit=1000`) : [];
+  // 26/11: também vale como contexto o que o Pedro registrou ou escolheu (nota no CRM,
+  // cargo novo, lista dele, empresa 4-5 estrelas). A mensagem abre pela pessoa e não
+  // finge conversa que não houve (linhasTese).
+  const li = decIds.length ? await sg(`crm_lista_itens?decisor_id=in.(${decIds.join(',')})&select=decisor_id,crm_listas!inner(nome,apagado_em)&crm_listas.apagado_em=is.null&limit=3000`) : [];
+  const es = empIds.length ? await sg(`crm_empresa_agencia_estrelas?empresa_id=in.(${empIds.join(',')})&apagado_em=is.null&select=empresa_id,estrelas_manual,estrelas_calculadas&limit=5000`) : [];
+  const estrelasPor = {}; for (const r of (Array.isArray(es) ? es : [])) { const v = Number(r.estrelas_manual ?? r.estrelas_calculadas) || 0; if (v > (estrelasPor[r.empresa_id] || 0)) estrelasPor[r.empresa_id] = v; }
   for (const e of lista) {
+    const d = e.crm_decisores || {};
     out[e.id] = contextoDoLead({
       toques: (Array.isArray(tq) ? tq : []).filter(t => t.decisor_id === e.decisor_id),
       oportunidades: (Array.isArray(op) ? op : []).filter(o => o.empresa_id === e.empresa_id),
-      pausaAteEm: (e.crm_decisores || {}).pausa_ate_em || null
+      pausaAteEm: d.pausa_ate_em || null,
+      observacoes: d.observacoes || null, sinalRecenteEm: d.sinal_recente_em || null,
+      listas: (Array.isArray(li) ? li : []).filter(x => x.decisor_id === e.decisor_id).map(x => x.crm_listas && x.crm_listas.nome).filter(Boolean),
+      estrelas: estrelasPor[e.empresa_id] || 0
     });
   }
   return out;
@@ -1460,7 +1472,7 @@ async function jobSdrEstrategia(req, res) {
     await logCron('sdr-estrategia', 'aviso', 'fim — pulado', { motivo: 'sem chave da Anthropic (env e Vault)' });
     return res.status(200).json({ ok: true, pulado: true, motivo: 'sem chave da Anthropic (env e Vault)' });
   }
-  const brutos = await sg(`crm_sdr_estado?etapa=eq.dossie&status=eq.ativo&select=id,decisor_id,empresa_id,agencia_motivo,dia_cadencia,score,crm_decisores:decisor_id(id,nome,cargo,email,email_valido,wa,pausa_ate_em),crm_empresas:empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe,rank),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote * 8}`);
+  const brutos = await sg(`crm_sdr_estado?etapa=eq.dossie&status=eq.ativo&select=id,decisor_id,empresa_id,agencia_motivo,dia_cadencia,score,crm_decisores:decisor_id(id,nome,cargo,email,email_valido,wa,pausa_ate_em,observacoes,sinal_recente_em,fonte),crm_empresas:empresa_id(id,nome,setor,setor_sugerido,segmento_detalhe,rank),crm_agencias:agencia_id(id,nome,slug),crm_dossies:dossie_id(sinais)&order=criado_em.asc&limit=${lote * 8}`);
   if (brutos === null) return erroLeitura('sdr-estrategia', res, inicio, 'crm_sdr_estado');
   // Contexto verificável do CRM (conversa, oportunidade parada, pausa vencida):
   // é o que permite abordar sem notícia sem virar mensagem artificial.
@@ -1683,16 +1695,19 @@ async function jobSdrQualidade(req, res) {
         nota_clareza: aval.clareza, nota_risco: aval.risco, nota_media: dec.nota_media, custo_qc_usd: r.custo || 0,
         aprovado_autonomo: dec.aprovado_autonomo, motivo_qc: (aval.motivo ? aval.motivo + ' || ' : '') + dec.motivo
       }, 'PATCH');
-      return { m, dec, aval };
+      return { m, dec, aval, chec };
     }));
     avaliados++;
 
     // Melhor versão: aprovada primeiro, depois maior nota média.
     avaliacoes.sort((a, b) => (Number(b.dec.aprovado_autonomo) - Number(a.dec.aprovado_autonomo)) || (b.dec.nota_media - a.dec.nota_media));
     const melhor = avaliacoes[0];
+    // Revisável: 7+ em tudo, risco baixo e checagens ok. Vira RASCUNHO para o Pedro
+    // revisar (nunca envio automático: aprovado_autonomo continua exigindo 8).
+    const revisavel = !melhor.dec.aprovado_autonomo && decisao(melhor.aval, melhor.chec, cfg.notaMinimaRascunho).aprovado_autonomo;
     // Fase 3: com o estrategista, reprovado volta UMA vez para a redação com o
     // motivo do revisor (a tese continua a mesma). Só depois disso fica retido.
-    if (!melhor.dec.aprovado_autonomo && cfg.estrategista && est.tese && (Number(est.refacoes) || 0) < cfg.refacoesMax) {
+    if (!melhor.dec.aprovado_autonomo && !revisavel && cfg.estrategista && est.tese && (Number(est.refacoes) || 0) < cfg.refacoesMax) {
       refeitos++;
       await sp(`crm_sdr_estado?id=eq.${est.id}`, {
         etapa: 'estrategia', refacoes: (Number(est.refacoes) || 0) + 1,
@@ -1708,16 +1723,16 @@ async function jobSdrQualidade(req, res) {
     const sinal = sinais.find(s => s.url === melhor.m.sinal_url) || sinais[0] || {};
     const teseTxt = est.tese ? ` · tese: ${String(est.tese.cenario || '').slice(0, 160)} → ${String(est.tese.oportunidade || '').slice(0, 160)} (encaixe ${est.tese.nota_encaixe})` : '';
     const contexto = `${empresa.nome || ''} · ${decisor.nome || ''} · ${decisor.cargo || ''} · nota ${melhor.dec.nota_media} · ` +
-      (melhor.dec.aprovado_autonomo ? 'QC aprovado' : 'QC retido: ' + melhor.dec.motivo.slice(0, 180)) +
+      (melhor.dec.aprovado_autonomo ? 'QC aprovado' : revisavel ? 'QC 7+ (revise antes de enviar): ' + melhor.dec.motivo.slice(0, 160) : 'QC retido: ' + melhor.dec.motivo.slice(0, 180)) +
       (semFato ? ' · contexto: ' + ((est.tese && est.tese.contexto) || []).map(c => c.texto).join(' | ').slice(0, 220) : ` · fato: ${(sinal.fato || '').slice(0, 120)} (${sinal.url || 's/fonte'})`) + teseTxt;
     // Sombra: não cria item na fila do Pedro (nada fica disponível para envio).
     // Modo rascunho (Fase 3): o aprovado no QC entra na fila já como 'aprovado',
     // para virar rascunho no Outlook (rascunhos-matinais) e conversa pronta na aba
     // WhatsApp. A aprovação do QC vale para CRIAR o rascunho, nunca para enviar:
     // quem envia é sempre o Pedro (o Piloto continua desligado). Retido não entra.
-    const comoAprovado = cfg.modoRascunho && melhor.dec.aprovado_autonomo;
+    const comoAprovado = cfg.modoRascunho && (melhor.dec.aprovado_autonomo || revisavel);
     const tese = est.tese || null;
-    const fila = est.sombra || (cfg.modoRascunho && !melhor.dec.aprovado_autonomo) ? null : await spRet('crm_fila', {
+    const fila = est.sombra || (cfg.modoRascunho && !comoAprovado) ? null : await spRet('crm_fila', {
       agencia_id: est.agencia_id, agencia_slug: agencia.slug || null, empresa_id: est.empresa_id, decisor_id: est.decisor_id,
       canal: melhor.m.canal, etapa: melhor.m.etapa || 'etapa1', status: comoAprovado ? 'aprovado' : 'rascunho',
       aprovado_em: comoAprovado ? agora : null, origem: 'sdr',
@@ -1730,9 +1745,9 @@ async function jobSdrQualidade(req, res) {
     });
     if (melhor.dec.aprovado_autonomo) aprovadosAuto++; else retidos++;
     await sp(`crm_sdr_estado?id=eq.${est.id}`, {
-      etapa: melhor.dec.aprovado_autonomo ? 'rascunho' : 'avaliado',
+      etapa: (melhor.dec.aprovado_autonomo || revisavel) ? 'rascunho' : 'avaliado',
       fila_id: fila ? fila.id : null,
-      motivo: melhor.dec.aprovado_autonomo ? 'QC aprovado (aguarda Piloto ou toque do Pedro)' : melhor.dec.motivo.slice(0, 500),
+      motivo: melhor.dec.aprovado_autonomo ? 'QC aprovado (aguarda Piloto ou toque do Pedro)' : revisavel ? 'QC 7+: rascunho para o Pedro revisar' : melhor.dec.motivo.slice(0, 500),
       atualizado_em: agora
     }, 'PATCH');
   });
