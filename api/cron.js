@@ -2463,6 +2463,13 @@ async function jobGmailCrm(req, res) {
     const k = p.empresa_id + '|' + p.thread_id;
     if (![...conversas.values()].some(c => c.empresa_id === p.empresa_id)) conversas.set(k, { empresa_id: p.empresa_id, threadId: p.thread_id, ultima: p.ultima_mensagem_em, direcao: p.ultima_direcao });
   }
+  // Empresa casada pelo e-mail do contato (sem domínio cadastrado) não está em nomeEmp:
+  // busca o nome (teste real 26/11: oportunidade aberta como "Empresa: conversa no Gmail").
+  const semNome = [...new Set([...conversas.values()].map(c => c.empresa_id).filter(id => id && !nomeEmp[id]))];
+  if (semNome.length) {
+    const ns = await sg(`crm_empresas?id=in.(${semNome.join(',')})&select=id,nome`);
+    for (const e of (Array.isArray(ns) ? ns : [])) nomeEmp[e.id] = e.nome;
+  }
   for (const c of conversas.values()) {
     await spUpsert('crm_gmail_status', { empresa_id: c.empresa_id, ultima_mensagem_em: c.ultima, ultima_direcao: c.direcao, thread_id: c.threadId, atualizado_em: new Date().toISOString() }, 'empresa_id');
     if (!temLLM || gastoHoje >= tetoUsd || Date.now() - inicio > LIMITE) { completo = completo && true; continue; }
@@ -2523,6 +2530,11 @@ async function jobGmailCrm(req, res) {
       await sp(`crm_oportunidades?id=eq.${opId}`, Object.assign({ estagio: dec.para, atualizado_em: new Date().toISOString() },
         !op.proximo_passo && st.proximo_passo ? { proximo_passo: String(st.proximo_passo).slice(0, 300), proximo_passo_em: dataPP } : {}), 'PATCH');
       await sp('crm_oportunidade_eventos', { oportunidade_id: opId, tipo: 'estagio', de: op.estagio, para: dec.para, texto: ('Gmail: ' + st.resumo + (st.evidencia ? ' — "' + st.evidencia + '"' : '')).slice(0, 600), autor_email: 'agente-gmail' });
+    }
+    // Sugestões pendentes da mesma empresa que esta atualização já cobre saem da lista.
+    const cobertas = await sg(`crm_gmail_sugestoes?empresa_id=eq.${c.empresa_id}&status=eq.pendente&select=id,estagio_para`);
+    for (const p of (Array.isArray(cobertas) ? cobertas : [])) {
+      if (substituiSugestao(p, { estagio_para: dec.para })) await sp(`crm_gmail_sugestoes?id=eq.${p.id}`, { status: 'rejeitada', decidido_em: new Date().toISOString(), decidido_por: 'agente-gmail', motivo: 'coberta pela atualização automática #' + regRows[0].id }, 'PATCH');
     }
     cont.aplicadas++;
   }
