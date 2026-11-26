@@ -439,7 +439,7 @@ export default async function handler(req, res) {
             r.consultou = true;
             const dominio = emp.dominio || emp.website || emp.site || null;
             const p = await pessoaLusha({ chave: chaveLusha, nome: dec.nome, empresa: emp.nome, dominio: dominio ? String(dominio).replace(/^https?:\/\//, '').replace(/^www\./, '').split('/')[0] : null, linkedin: dec.linkedin_url || null, celular: querCel });
-            usados += p.creditos || 0;
+            usados += p.creditos || 0; r.lusha_diag = p.diag || null;
             if (!p.achou) r.erro = 'Lusha: ' + (p.erro || 'não achou');
             else {
               const patch = {};
