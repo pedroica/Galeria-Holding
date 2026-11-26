@@ -10,7 +10,7 @@ import { SCHEMA_CAPTURA, promptCaptura, casarEmpresa, casarPessoa, normalizarCel
 import { pessoaLusha, saldoDoDia } from '../lib/lusha.js';
 import { gerarJSON as gerarJSONllm, gerarComBusca } from '../lib/llm.js';
 import { promptWhatsappPipeline, lerResposta, checarWhatsapp, escolherContato, numeroWa, linkWhatsapp } from '../lib/wa-pipeline.js';
-import { linhasEstiloAprendido } from '../lib/estilo-aprendido.js';
+import { linhasEstiloAprendido, autoresDaConversa, falasDoAutor, amostrasColadas } from '../lib/estilo-aprendido.js';
 import { dominioDaEmpresa, dominiosDaEmpresa, contatosDoGmail, lerEnderecos, buscaGmail, linkLinkedin, textoDoPayload } from '../lib/contatos-conta.js';
 import { aplicarResposta } from '../lib/sdr-acoes.js';
 import { analisarEdicao } from '../lib/sdr-aprendizado.js';
@@ -345,6 +345,50 @@ export default async function handler(req, res) {
   // captura-gravar: cria/atualiza empresa e pessoa (só campos vazios) e enriquece no
   // Lusha dentro do teto diário (crm_configuracoes.lusha_daily_limit; uso do dia em
   // lusha_creditos_dia, o mesmo do enriquecimento diário). Só usuário do CRM.
+  // ── Meu jeito de escrever (Admin) ─────────────────────────────────────────
+  // POST {acao}: ver | autores {texto} | adicionar {texto, tipo:'whatsapp'|'colado', autor?} | aprender.
+  // Exemplos ficam em crm_configuracoes.estilo_amostras_manuais; o perfil é do job aprender-estilo.
+  if (provider === 'estilo') {
+    if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
+    const tok = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+    const u = tok ? await fetch(SUPA_URL + '/auth/v1/user', { headers: { apikey: SUPA_ANON, Authorization: 'Bearer ' + tok } }).then(r => r.ok ? r.json() : null).catch(() => null) : null;
+    const emailUser = u && u.email ? String(u.email).toLowerCase() : null;
+    const usr = emailUser ? await supaReq('/rest/v1/crm_usuarios?email=ilike.' + encodeURIComponent(emailUser) + '&select=email,ativo,papel&limit=1') : null;
+    if (!emailUser || !Array.isArray(usr) || !usr[0] || usr[0].ativo === false || usr[0].papel !== 'admin') return res.status(401).json({ error: 'Só o administrador do CRM.' });
+    const body = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+    const ler = async (chave) => { const r = await supaReq('/rest/v1/crm_configuracoes?chave=eq.' + chave + '&select=valor&limit=1'); return Array.isArray(r) && r[0] ? r[0].valor : null; };
+    const grava = (chave, valor) => supaReq('/rest/v1/crm_configuracoes?on_conflict=chave', { method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ chave, valor }) });
+    const acaoE = String(body.acao || 'ver');
+    if (acaoE === 'ver') {
+      const [perfil, man] = await Promise.all([ler('estilo_pedro_aprendido'), ler('estilo_amostras_manuais')]);
+      const lista = Array.isArray(man) ? man : [];
+      return res.status(200).json({ perfil, exemplos: { total: lista.length, whatsapp: lista.filter(a => a.canal === 'whatsapp').length, email: lista.filter(a => a.canal !== 'whatsapp').length } });
+    }
+    const texto = String(body.texto || '').slice(-3000000);
+    if (acaoE === 'autores') return res.status(200).json({ autores: autoresDaConversa(texto).slice(0, 10) });
+    if (acaoE === 'adicionar') {
+      const novas = body.tipo === 'whatsapp' ? falasDoAutor(texto, String(body.autor || '')) : amostrasColadas(texto, 'email');
+      if (!novas.length) return res.status(400).json({ error: body.tipo === 'whatsapp' ? 'Não achei mensagens desse autor na conversa.' : 'Não achei texto suficiente (mínimo de algumas palavras).' });
+      const atual = await ler('estilo_amostras_manuais');
+      const lista = (Array.isArray(atual) ? atual : []).concat(novas.map(a => Object.assign(a, { em: new Date().toISOString() })));
+      // Sem repetir e guardando as 300 mais recentes.
+      const vistos = new Set(); const unicas = [];
+      for (let i = lista.length - 1; i >= 0; i--) { const k = String(lista[i].texto).slice(0, 200); if (vistos.has(k)) continue; vistos.add(k); unicas.unshift(lista[i]); }
+      await grava('estilo_amostras_manuais', unicas.slice(-300));
+      return res.status(200).json({ adicionadas: novas.length, total: unicas.slice(-300).length });
+    }
+    if (acaoE === 'aprender') {
+      const segredo = (process.env.CRON_SECRET || '').trim();
+      if (!segredo) return res.status(500).json({ error: 'CRON_SECRET não configurado.' });
+      const base = 'https://' + (req.headers.host || 'galeria-holding-sage.vercel.app');
+      const r = await fetch(base + '/api/cron?job=aprender-estilo', { headers: { Authorization: 'Bearer ' + segredo } }).catch(() => null);
+      const j = r ? await r.json().catch(() => ({})) : {};
+      if (!r || !r.ok || !j.ok) return res.status(502).json({ error: 'Não consegui aprender agora' + (j.motivo ? ': ' + (j.motivo === 'poucas amostras' ? 'poucos exemplos ainda (cole mais alguns)' : j.motivo) : '') + '.' });
+      return res.status(200).json({ ok: true, perfil: await ler('estilo_pedro_aprendido') });
+    }
+    return res.status(400).json({ error: 'ação inválida' });
+  }
+
   // ── Follow-up do Pipeline (provider wa-pipeline) ──────────────────────────
   // POST {oportunidade_id, acao, ...}. Ações:
   //  contatos       → pessoas da conta no CRM + mensagens já prontas (cache)

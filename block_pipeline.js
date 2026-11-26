@@ -949,6 +949,109 @@
   }
 
   // ── AdminView ─────────────────────────────────────────────────────────────────
+  // ── Admin › Meu jeito de escrever ─────────────────────────────────────────────
+  // O Pedro cola e-mails dele ou sobe uma conversa exportada do WhatsApp; o job
+  // aprender-estilo junta isso com os Enviados do Gmail e as edições dele e monta o perfil.
+  function EstiloView() {
+    const s = { fontFamily: 'IBM Plex Mono,monospace' };
+    const caixa = { width: '100%', background: '#0d0d1a', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, padding: '8px 10px', fontSize: 11, fontFamily: 'IBM Plex Mono,monospace', boxSizing: 'border-box' };
+    const btn = (extra) => Object.assign({ fontSize: 11, padding: '8px 14px', background: '#1A1A2E', border: '1px solid #2D2D44', color: '#eee', borderRadius: 4, cursor: 'pointer' }, s, extra || {});
+    const card = { background: '#0d0d1a', border: '1px solid #1A1A2E', borderRadius: 8, padding: 16, marginBottom: 16 };
+    const tit = { fontFamily: "'Syne',sans-serif", fontSize: 15, color: '#eee', marginBottom: 8 };
+    const [dados, setDados] = useState(null);
+    const [colado, setColado] = useState('');
+    const [wa, setWa] = useState(null);            // {texto, nome, autores, autor}
+    const [ocupado, setOcupado] = useState('');
+    const [aviso, setAviso] = useState(null);
+
+    async function chamar(payload) {
+      const r = await fetch('/api/enrich?provider=estilo', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + getJwt() }, body: JSON.stringify(payload) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(j.error || ('Erro ' + r.status));
+      return j;
+    }
+    async function carregar() { try { setDados(await chamar({ acao: 'ver' })); } catch (e) { setAviso({ erro: true, t: e.message }); } }
+    useEffect(() => { carregar(); }, []);
+
+    async function adicionarColado() {
+      setOcupado('colar'); setAviso(null);
+      try { const j = await chamar({ acao: 'adicionar', tipo: 'colado', texto: colado }); setColado(''); setAviso({ t: j.adicionadas + ' exemplo(s) guardado(s). Clique em "Aprender agora" quando terminar.' }); carregar(); }
+      catch (e) { setAviso({ erro: true, t: e.message }); }
+      setOcupado('');
+    }
+    async function lerArquivo(f) {
+      if (!f) return;
+      setAviso(null); setOcupado('arquivo');
+      try {
+        const texto = (await f.text()).slice(-3000000);
+        const j = await chamar({ acao: 'autores', texto });
+        if (!j.autores.length) throw new Error('Não reconheci esse arquivo como conversa exportada do WhatsApp (.txt).');
+        const meu = j.autores.find(a => /pedro/i.test(a.autor)) || j.autores[0];
+        setWa({ texto, nome: f.name, autores: j.autores, autor: meu.autor });
+      } catch (e) { setAviso({ erro: true, t: e.message }); }
+      setOcupado('');
+    }
+    async function adicionarWa() {
+      setOcupado('wa'); setAviso(null);
+      try { const j = await chamar({ acao: 'adicionar', tipo: 'whatsapp', texto: wa.texto, autor: wa.autor }); setWa(null); setAviso({ t: j.adicionadas + ' fala(s) suas do WhatsApp guardadas.' }); carregar(); }
+      catch (e) { setAviso({ erro: true, t: e.message }); }
+      setOcupado('');
+    }
+    async function aprender() {
+      setOcupado('aprender'); setAviso(null);
+      try { await chamar({ acao: 'aprender' }); setAviso({ t: '✓ Aprendi. A partir de agora o agente escreve assim (SDR, blitz, parabéns e Pipeline).' }); carregar(); }
+      catch (e) { setAviso({ erro: true, t: e.message }); }
+      setOcupado('');
+    }
+
+    const p = dados && dados.perfil && dados.perfil.perfil;
+    const ex = (dados && dados.exemplos) || { total: 0, whatsapp: 0, email: 0 };
+    const lista = (titulo, itens) => (itens && itens.length) ? React.createElement('div', { style: { marginTop: 10 } },
+      React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#555', marginBottom: 4 }, s) }, titulo),
+      itens.map((x, i) => React.createElement('div', { key: i, style: Object.assign({ fontSize: 11, color: '#ccc', padding: '2px 0' }, s) }, '• ' + x))) : null;
+
+    return React.createElement('div', { style: { padding: 24, maxWidth: 900 } },
+      React.createElement('div', { style: { fontFamily: "'Syne',sans-serif", fontSize: 20, color: '#eee', marginBottom: 4 } }, 'Meu jeito de escrever'),
+      React.createElement('div', { style: Object.assign({ fontSize: 11, color: '#777', marginBottom: 16 }, s) }, 'O agente imita como você escreve em tudo o que redige. Ele aprende dos e-mails que você mesmo escreveu, das suas edições nos rascunhos e dos exemplos que você der aqui. Toda segunda ele reaprende sozinho.'),
+      aviso && React.createElement('div', { style: Object.assign({ fontSize: 11, color: aviso.erro ? '#EF4444' : '#34D399', marginBottom: 12 }, s) }, aviso.t),
+
+      React.createElement('div', { style: card },
+        React.createElement('div', { style: tit }, 'O que já aprendi'),
+        !p && React.createElement('div', { style: Object.assign({ fontSize: 11, color: '#777' }, s) }, 'Ainda nada. Dê alguns exemplos abaixo e clique em "Aprender agora".'),
+        p && React.createElement('div', null,
+          React.createElement('div', { style: Object.assign({ fontSize: 12, color: '#eee', lineHeight: 1.5 }, s) }, p.resumo),
+          lista('REGRAS', p.regras), lista('COMO VOCÊ ABRE', p.aberturas), lista('COMO VOCÊ FECHA', p.fechamentos),
+          lista('SUAS EXPRESSÕES', p.expressoes), lista('O QUE VOCÊ NÃO FAZ', p.evitar),
+          p.whatsapp && lista('NO WHATSAPP', [p.whatsapp]),
+          React.createElement('div', { style: Object.assign({ fontSize: 9, color: '#555', marginTop: 10 }, s) }, 'Atualizado em ' + new Date(dados.perfil.atualizado_em).toLocaleString('pt-BR') + ' · ' + (dados.perfil.amostras || 0) + ' textos lidos')
+        ),
+        React.createElement('div', { style: { marginTop: 12 } },
+          React.createElement('button', { onClick: aprender, disabled: !!ocupado, style: btn({ background: '#FF6B2B', border: 'none', color: '#fff', fontWeight: 700 }) }, ocupado === 'aprender' ? 'Aprendendo… (até 1 min)' : 'Aprender agora'),
+          React.createElement('span', { style: Object.assign({ fontSize: 10, color: '#777', marginLeft: 10 }, s) }, 'Exemplos seus guardados: ' + ex.total + ' (' + ex.email + ' e-mails, ' + ex.whatsapp + ' do WhatsApp)')
+        )
+      ),
+
+      React.createElement('div', { style: card },
+        React.createElement('div', { style: tit }, 'Colar e-mails ou mensagens que você escreveu'),
+        React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#777', marginBottom: 6 }, s) }, 'Cole quantos quiser (do Outlook da Galeria, por exemplo). Separe um do outro com uma linha só com --- . Só o seu texto: sem a mensagem que você respondeu.'),
+        React.createElement('textarea', { value: colado, onChange: e => setColado(e.target.value), rows: 8, placeholder: 'Oi Fulano, tudo bem?\n...\n---\nOutro e-mail seu...', style: Object.assign({}, caixa, { resize: 'vertical' }) }),
+        React.createElement('button', { onClick: adicionarColado, disabled: !!ocupado || colado.trim().length < 20, style: btn({ marginTop: 8 }) }, ocupado === 'colar' ? 'Guardando…' : 'Guardar exemplos')
+      ),
+
+      React.createElement('div', { style: card },
+        React.createElement('div', { style: tit }, 'Conversa do WhatsApp'),
+        React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#777', marginBottom: 8, lineHeight: 1.5 }, s) }, 'No celular: abra uma conversa de trabalho › toque no nome › Exportar conversa › Sem mídia. Mande o arquivo .txt para você (e-mail ou AirDrop) e escolha aqui. Eu pego só as SUAS falas.'),
+        React.createElement('input', { type: 'file', accept: '.txt,text/plain', onChange: e => lerArquivo(e.target.files && e.target.files[0]), style: Object.assign({ fontSize: 11, color: '#aaa' }, s) }),
+        wa && React.createElement('div', { style: { marginTop: 10 } },
+          React.createElement('div', { style: Object.assign({ fontSize: 10, color: '#aaa', marginBottom: 6 }, s) }, wa.nome + ' · quem é você nessa conversa?'),
+          React.createElement('select', { value: wa.autor, onChange: e => setWa(Object.assign({}, wa, { autor: e.target.value })), style: Object.assign({}, caixa, { width: 'auto' }) },
+            wa.autores.map(a => React.createElement('option', { key: a.autor, value: a.autor }, a.autor + ' (' + a.mensagens + ' mensagens)'))),
+          React.createElement('button', { onClick: adicionarWa, disabled: !!ocupado, style: btn({ marginLeft: 8 }) }, ocupado === 'wa' ? 'Guardando…' : 'Guardar minhas falas')
+        )
+      )
+    );
+  }
+
   function AdminView() {
     const [usuarios, setUsuarios] = useState([]);
     const [agencias, setAgencias] = useState([]);
@@ -1260,5 +1363,6 @@
 
   window.PipelineGlobalView = PipelineGlobalView;
   window.AdminView = AdminView;
+  window.EstiloView = EstiloView;
 
 })();

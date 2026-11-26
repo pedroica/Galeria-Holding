@@ -348,6 +348,10 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
 - Job `aprender-estilo` (Vercel, segundas 9h UTC, ou rodar na hora): lê os Enviados do Gmail (12 meses), tira o que o
   agente escreveu (parecido com `crm_fila`/`crm_oportunidade_mensagens`), encaminhados, massa e repetidos, soma os
   follow-ups do Pipeline que o Pedro editou (`corpo` ≠ `corpo_original`, inclusive WhatsApp) e pede à IA (Opus) um perfil.
+- Admin › **Meu jeito** (`EstiloView`, provider `estilo`, só admin): colar e-mails (separados por `---`) ou subir conversa
+  exportada do WhatsApp (.txt; só as falas do autor escolhido) → `crm_configuracoes.estilo_amostras_manuais` (até 300);
+  "Aprender agora" roda o job. Prioridade das amostras: coladas/WhatsApp > rascunhos reescritos > Gmail (sem e-mail
+  para si mesmo e sem assunto repetido 5+ vezes, que é automação).
 - Perfil em `crm_configuracoes.estilo_pedro_aprendido` (`lib/estilo-aprendido.js`). Entra em toda redação via
   `memoriaParaPrompt` (SDR, blitz, parabéns) e no follow-up do Pipeline (`estiloAprendido`).
 
