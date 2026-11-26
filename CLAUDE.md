@@ -295,6 +295,16 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
 - Base › **Listas e blitz** (`block_base.js`, regras em `base.js`): filtros por setor, cargo, estrelas, canal e
   "deixar de fora"; salva em `crm_listas` / `crm_lista_itens`. Base › **Placar** lê `crm_placar_v`.
 
+## Blitz (26/11/2026)
+
+- Base › Listas e blitz › abrir lista › **⚡ Blitz**: nome, tema, quem assina, canais → RPC `blitz_iniciar`.
+- Job `blitz-redacao` (relógio a cada minuto enquanto houver blitz `escrevendo`; trava `crm_blitz.lease_ate`):
+  e-mail + WhatsApp por contato (`lib/blitz.js`, Opus, refaz se alegar fato), em `crm_fila` como **rascunho**,
+  `origem='blitz'`, `blitz_id`. Índice único (blitz, contato, canal). Pula opt-out, blocklist e quem não tem o canal.
+- Revisão na própria tela: editar, aprovar em lote, descartar o resto. Aprovar → RPC `blitz_criar_rascunhos`
+  (rascunhos no Gmail; a pausa de primeiros contatos não barra blitz). Enviar = clique com confirmação (`gmail-send`,
+  1 a cada 1–2 min); WhatsApp em sequência na Fila › Enviar.
+
 ## Fila antiga desligada (26/11/2026)
 
 - O gerador antigo (`gerar-fila-diario`) saiu dos crons da Vercel: não gerava nada desde 17/11 e o agente SDR o substitui.
