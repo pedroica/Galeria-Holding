@@ -37,7 +37,7 @@ import { construirPromptEstrategia, validarTese, resumoEcossistema, SCHEMA_ESTRA
 import { inicioDiaBRT, vagasDoDia, gastoDosLogs, orcamentoOk, contextoDoLead, conversaRecente } from '../lib/sdr-meta.js';
 import { scoreOportunidade } from '../lib/sdr-score.js';
 import { montarMemoriaPrompt, analisarEdicao, propostasDeAprendizado, perfilDeComunicacao } from '../lib/sdr-aprendizado.js';
-import { escolherAmostras, promptAprenderEstilo, SCHEMA_ESTILO, linhasEstiloAprendido, textoProprio } from '../lib/estilo-aprendido.js';
+import { escolherAmostras, promptAprenderEstilo, SCHEMA_ESTILO, linhasEstiloAprendido, textoProprio, falasDoDeposito, similaridade } from '../lib/estilo-aprendido.js';
 
 // Base de conhecimento (agências, cases com números exatos). Carregada no cold start.
 let KNOWLEDGE = { agencias: [], cases_destaque: [] };
@@ -1367,7 +1367,7 @@ async function memoriaParaPrompt({ setor, solucao, canal } = {}) {
 
 // ── aprender-estilo: o jeito de escrever do Pedro ─────────────────────────────
 // Toda segunda (e no botão): lê os e-mails que o Pedro escreveu (Enviados, 12 meses; sai
-// o que o agente escreveu) e os follow-ups que ele editou no Pipeline; a IA descreve o
+// o que o agente escreveu) , as mensagens de trabalho dele no WhatsApp do Mac (crm_wa_mensagens, conversas trabalho/interno, 12 meses, sem o que o agente escreveu) e os follow-ups que ele editou no Pipeline; a IA descreve o
 // estilo; o perfil vai em crm_configuracoes.estilo_pedro_aprendido e entra em toda redação.
 async function jobAprenderEstilo(req, res) {
   const inicio = Date.now();
@@ -1399,7 +1399,17 @@ async function jobAprenderEstilo(req, res) {
   const reescritos = (Array.isArray(evs) ? evs : []).filter(e => e.diff && e.diff.similaridade != null && e.diff.similaridade < 0.6 && e.final && e.final.corpo)
     .slice(0, 15).map(e => ({ canal: 'email (rascunho do agente reescrito pelo Pedro)', assunto: e.final.assunto || '', texto: textoProprio(e.final.corpo).slice(0, 2000) }));
   const doGmail = escolherAmostras(msgs, textosAgente, { max: 30, eu: gm && gm.email });
-  const amostras = manuais.map(a => ({ canal: a.canal || 'email', assunto: '', texto: String(a.texto || '').slice(0, 2000) })).concat(reescritos, doGmail);
+  // WhatsApp do Pedro (depósito do Mac): só conversas de trabalho e internas, 12 meses.
+  // Os textos que o agente escreveu e o Pedro só colou no WhatsApp ficam de fora.
+  let doWhatsapp = [];
+  const cvs = await sg(`crm_wa_conversas?tipo=eq.pessoa&categoria=in.(trabalho,interno)&ultima_em=gte.${desde}&select=jid&order=ultima_em.desc&limit=150`);
+  const jids = (Array.isArray(cvs) ? cvs : []).map(c => c.jid);
+  if (jids.length) {
+    const lista = jids.map(j => '"' + j + '"').join(',');
+    const wm = await sg(`crm_wa_mensagens?jid=in.(${encodeURIComponent(lista)})&de_mim=eq.true&texto=not.is.null&enviada_em=gte.${desde}&select=jid,texto,enviada_em,de_mim&order=enviada_em.desc&limit=3000`);
+    doWhatsapp = falasDoDeposito(Array.isArray(wm) ? wm : [], { max: 35 }).filter(a => !textosAgente.some(t => similaridade(t, a.texto) >= 0.55));
+  }
+  const amostras = manuais.map(a => ({ canal: a.canal || 'email', assunto: '', texto: String(a.texto || '').slice(0, 2000) })).concat(doWhatsapp, reescritos, doGmail);
   // Follow-ups do Pipeline que o Pedro mexeu antes de mandar: a versão final é a voz dele
   // (é o único jeito de ver como ele escreve no WhatsApp).
   for (const m of opmArr) if (m.enviado_em && m.corpo_original && m.corpo && m.corpo.trim() !== m.corpo_original.trim()) amostras.push({ canal: m.canal, assunto: '', texto: textoProprio(m.corpo).slice(0, 1500) });
@@ -1410,7 +1420,7 @@ async function jobAprenderEstilo(req, res) {
   const { system, user } = promptAprenderEstilo(amostras.slice(0, 90));
   const r = await gerarJSON({ system, user, schema: SCHEMA_ESTILO, effort: 'high', model: 'claude-opus-5-5' });
   if (!r.obj) { await logCron('aprender-estilo', 'error', 'IA não devolveu o perfil', { erro: r.erro }); return res.status(200).json({ ok: false, erro: r.erro }); }
-  const valor = { perfil: r.obj, atualizado_em: new Date().toISOString(), amostras: Math.min(amostras.length, 90), enviados_lidos: msgs.length, fontes: { coladas_ou_whatsapp: manuais.length, rascunhos_reescritos: reescritos.length, gmail: doGmail.length }, whatsapp: amostras.filter(a => a.canal === 'whatsapp').length };
+  const valor = { perfil: r.obj, atualizado_em: new Date().toISOString(), amostras: Math.min(amostras.length, 90), enviados_lidos: msgs.length, fontes: { coladas_ou_whatsapp: manuais.length, whatsapp_do_mac: doWhatsapp.length, rascunhos_reescritos: reescritos.length, gmail: doGmail.length }, whatsapp: amostras.filter(a => a.canal === 'whatsapp').length };
   await spUpsert('crm_configuracoes', { chave: 'estilo_pedro_aprendido', valor }, 'chave');
   _memCache = { ate: 0, rows: [] };
   const ctx = { enviados: msgs.length, amostras: valor.amostras, fontes: valor.fontes, custo_usd: r.custo || 0, ms: Date.now() - inicio };

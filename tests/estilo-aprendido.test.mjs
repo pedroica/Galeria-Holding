@@ -3,7 +3,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY = 'service-key-fake';
 process.env.SUPA_CRM_URL = 'https://fake.supabase.co';
 process.env.CRON_SECRET = 'cron-vercel';
 process.env.ANTHROPIC_API_KEY = 'sk-fake';
-import { textoProprio, escolherAmostras, promptAprenderEstilo, linhasEstiloAprendido, similaridade, lerConversaWhatsapp, autoresDaConversa, falasDoAutor, amostrasColadas } from '../lib/estilo-aprendido.js';
+import { falasDoDeposito, textoProprio, escolherAmostras, promptAprenderEstilo, linhasEstiloAprendido, similaridade, lerConversaWhatsapp, autoresDaConversa, falasDoAutor, amostrasColadas } from '../lib/estilo-aprendido.js';
 import { promptWhatsappPipeline } from '../lib/wa-pipeline.js';
 let fail = 0, n = 0;
 const ok = (c, m) => { n++; if (c) console.log('  ✓ ' + m); else { fail++; console.log('  ✗ ' + m); } };
@@ -61,6 +61,16 @@ const fal = falasDoAutor(android, 'Pedro Ica');
 ok(fal.length === 2 && /Fala Bia[\s\S]*bora um café/.test(fal[0].texto) && fal[0].canal === 'whatsapp' && !fal.some(f => /Bora sim/.test(f.texto)), 'junta as falas seguidas do Pedro e ignora as dos outros');
 ok(amostrasColadas('Oi Ana, tudo bem? Segue a proposta revisada.\n---\nCarlos, valeu pelo papo de hoje cedo.\n---\nok').length === 2, 'texto colado separado por ---');
 
+const dep = [
+  { jid: 'a', de_mim: true, texto: 'Fala Bia, tudo certo?', enviada_em: '2026-11-20T12:00:00Z' },
+  { jid: 'a', de_mim: true, texto: 'consegue me mandar o briefing até amanhã cedo pra eu fechar a proposta?', enviada_em: '2026-11-20T12:01:00Z' },
+  { jid: 'a', de_mim: false, texto: 'mando sim', enviada_em: '2026-11-20T12:02:00Z' },
+  { jid: 'a', de_mim: true, texto: 'ok', enviada_em: '2026-11-20T13:00:00Z' },
+  { jid: 'b', de_mim: true, texto: 'olha esse link https://x.com que legal demais vale ver', enviada_em: '2026-11-21T12:00:00Z' }
+];
+const fd = falasDoDeposito(dep);
+ok(fd.length === 1 && /Fala Bia[\s\S]*briefing/.test(fd[0].texto) && fd[0].canal === 'whatsapp', 'WhatsApp do Mac: junta mensagens seguidas do Pedro, ignora curtas, links e as dos outros');
+
 // Job
 const b64 = (t) => Buffer.from(t).toString('base64').replace(/\+/g, '-').replace(/\//g, '_');
 const salvo = {}; let ia = null;
@@ -72,6 +82,8 @@ globalThis.fetch = async (url, opts = {}) => {
   if (u.includes('crm_oauth_tokens')) return json([{ id: 1, access_token: 'tok', refresh_token: 'rt', expires_at: new Date(Date.now() + 3600e3).toISOString(), account_email: 'p@g.test' }]);
   if (u.includes('gmail.googleapis.com') && /\/messages\?/.test(u)) return json({ messages: textos.map((_, i) => ({ id: 'm' + i })).concat([{ id: 'mAg' }]) });
   if (u.includes('gmail.googleapis.com')) { const id = u.match(/messages\/(\w+)/)[1]; const t = id === 'mAg' ? agente : textos[Number(id.slice(1))]; return json({ id, labelIds: ['SENT'], internalDate: String(Date.now()), payload: { mimeType: 'text/plain', headers: [{ name: 'Subject', value: ['projeto','proposta','expansão','deck','próximos passos','parabéns','orçamento','indicação','campanha','relatório','posicionamento','agente'][id === 'mAg' ? 11 : Number(id.slice(1))] }, { name: 'To', value: 'r@x.com' }], body: { data: b64(t) } } }); }
+  if (u.includes('crm_wa_conversas')) return json([{ jid: 'jw' }]);
+  if (u.includes('crm_wa_mensagens')) return json([{ jid: 'jw', de_mim: true, texto: 'Fala Gu, consegue me mandar os números da campanha até amanhã? Preciso fechar o relatório cedo.', enviada_em: '2026-11-20T12:00:00Z' }]);
   if (u.includes('crm_fila')) return json([{ corpo: agente }]);
   if (u.includes('crm_oportunidade_mensagens')) return json([{ canal: 'whatsapp', corpo: 'Fala Bia! bora um café essa semana?', corpo_original: 'Olá, Bia. Topa um café?', enviado_em: '2026-11-26' }]);
   if (u.includes('crm_configuracoes') && mt === 'POST') { salvo[body.chave] = body.valor; return new Response(null, { status: 201 }); }
@@ -80,9 +92,9 @@ globalThis.fetch = async (url, opts = {}) => {
 };
 const { default: cron } = await import(new URL('../api/cron.js', import.meta.url).href);
 const r = await new Promise((resolve) => { const res = { _s: 200, status(s) { this._s = s; return this; }, json(b) { resolve({ status: this._s, body: b }); return this; }, setHeader() {} }; cron({ method: 'GET', query: { job: 'aprender-estilo' }, headers: { authorization: 'Bearer cron-vercel' } }, res); });
-ok(r.status === 200 && r.body.ok && r.body.amostras === 11, 'job lê os Enviados, tira o do agente e soma o WhatsApp editado — ' + JSON.stringify({ ok: r.body.ok, amostras: r.body.amostras, enviados: r.body.enviados }));
+ok(r.status === 200 && r.body.ok && r.body.amostras === 12 && r.body.fontes.whatsapp_do_mac === 1, 'job lê os Enviados, tira o do agente e soma o WhatsApp editado — ' + JSON.stringify({ ok: r.body.ok, amostras: r.body.amostras, enviados: r.body.enviados }));
 ok(ia && !ia.user.includes('A Galeria Holding ajuda marcas') && /\(whatsapp\)\nFala Bia/.test(ia.user), 'a IA não vê texto do agente e vê o WhatsApp do Pedro');
-ok(salvo.estilo_pedro_aprendido && salvo.estilo_pedro_aprendido.perfil.resumo === perfil.perfil.resumo && salvo.estilo_pedro_aprendido.whatsapp === 1, 'perfil salvo em crm_configuracoes');
+ok(salvo.estilo_pedro_aprendido && salvo.estilo_pedro_aprendido.perfil.resumo === perfil.perfil.resumo && salvo.estilo_pedro_aprendido.whatsapp === 2, 'perfil salvo em crm_configuracoes');
 
 console.log(`\n${n - fail} ok, ${fail} falha(s)`);
 process.exit(fail ? 1 : 0);
