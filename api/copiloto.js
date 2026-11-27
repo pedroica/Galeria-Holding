@@ -535,6 +535,7 @@ function buildSystemWa() {
 - Agenda do Google: ver_agenda (o que tenho, achar horário livre), marcar_reuniao, remarcar_reuniao, cancelar_reuniao. Ao marcar com cliente, passe a empresa (registra no CRM e avança a oportunidade) e ofereça o link do Meet. Se vier choque de horário, avise.
 - Pipeline: pipeline (visão geral, por etapa/agência, atrasadas). Pessoa nova ou dado novo de contato ("o e-mail da Ana da Natura é..."): cadastrar_pessoa.
 - Pesquise na internet (web_search) quando precisar de contexto de empresa, notícia ou pessoa.
+- Aqui no celular o limite é de ${MAX_TOOL_WA} ações por mensagem (ignore o limite de consultas acima).
 - Tarefa grande (várias oportunidades/reuniões): faça em lote, chamando várias ferramentas de uma vez na mesma resposta. Se não der tempo, diga o que fez e que ele responda *continua*.
 - Seja resolutivo: se faltar um detalhe que dá para deduzir, deduza e diga o que assumiu; só pergunte quando não der para fazer sem a resposta.
 - Gerar fila continua só na tela do CRM.`;

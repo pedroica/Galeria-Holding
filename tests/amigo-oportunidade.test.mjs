@@ -1,5 +1,5 @@
 // Amigo com autonomia (26/11): criar/editar oportunidade, cadastrar pessoa, pipeline e Google Agenda.
-import { AMIGO_TOOL_DEFS, execAmigo, executarPendente, diasUteis } from '../lib/amigo-wa.js';
+import { AMIGO_TOOL_DEFS, execAmigo, executarPendente, diasUteis, filtroNomeEmpresa } from '../lib/amigo-wa.js';
 import { isoBrasilia, montarEvento } from '../lib/agenda-google.js';
 let fail = 0, n = 0;
 const ok = (c, m) => { n++; if (c) console.log('  ✓ ' + m); else { fail++; console.log('  ✗ ' + m); } };
@@ -34,6 +34,12 @@ const de = (T, tab) => T.post.filter(p => p[0] === tab).map(p => p[1]);
 
 ok(['criar_oportunidade', 'atualizar_oportunidade', 'cadastrar_pessoa', 'pipeline', 'ver_agenda', 'marcar_reuniao', 'remarcar_reuniao', 'cancelar_reuniao'].every(x => AMIGO_TOOL_DEFS.some(t => t.name === x)), 'ferramentas novas declaradas');
 ok(diasUteis('2026-11-27', 2) === '2026-12-01' && diasUteis('2026-11-23', 1) === '2026-11-24', 'dias úteis pulam fim de semana');
+
+const f = decodeURIComponent(filtroNomeEmpresa('Feijão Vapza'));
+ok(f.includes('nome.ilike.*Feijao*') && f.includes('nome.ilike.*Feijão*') && f.includes('nome.ilike.*Vapza*') && f.startsWith('or=('), 'busca de empresa: cada palavra, com e sem acento');
+{ const { T, ctx } = montar({ empresas: [{ id: 'eV', nome: 'FEIJAO VAPZA' }] });
+  const r = await execAmigo('criar_oportunidade', { empresa: 'Feijão Vapza', agencia: '404' }, ctx);
+  ok(r.ok && !r.empresa_nova && T.post.find(p => p[0] === 'crm_oportunidades')[1].empresa_id === 'eV', '"Feijão Vapza" casa com "FEIJAO VAPZA" (não duplica)'); }
 
 // Criar: empresa existente → direto.
 let { T, ctx } = montar({ empresas: [{ id: 'eNat', nome: 'Natura' }], ops: [{ id: 'o1', titulo: 'Natura velha', estagio: 'Perdido' }] });
