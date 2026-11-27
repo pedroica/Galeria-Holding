@@ -37,6 +37,8 @@ import { construirPromptEstrategia, validarTese, resumoEcossistema, SCHEMA_ESTRA
 import { inicioDiaBRT, vagasDoDia, gastoDosLogs, orcamentoOk, contextoDoLead, conversaRecente } from '../lib/sdr-meta.js';
 import { scoreOportunidade } from '../lib/sdr-score.js';
 import { montarMemoriaPrompt, analisarEdicao, propostasDeAprendizado, perfilDeComunicacao } from '../lib/sdr-aprendizado.js';
+import { gatilhosVigia, instrucaoIniciativa, podeAvisar, avisosLigados } from '../lib/amigo-iniciativa.js';
+import { listarEventos } from '../lib/agenda-google.js';
 import { escolherAmostras, promptAprenderEstilo, SCHEMA_ESTILO, linhasEstiloAprendido, textoProprio, falasDoDeposito, similaridade } from '../lib/estilo-aprendido.js';
 
 // Base de conhecimento (agências, cases com números exatos). Carregada no cold start.
@@ -3009,6 +3011,55 @@ async function jobSdrTopo(req, res) {
   return res.status(200).json({ ok: true, ...ctx });
 }
 
+// ── job amigo: o amigo no Telegram toma a iniciativa (26/11) ──────────────────
+// modo=manha (8h) | fim (18h30) | vigia (a cada 20 min, dias úteis 8h-20h).
+// O vigia só chama a IA quando há gatilho novo (resposta de cliente por e-mail,
+// reunião em 25-80 min, executivo que mudou de cargo). Cursor: crm_configuracoes.amigo_vigia.
+async function jobAmigo(req, res) {
+  const modo = ['manha', 'fim', 'vigia'].includes(req.query.modo) ? req.query.modo : 'vigia';
+  const inicio = Date.now();
+  const cfgR = await sg('crm_configuracoes?chave=in.(amigo_avisos,amigo_vigia,sdr_feriados,telegram_dono_id)&select=chave,valor');
+  if (cfgR === null) return erroLeitura('amigo', res, inicio, 'crm_configuracoes');
+  const cfg = {}; for (const r of cfgR) cfg[r.chave] = r.valor;
+  if (!cfg.telegram_dono_id) { await logCron('amigo', 'info', 'fim — Telegram sem dono', { modo }); return res.status(200).json({ ok: true, pulado: 'sem dono' }); }
+  if (!avisosLigados(cfg.amigo_avisos, modo)) return res.status(200).json({ ok: true, pulado: 'desligado', modo });
+  const forcar = req.query.forcar === '1';
+  if (!forcar && !podeAvisar(new Date(), Array.isArray(cfg.sdr_feriados) ? cfg.sdr_feriados : [])) return res.status(200).json({ ok: true, pulado: 'fora do horário', modo });
+
+  let itens = [];
+  let cursor = cfg.amigo_vigia && typeof cfg.amigo_vigia === 'object' ? cfg.amigo_vigia : {};
+  const agora = new Date();
+  if (modo === 'vigia') {
+    const desde = cursor.desde || new Date(Date.now() - 30 * 60000).toISOString();
+    const [resp, reun, movs, gm] = await Promise.all([
+      sg(`crm_toques?direcao=eq.recebido&canal=eq.email&apagado_em=is.null&resultado=in.(respondeu,resposta,reuniao_marcada)&criado_em=gt.${desde}&select=id,canal,resumo,assunto,resultado,crm_empresas!empresa_id(nome),crm_decisores!decisor_id(nome)&order=criado_em.asc&limit=15`),
+      sg(`crm_reunioes_v?reuniao_em=gte.${agora.toISOString()}&reuniao_em=lte.${new Date(Date.now() + 90 * 60000).toISOString()}&select=id,empresa_id,empresa,reuniao_em,titulo&limit=10`),
+      sg(`crm_movimentacoes?criado_em=gt.${desde}&status=not.in.(erro,descartada)&select=id,pessoa,cargo,empresa,empresa_anterior,status&limit=10`),
+      obterTokenGmail({ supaUrl: SUPA_URL, serviceKey: SUPA_KEY }).catch(() => null)
+    ]);
+    let eventos = [];
+    if (gm) eventos = await listarEventos(gm.token, { de: agora.toISOString(), ate: new Date(Date.now() + 90 * 60000).toISOString(), max: 10 }).catch(() => []);
+    itens = gatilhosVigia({
+      respostas: (resp || []).map(t => ({ id: t.id, canal: t.canal, resumo: t.resumo, assunto: t.assunto, resultado: t.resultado, empresa: t.crm_empresas && t.crm_empresas.nome, pessoa: t.crm_decisores && t.crm_decisores.nome })),
+      eventos, reunioesCrm: reun || [], movs: movs || [], avisadas: cursor.avisadas || [], agora
+    });
+    cursor = { desde: agora.toISOString(), avisadas: (cursor.avisadas || []).concat(itens.map(i => i.chave)).slice(-300) };
+    await fetch(SUPA_URL + '/rest/v1/crm_configuracoes?on_conflict=chave', { method: 'POST', headers: { apikey: SUPA_KEY, Authorization: 'Bearer ' + SUPA_KEY, 'Content-Type': 'application/json', Prefer: 'resolution=merge-duplicates,return=minimal' }, body: JSON.stringify({ chave: 'amigo_vigia', valor: cursor }) }).catch(() => {});
+    if (!itens.length) return res.status(200).json({ ok: true, modo, gatilhos: 0, ms: Date.now() - inicio });
+  }
+
+  const segredo = (process.env.CRON_SECRET || '').trim();
+  const base = 'https://' + (req.headers.host || 'galeria-holding-sage.vercel.app');
+  const r = await fetch(base + '/api/enrich?provider=telegram&acao=iniciativa', {
+    method: 'POST', headers: { Authorization: 'Bearer ' + segredo, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ modo, instrucao: instrucaoIniciativa(modo, itens) }), signal: AbortSignal.timeout(58000)
+  }).catch(e => ({ ok: false, status: 0, erro: String(e && e.message || e) }));
+  const j = r && r.json ? await r.json().catch(() => ({})) : {};
+  const ctx = { modo, gatilhos: itens.map(i => i.tipo), enviado: !!j.enviado, status: r && r.status, ms: Date.now() - inicio };
+  await logCron('amigo', j.enviado ? 'aviso' : 'info', j.enviado ? 'fim — mensagem enviada (' + modo + ')' : 'fim — nada enviado (' + modo + ')', ctx);
+  return res.status(200).json({ ok: true, ...ctx });
+}
+
 // ── handler principal ─────────────────────────────────────────────────────────
 export default async function handler(req, res) {
   const { job } = req.query;
@@ -3037,6 +3088,7 @@ export default async function handler(req, res) {
     if (job === 'aprender-estilo')       return await jobAprenderEstilo(req, res);
     if (job === 'gmail-crm')             return await jobGmailCrm(req, res);
     if (job === 'whatsapp-crm')          return await jobWhatsappCrm(req, res);
+    if (job === 'amigo')                 return await jobAmigo(req, res);
     if (job === 'classificar-setores')   return await jobClassificarSetores(req, res);
     if (job === 'blitz-redacao')         return await jobBlitzRedacao(req, res);
     if (job === 'movimentacoes')         return await jobMovimentacoes(req, res, 'imprensa');
