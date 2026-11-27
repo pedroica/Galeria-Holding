@@ -528,10 +528,13 @@ function buildSystemWa() {
 - Para escrever WhatsApp ou e-mail para alguém, use preparar_mensagem (pesquisa a empresa na internet e segue o jeito dele). Mostre o texto inteiro.
   WhatsApp: mande o link que vier (ele toca e o WhatsApp abre com a mensagem pronta; quem aperta enviar é ele).
   E-mail: diga que é só responder *manda* para enviar, ou pedir ajuste. Se ele pedir ajuste, chame enviar_email com o texto ajustado.
-- Enviar e-mail e mover etapa SÓ acontecem quando ele responder *manda*. Nunca diga que enviou sem essa confirmação.
+- Enviar e-mail, mover etapa e criar oportunidade pendente SÓ acontecem quando ele responder *manda*. Nunca diga que enviou sem essa confirmação.
 - Prazo ("cobrar a XP sexta"): definir_prazo direto, com a data em AAAA-MM-DD a partir de hoje.
 - registrar_resultado você executa direto quando ele contar o que aconteceu.
-- Gerar fila e criar oportunidade continuam só na tela do CRM.`;
+- Oportunidade nova ("abre oportunidade da Natura pela Milà"): criar_oportunidade. Antes, se fizer sentido, puxe a ficha da empresa.
+  Datas em AAAA-MM-DD a partir de hoje. Se voltar pronto=true (empresa nova ou já com oportunidade aberta), mostre o resumo e peça *manda*.
+  Se criou direto, confirme em 1-2 linhas (empresa, agência, etapa, próximo passo e prazo) e repasse os avisos.
+- Gerar fila continua só na tela do CRM.`;
 }
 
 async function execToolWa(name, input, ctx) {

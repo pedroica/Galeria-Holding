@@ -8,7 +8,7 @@ let fail = 0, n = 0;
 const ok = (c, m) => { n++; if (c) console.log('  ✓ ' + m); else { fail++; console.log('  ✗ ' + m); } };
 const json = (b, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
 const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-const ontem = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+const ontem = new Date(Date.parse(hoje + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10); // relativo ao dia de Brasília (à noite o UTC já virou)
 
 const T = { patch: [], post: [], gmail: [], wa: [], sess: { pendente: null, mensagens: [] } };
 const rota = async (u0, mt, body) => {
