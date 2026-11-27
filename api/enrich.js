@@ -291,6 +291,27 @@ async function handleGmailCallback(req, res) {
 // ─── Main handler ────────────────────────────────────────────────────────────
 // Conversa com o amigo (WhatsApp ou Telegram): ação pendente ("manda"), pausar, /novo e
 // a resposta da IA com as ferramentas do CRM. chave = id da sessão em crm_wa_sessoes.
+// Iniciativa do amigo (job amigo em api/cron.js): roda a IA com a instrução do gatilho e,
+// se houver algo que valha, manda ao Pedro e grava na conversa (ele responde "faz a 1",
+// "manda"...). Não descarta uma ação pendente que ele ainda não respondeu.
+async function iniciativaDoAmigo({ chave, instrucao, enviar, modo }) {
+  const sess = await supaReq('/rest/v1/crm_wa_sessoes?select=mensagens,pendente&telefone=eq.' + encodeURIComponent(chave)).catch(function () { return []; });
+  const historico = (sess[0] && Array.isArray(sess[0].mensagens)) ? sess[0].mensagens : [];
+  const pendenteAntes = sess[0] && sess[0].pendente && sess[0].pendente.tipo ? sess[0].pendente : null;
+  const { responderWhatsApp } = await import('./copiloto.js');
+  const { semNovidade } = await import('../lib/amigo-iniciativa.js');
+  const r = await responderWhatsApp({ texto: instrucao, historico: historico.slice(-12) });
+  if (semNovidade(r.texto)) return { enviado: false, ferramentas: r.ferramentas };
+  const mensagens = historico.concat([{ role: 'user', content: '[aviso automático: ' + modo + ']' }, { role: 'assistant', content: r.texto }]).slice(-20);
+  await supaReq('/rest/v1/crm_wa_sessoes?on_conflict=telefone', {
+    method: 'POST', headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+    body: JSON.stringify([{ telefone: chave, mensagens, pendente: r.pendente || pendenteAntes || null, atualizado_em: new Date().toISOString() }])
+  }).catch(function () {});
+  await enviar(r.texto);
+  supaReq('/rest/v1/crm_logs', { method: 'POST', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ origem: 'telegram', nivel: 'info', mensagem: 'iniciativa enviada: ' + modo, contexto: { ferramentas: r.ferramentas, tokens_entrada: r.tokIn, tokens_saida: r.tokOut, custo_usd: (r.tokIn * 3 + r.tokOut * 15) / 1000000 } }) }).catch(function () {});
+  return { enviado: true, ferramentas: r.ferramentas };
+}
+
 async function conversarComAmigo({ chave, texto, enviar, canal }) {
   const svcH = { apikey: SUPA_SVC, Authorization: 'Bearer ' + SUPA_SVC, 'Content-Type': 'application/json' };
   if (!texto) { await enviar('Por enquanto eu só leio texto. Manda escrito que eu resolvo.'); return; }
@@ -1568,11 +1589,32 @@ export default async function handler(req, res) {
       const base = 'https://' + (req.headers.host || 'galeria-holding-sage.vercel.app');
       const wh = await tgApi('setWebhook', { url: base + '/api/enrich?provider=telegram', secret_token: segredoTg, allowed_updates: ['message'], drop_pending_updates: true });
       const me = await tgApi('getMe');
-      await tgApi('setMyCommands', { commands: [{ command: 'novo', description: 'Zerar a conversa' }, { command: 'agenda', description: 'O que tenho hoje' }] });
+      await tgApi('setMyCommands', { commands: [{ command: 'agenda', description: 'O que tenho hoje' }, { command: 'pipeline', description: 'Como está o pipeline' }, { command: 'avisos', description: 'Ligar ou desligar meus avisos' }, { command: 'novo', description: 'Zerar a conversa' }] });
       const codigo = randomBytes(12).toString('hex');
       await gravaCfg('telegram_pareamento', { hash: createHash('sha256').update(codigo).digest('hex'), expira: new Date(Date.now() + 24 * 3600e3).toISOString() });
       const usuario = me && me.result && me.result.username;
       return res.status(200).json({ ok: !!(wh && wh.ok), webhook: wh && (wh.description || wh.ok), bot: usuario, link: usuario ? 'https://t.me/' + usuario + '?start=' + codigo : null });
+    }
+    // Iniciativa (só o job amigo, com CRON_SECRET): manda ao dono sem ele ter escrito.
+    if (req.method === 'POST' && req.query.acao === 'iniciativa') {
+      const auth = (req.headers.authorization || '').replace(/^Bearer\s+/i, '').trim();
+      if (!auth || auth !== (process.env.CRON_SECRET || '').trim()) return res.status(401).json({ error: 'não autorizado' });
+      const dono = await cfgTg('telegram_dono_id');
+      if (!dono) return res.status(200).json({ ok: true, ignorado: 'sem dono pareado' });
+      const corpo = typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body || {});
+      if (!corpo.instrucao) return res.status(400).json({ error: 'instrucao obrigatória' });
+      const enviarDono = async (t) => {
+        let resto = String(t || '').trim();
+        while (resto) {
+          let corte = resto.length > 3900 ? resto.lastIndexOf('\n', 3900) : resto.length;
+          if (corte < 1500) corte = Math.min(3900, resto.length);
+          const parte = resto.slice(0, corte); resto = resto.slice(corte).trim();
+          const r = await tgApi('sendMessage', { chat_id: dono, text: parte, parse_mode: 'Markdown', disable_web_page_preview: true });
+          if (!r || !r.ok) await tgApi('sendMessage', { chat_id: dono, text: parte, disable_web_page_preview: true });
+        }
+      };
+      const out = await iniciativaDoAmigo({ chave: 'tg:' + dono, instrucao: String(corpo.instrucao), enviar: enviarDono, modo: String(corpo.modo || 'aviso') });
+      return res.status(200).json(Object.assign({ ok: true }, out));
     }
     if (req.method !== 'POST') return res.status(405).json({ error: 'method not allowed' });
     const recebido = String(req.headers['x-telegram-bot-api-secret-token'] || '');
@@ -1614,7 +1656,7 @@ export default async function handler(req, res) {
     if (!dono || String(userId) !== String(dono)) { if (!dono) await enviarTg('Este bot é privado.'); return res.status(200).json({ ok: true, ignorado: 'não é o dono' }); }
 
     await tgApi('sendChatAction', { chat_id: chatId, action: 'typing' });
-    const t2 = /^\/agenda\b/i.test(texto) ? 'o que tenho hoje?' : texto;
+    const t2 = /^\/agenda\b/i.test(texto) ? 'o que tenho hoje?' : /^\/pipeline\b/i.test(texto) ? 'como está meu pipeline? o que está atrasado?' : /^\/avisos\b/i.test(texto) ? 'como estão meus avisos automáticos? me diga quais estão ligados e como mudar' : texto;
     try { await conversarComAmigo({ chave: 'tg:' + chatId, texto: t2, enviar: enviarTg, canal: 'telegram' }); }
     catch (e) { await enviarTg('Deu erro aqui do meu lado: ' + String(e && e.message || e).slice(0, 200)); }
     return res.status(200).json({ ok: true });

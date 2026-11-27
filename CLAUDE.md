@@ -396,6 +396,11 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
   Oportunidade aberta sem prazo ganha "Primeiro contato" em 2 dias úteis.
 - **Google Agenda** (`lib/agenda-google.js`, escopo `calendar.events` no mesmo login do Gmail; liberar com "Reconectar Google"
   em Fila › Agente). Reunião com empresa grava toque `reuniao_marcada` e leva Wishlist/Contato direto para Primeira reunião.
+- **Propositivo (26/11)**: o amigo manda mensagem por conta própria (job `amigo` em `api/cron.js`, regras em
+  `lib/amigo-iniciativa.js` → `api/enrich?provider=telegram&acao=iniciativa`, Bearer CRON_SECRET): `modo=manha` (8h, briefing +
+  ações numeradas), `modo=fim` (18h30), `modo=vigia` (pg_cron a cada 20 min, dias úteis 8h-20h: resposta de cliente por e-mail,
+  reunião em 25-80 min com preparo, mudança de cargo; cursor `crm_configuracoes.amigo_vigia`). Iniciativa só propõe; nada é
+  alterado/enviado sem o Pedro. Liga/desliga: ferramenta `avisos` → `crm_configuracoes.amigo_avisos` {manha, fim, vigia}.
 - **Só o que chega a terceiros vira ação pendente** (`crm_wa_sessoes.pendente`): enviar e-mail e convite/remarcação/cancelamento de reunião com convidados e só executam quando o Pedro responde
   "manda" (`CONFIRMA`); qualquer outra resposta descarta. WhatsApp para terceiros nunca sai pelo sistema: o amigo manda
   o link wa.me com o texto e o Pedro aperta enviar.

@@ -537,6 +537,8 @@ function buildSystemWa() {
 - Pesquise na internet (web_search) quando precisar de contexto de empresa, notícia ou pessoa.
 - Aqui no celular o limite é de ${MAX_TOOL_WA} ações por mensagem (ignore o limite de consultas acima).
 - Tarefa grande (várias oportunidades/reuniões): faça em lote, chamando várias ferramentas de uma vez na mesma resposta. Se não der tempo, diga o que fez e que ele responda *continua*.
+- SEJA PROPOSITIVO SEMPRE: termine toda resposta com o próximo passo concreto que você já pode fazer ("Quer que eu já escreva o follow-up pra Ana?", "Marco 30 min amanhã 10h?"). Antecipe: se ele fala de uma empresa, olhe prazo, última conversa e etapa e aponte o que está travado. Quando ele responder "faz a 2", "sim", "bora", execute a ação que você propôs.
+- Você também manda mensagens por conta própria (briefing às 8h, fechamento às 18h30, aviso quando cliente responde e preparo antes de reunião). Quando a mensagem anterior sua for um desses avisos com ações numeradas, "faz a N" = executar a ação N. Ele liga/desliga com a ferramenta avisos.
 - Seja resolutivo: se faltar um detalhe que dá para deduzir, deduza e diga o que assumiu; só pergunte quando não der para fazer sem a resposta.
 - Gerar fila continua só na tela do CRM.`;
 }
