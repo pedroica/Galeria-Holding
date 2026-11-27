@@ -11,6 +11,7 @@ const SUPA_URL      = 'https://uetltlnjmobeiunxfsqi.supabase.co';
 const SUPA_SVC      = process.env.SUPA_CRM_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const SUPA_ANON     = 'sb_publishable_9-32UcxDIE6Sh0feuXepXA_KLO83i0r';
 const MAX_TOOL      = 8;
+const MAX_TOOL_WA   = 30; // amigo no celular: tarefas grandes (montar pipeline, várias oportunidades)
 const __dir         = dirname(fileURLToPath(import.meta.url));
 
 let KNOWLEDGE = {};
@@ -534,6 +535,7 @@ function buildSystemWa() {
 - Agenda do Google: ver_agenda (o que tenho, achar horário livre), marcar_reuniao, remarcar_reuniao, cancelar_reuniao. Ao marcar com cliente, passe a empresa (registra no CRM e avança a oportunidade) e ofereça o link do Meet. Se vier choque de horário, avise.
 - Pipeline: pipeline (visão geral, por etapa/agência, atrasadas). Pessoa nova ou dado novo de contato ("o e-mail da Ana da Natura é..."): cadastrar_pessoa.
 - Pesquise na internet (web_search) quando precisar de contexto de empresa, notícia ou pessoa.
+- Tarefa grande (várias oportunidades/reuniões): faça em lote, chamando várias ferramentas de uma vez na mesma resposta. Se não der tempo, diga o que fez e que ele responda *continua*.
 - Seja resolutivo: se faltar um detalhe que dá para deduzir, deduza e diga o que assumiu; só pergunte quando não der para fazer sem a resposta.
 - Gerar fila continua só na tela do CRM.`;
 }
@@ -568,24 +570,33 @@ export async function responderWhatsApp({ texto, historico = [] }) {
 
   let chamadas = 0;
   let resposta = '';
-
-  while (true) {
-    const pedir = () => anthropic.messages.create({
-      model: MODELO_WA,
-      max_tokens: 1500,
-      system,
-      tools: WA_TOOL_DEFS,
-      messages: apiMsgs,
-    });
-    let msg;
-    try { msg = await pedir(); }
+  // Tarefas grandes ("monta o pipeline da Catalyst"): até MAX_TOOL_WA ferramentas e ~45 s
+  // (a função tem 60 s). Ao bater o limite, o modelo resume o que fez e o que falta.
+  const prazo = Date.now() + 45000;
+  const pedirIA = async (extra) => {
+    const pedir = () => anthropic.messages.create(Object.assign({ model: MODELO_WA, max_tokens: 3500, system, tools: WA_TOOL_DEFS, messages: apiMsgs }, extra || {}));
+    let m;
+    try { m = await pedir(); }
     catch (e) {
       if (!(e && e.status === 401)) throw e;
       _envRecusada = true; anthropic = new Anthropic({ apiKey: await chaveIA(true) });
-      msg = await pedir();
+      m = await pedir();
     }
-    tokIn  += msg.usage?.input_tokens  || 0;
-    tokOut += msg.usage?.output_tokens || 0;
+    tokIn  += m.usage?.input_tokens  || 0;
+    tokOut += m.usage?.output_tokens || 0;
+    return m;
+  };
+  const resumir = async (motivo) => {
+    const aviso = { type: 'text', text: '[' + motivo + '] Pare de usar ferramentas. Responda ao Pedro agora: o que você já fez (pelos resultados acima), o que ficou faltando e, se faltou algo, que ele responda "continua" para você seguir.' };
+    const ult = apiMsgs[apiMsgs.length - 1];
+    if (ult && ult.role === 'user') apiMsgs = [...apiMsgs.slice(0, -1), { role: 'user', content: (Array.isArray(ult.content) ? ult.content : [{ type: 'text', text: ult.content }]).concat(aviso) }];
+    else apiMsgs = [...apiMsgs, { role: 'user', content: [aviso] }];
+    const m = await pedirIA({ tool_choice: { type: 'none' } });
+    return (m.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+  };
+
+  while (true) {
+    const msg = await pedirIA();
 
     const textoTurno = (msg.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
     if (textoTurno) resposta = textoTurno;
@@ -598,11 +609,13 @@ export async function responderWhatsApp({ texto, historico = [] }) {
     }
 
     const usos = (msg.content || []).filter(b => b.type === 'tool_use');
+    if (msg.stop_reason === 'max_tokens' && !textoTurno) { resposta = await resumir('a resposta ficou longa demais').catch(() => ''); break; }
     if (msg.stop_reason !== 'tool_use' || !usos.length) break;
 
-    if (chamadas >= MAX_TOOL) {
-      resposta = (resposta ? resposta + '\n\n' : '') +
-        `_Parei em ${MAX_TOOL} consultas. Me faz uma pergunta mais específica que eu chego lá._`;
+    if (chamadas >= MAX_TOOL_WA || Date.now() > prazo) {
+      // Fecha os tool_use pendentes e pede o resumo.
+      apiMsgs = [...apiMsgs, { role: 'assistant', content: msg.content }, { role: 'user', content: usos.map(u => ({ type: 'tool_result', tool_use_id: u.id, content: JSON.stringify({ erro: 'não executado: limite desta mensagem' }) })) }];
+      resposta = await resumir(chamadas >= MAX_TOOL_WA ? 'limite de ' + MAX_TOOL_WA + ' ações nesta mensagem' : 'limite de tempo desta mensagem').catch(() => resposta);
       break;
     }
 
@@ -629,6 +642,7 @@ export async function responderWhatsApp({ texto, historico = [] }) {
 
     apiMsgs = [...apiMsgs, { role: 'assistant', content: msg.content }, { role: 'user', content: resultados }];
   }
+  if (!resposta && ferramentas.length) resposta = 'Fiz: ' + [...new Set(ferramentas)].join(', ') + '. Não consegui escrever o resumo; me pergunte "o que você fez?".';
 
   // Guardamos só texto: blocos de tool_use não sobrevivem entre invocações
   // serverless e sujariam o histórico da próxima mensagem.
