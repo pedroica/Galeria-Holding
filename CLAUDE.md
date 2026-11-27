@@ -389,8 +389,14 @@ Novas funcionalidades de API: adicionar provider em `api/enrich.js` ou action em
   link de pareamento (`/start <código>`, 24 h, uma vez); só o dono (`crm_configuracoes.telegram_dono_id`) é atendido.
   WhatsApp e Telegram usam o mesmo `conversarComAmigo` (sessão `tg:<chat>` em `crm_wa_sessoes`).
 - Ferramentas novas em `lib/amigo-wa.js`: `minha_agenda`, `ler_whatsapp` (depósito do Mac), `oportunidade`,
-  `preparar_mensagem` (mesma geração do Pipeline, `lib/followup.js`), `enviar_email`, `rascunho_email`, `definir_prazo`, `mover_etapa`.
-- **Enviar e-mail e mover etapa viram ação pendente** (`crm_wa_sessoes.pendente`) e só executam quando o Pedro responde
+  `preparar_mensagem` (mesma geração do Pipeline, `lib/followup.js`), `enviar_email`, `rascunho_email`, `definir_prazo`, `mover_etapa`,
+  `criar_oportunidade`, `atualizar_oportunidade`, `cadastrar_pessoa`, `pipeline`, `ver_agenda`, `marcar_reuniao`, `remarcar_reuniao`, `cancelar_reuniao`.
+- **Autonomia total no CRM (decisão do Pedro, 26/11)**: criar/editar oportunidade (empresa nova é cadastrada, `fonte='amigo'`), mover etapa,
+  cadastrar pessoa (`etapa_cadencia='off'`), prazo e compromisso só na agenda dele saem direto (com evento + `crm_auditoria`).
+  Oportunidade aberta sem prazo ganha "Primeiro contato" em 2 dias úteis.
+- **Google Agenda** (`lib/agenda-google.js`, escopo `calendar.events` no mesmo login do Gmail; liberar com "Reconectar Google"
+  em Fila › Agente). Reunião com empresa grava toque `reuniao_marcada` e leva Wishlist/Contato direto para Primeira reunião.
+- **Só o que chega a terceiros vira ação pendente** (`crm_wa_sessoes.pendente`): enviar e-mail e convite/remarcação/cancelamento de reunião com convidados e só executam quando o Pedro responde
   "manda" (`CONFIRMA`); qualquer outra resposta descarta. WhatsApp para terceiros nunca sai pelo sistema: o amigo manda
   o link wa.me com o texto e o Pedro aperta enviar.
 

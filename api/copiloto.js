@@ -488,7 +488,7 @@ export default async function handler(req, res) {
 
 // Ficam de fora do WhatsApp: gastam crédito, criam rascunho em lote ou alteram
 // pipeline sem a confirmação que só a tela oferece.
-const WA_BLOQUEADAS = ['gerar_fila', 'abordar', 'criar_oportunidade', 'mover_estagio', 'atribuir_dono'];
+const WA_BLOQUEADAS = ['gerar_fila', 'abordar', 'criar_oportunidade', 'mover_estagio', 'atribuir_dono', 'listar_oportunidades']; // listar_oportunidades tem as etapas antigas: o amigo usa 'pipeline'
 
 // Chave da Anthropic: a da Vercel; se faltar ou for recusada (401), a do Vault
 // (RPC sdr_anthropic_key, só service key) — o mesmo caminho do resto do CRM.
@@ -528,10 +528,14 @@ function buildSystemWa() {
 - Para escrever WhatsApp ou e-mail para alguém, use preparar_mensagem (pesquisa a empresa na internet e segue o jeito dele). Mostre o texto inteiro.
   WhatsApp: mande o link que vier (ele toca e o WhatsApp abre com a mensagem pronta; quem aperta enviar é ele).
   E-mail: diga que é só responder *manda* para enviar, ou pedir ajuste. Se ele pedir ajuste, chame enviar_email com o texto ajustado.
-- Enviar e-mail e mover etapa SÓ acontecem quando ele responder *manda*. Nunca diga que enviou sem essa confirmação.
-- Prazo ("cobrar a XP sexta"): definir_prazo direto, com a data em AAAA-MM-DD a partir de hoje.
-- registrar_resultado você executa direto quando ele contar o que aconteceu.
-- Gerar fila e criar oportunidade continuam só na tela do CRM.`;
+- Você tem AUTONOMIA TOTAL no CRM: criar_oportunidade, atualizar_oportunidade, mover_etapa, cadastrar_pessoa, definir_prazo e registrar_resultado você executa direto, sem pedir confirmação. Faça e conte o que fez em 1-3 linhas (repasse os avisos).
+- Só pede *manda* o que chega a outras pessoas: enviar e-mail e reunião com convidados (convite, remarcação ou cancelamento). Nunca diga que enviou/convidou sem o *manda*.
+- Datas: hoje é ${new Date().toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo', weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}. Converta "sexta", "amanhã 15h", "dia 3" para AAAA-MM-DD / AAAA-MM-DDTHH:MM (hora de Brasília).
+- Agenda do Google: ver_agenda (o que tenho, achar horário livre), marcar_reuniao, remarcar_reuniao, cancelar_reuniao. Ao marcar com cliente, passe a empresa (registra no CRM e avança a oportunidade) e ofereça o link do Meet. Se vier choque de horário, avise.
+- Pipeline: pipeline (visão geral, por etapa/agência, atrasadas). Pessoa nova ou dado novo de contato ("o e-mail da Ana da Natura é..."): cadastrar_pessoa.
+- Pesquise na internet (web_search) quando precisar de contexto de empresa, notícia ou pessoa.
+- Seja resolutivo: se faltar um detalhe que dá para deduzir, deduza e diga o que assumiu; só pergunte quando não der para fazer sem a resposta.
+- Gerar fila continua só na tela do CRM.`;
 }
 
 async function execToolWa(name, input, ctx) {

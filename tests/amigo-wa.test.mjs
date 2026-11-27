@@ -8,7 +8,7 @@ let fail = 0, n = 0;
 const ok = (c, m) => { n++; if (c) console.log('  ✓ ' + m); else { fail++; console.log('  ✗ ' + m); } };
 const json = (b, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { 'content-type': 'application/json' } });
 const hoje = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Sao_Paulo' });
-const ontem = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+const ontem = new Date(Date.parse(hoje + 'T12:00:00Z') - 864e5).toISOString().slice(0, 10); // relativo ao dia de Brasília (à noite o UTC já virou)
 
 const T = { patch: [], post: [], gmail: [], wa: [], sess: { pendente: null, mensagens: [] } };
 const rota = async (u0, mt, body) => {
@@ -44,8 +44,9 @@ r = await execAmigo('preparar_mensagem', { empresa: 'XP', canal: 'whatsapp', pes
 ok(r.link.startsWith('https://wa.me/5511988887777?text=') && !ctx.pendente, 'WhatsApp preparado vem com link que abre o app do Pedro; nada pendente');
 r = await execAmigo('definir_prazo', { empresa: 'XP', passo: 'Cobrar o Marcelo', data: '2026-12-04' }, ctx);
 ok(r.ok && T.patch.some(([u, b]) => /crm_oportunidades\?id=eq\.opXP/.test(u) && b.proximo_passo_em === '2026-12-04'), 'prazo marcado direto');
+ctx.pendente = null;
 r = await execAmigo('mover_etapa', { empresa: 'XP', etapa: 'Primeira reunião' }, ctx);
-ok(r.pronto && ctx.pendente.tipo === 'etapa' && !T.patch.some(([u, b]) => b.estagio), 'mover etapa fica pendente do "manda"');
+ok(r.ok && !ctx.pendente && T.patch.some(([u, b]) => /opXP/.test(u) && b.estagio === 'Primeira reunião') && T.post.some(([u, b]) => /crm_oportunidade_eventos/.test(u) && b.tipo === 'estagio'), 'mover etapa: direto (autonomia), com evento');
 ok(CONFIRMA.test('manda') && CONFIRMA.test('Pode mandar!') && CONFIRMA.test('sim') && !CONFIRMA.test('manda pro João também') && CANCELA.test('não') && CANCELA.test('cancela'), 'reconhece "manda" e "cancela"');
 
 // Webhook: o "manda" executa a ação pendente

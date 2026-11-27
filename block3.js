@@ -3301,6 +3301,8 @@ function SdrSeuDia(props) {
         : grande('Enviar e-mails em lote (' + s.prontos.length + ')', enviarLote, '#818CF8', 'sdr-enviar-lote', !s.prontos.length)),
     !s.outlook.connected && !s.gmail.connected && React.createElement('div', { style: { marginTop: 2 } },
       React.createElement('a', { href: '#', 'data-testid': 'sdr-conectar-outlook', onClick: function (e) { e.preventDefault(); conectar(); }, style: { color: '#555', fontSize: 10 } }, conectando ? 'Abrindo a Microsoft…' : 'Conectar Outlook (opcional: rascunhos na pasta e envio em lote)')),
+    s.gmail.connected && React.createElement('div', { style: { marginTop: 2 } },
+      React.createElement('a', { href: '#', 'data-testid': 'sdr-reconectar-google', onClick: function (e) { e.preventDefault(); conectarGmail(); }, style: { color: '#555', fontSize: 10 } }, conectandoG ? 'Abrindo o Google…' : 'Reconectar Google (libera a Agenda para o amigo no Telegram)')),
     msg && React.createElement('div', { style: { color: '#34D399', fontSize: 11, marginTop: 4 } }, msg),
     tut && React.createElement('div', { 'data-testid': 'sdr-tutorial', style: { position: 'fixed', inset: 0, background: 'rgba(0,0,0,.7)', zIndex: 999, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 } },
       React.createElement('div', { style: { background: '#0d0d1a', border: '.5px solid #FF6B2B', borderRadius: 10, padding: 20, maxWidth: 480, width: '100%', fontFamily: mono } },
